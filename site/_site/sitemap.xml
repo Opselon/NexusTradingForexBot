@@ -3,17 +3,33 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/releases/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/ARCHITECTURE_GAP_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DB-FABRIC-001-phase0-inventory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/FRONTEND_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/LIFECYCLE_PROPAGATION_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/ML_API_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/ML_RUNTIME_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/STRATEGY_LIFECYCLE_MAP/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/code-navigation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/comment-style/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/control-center-ui/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/crash-safety/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/data-flow/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_CATALOG/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_DUAL_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_HYGIENE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_MIGRATIONS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/DATA_GATE_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/MT5_HISTORY_DATA_CONTRACT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/dependency-map/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/mcp-bridge/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/observability-map/</loc></url>
@@ -21,7 +37,6 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/order_manager_architecture/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/overview/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/qa-assurance-contract/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/repository-hygiene/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/research-stack/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/architecture/runtime-certification-gate/</loc></url>
@@ -31,6 +46,9 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/contributing/contribution-guide/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/contributing/documentation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/ci/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-secrets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci-telegram-operations/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/ops/ci_reliability_findings_2026-08-19/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/engineering/security/</loc></url>
@@ -53,18 +71,44 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/reference/faq/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/reference/glossary/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/reference/terminology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_API_UI_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_CHART_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_DATA_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_FULL_APPLICATION_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_SCHEMA_RECONCILIATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/BACKTEST_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/CANDIDATE_QUALITY_DISTRIBUTION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D_FROZEN/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/MODEL_BENCHMARK_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/MODEL_GOVERNANCE_70D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/NEAR_MISS_ANALYSIS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/SEARCH_LEARNING_BOUNDARIES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/SEARCH_SPACE_DEAD_ZONES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/strategy_factory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/70d-program/xauusd_calibration_report/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/ATTENTION_ABLATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/CALIBRATION_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/RESEARCH_EDGE_AUDIT_2026_09_09/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/TCN_RECEPTIVE_FIELD/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/datasets/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/methodology/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/reproducibility/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/getting-started/</loc></url>
@@ -77,17 +121,33 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/reference/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/releases/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/ARCHITECTURE_GAP_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DB-FABRIC-001-phase0-inventory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/FRONTEND_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/LIFECYCLE_PROPAGATION_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/ML_API_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/ML_RUNTIME_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/STRATEGY_LIFECYCLE_MAP/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/code-navigation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/comment-style/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/control-center-ui/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/crash-safety/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/data-flow/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_CATALOG/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_DUAL_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_HYGIENE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_MIGRATIONS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATA_GATE_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/MT5_HISTORY_DATA_CONTRACT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/dependency-map/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/mcp-bridge/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/observability-map/</loc></url>
@@ -95,7 +155,6 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/order_manager_architecture/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/overview/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/qa-assurance-contract/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/repository-hygiene/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/research-stack/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/architecture/runtime-certification-gate/</loc></url>
@@ -105,6 +164,9 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/contributing/contribution-guide/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/contributing/documentation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/ci/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/ops/ci-secrets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/ops/ci-telegram-operations/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/ops/ci_reliability_findings_2026-08-19/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/engineering/security/</loc></url>
@@ -128,18 +190,44 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/reference/faq/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/reference/glossary/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/reference/terminology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_API_UI_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_CHART_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_DATA_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_FULL_APPLICATION_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_SCHEMA_RECONCILIATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/BACKTEST_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/CANDIDATE_QUALITY_DISTRIBUTION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_60D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_60D_FROZEN/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/MODEL_BENCHMARK_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/MODEL_GOVERNANCE_70D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/NEAR_MISS_ANALYSIS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/SEARCH_LEARNING_BOUNDARIES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/SEARCH_SPACE_DEAD_ZONES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/strategy_factory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/xauusd_calibration_report/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/ATTENTION_ABLATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/CALIBRATION_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/TCN_RECEPTIVE_FIELD/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/datasets/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/methodology/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/reproducibility/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/getting-started/</loc></url>
@@ -152,17 +240,33 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/fa/reference/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/releases/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/ARCHITECTURE_GAP_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DB-FABRIC-001-phase0-inventory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/FRONTEND_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/LIFECYCLE_PROPAGATION_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/ML_API_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/ML_RUNTIME_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/STRATEGY_LIFECYCLE_MAP/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/code-navigation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/comment-style/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/control-center-ui/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/crash-safety/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/data-flow/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_CATALOG/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_DUAL_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_HYGIENE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_MIGRATIONS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATA_GATE_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/MT5_HISTORY_DATA_CONTRACT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/dependency-map/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/mcp-bridge/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/observability-map/</loc></url>
@@ -170,7 +274,6 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/order_manager_architecture/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/overview/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/qa-assurance-contract/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/repository-hygiene/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/research-stack/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/architecture/runtime-certification-gate/</loc></url>
@@ -180,6 +283,9 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/contributing/contribution-guide/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/contributing/documentation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/ci/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/ops/ci-secrets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/ops/ci-telegram-operations/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/ops/ci_reliability_findings_2026-08-19/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/engineering/security/</loc></url>
@@ -203,18 +309,44 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/reference/faq/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/reference/glossary/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/reference/terminology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_API_UI_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_CHART_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_DATA_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_FULL_APPLICATION_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_SCHEMA_RECONCILIATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/BACKTEST_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/CANDIDATE_QUALITY_DISTRIBUTION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_60D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_60D_FROZEN/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/MODEL_BENCHMARK_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/MODEL_GOVERNANCE_70D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/NEAR_MISS_ANALYSIS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/SEARCH_LEARNING_BOUNDARIES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/SEARCH_SPACE_DEAD_ZONES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/strategy_factory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/xauusd_calibration_report/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/ATTENTION_ABLATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/CALIBRATION_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/RESEARCH_EDGE_AUDIT_2026_09_09/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/TCN_RECEPTIVE_FIELD/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/datasets/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/methodology/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/reproducibility/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/getting-started/</loc></url>
@@ -227,17 +359,33 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/ar/reference/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/releases/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/ARCHITECTURE_GAP_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DB-FABRIC-001-phase0-inventory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/FRONTEND_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/LIFECYCLE_PROPAGATION_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/ML_API_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/ML_RUNTIME_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/STRATEGY_LIFECYCLE_MAP/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/code-navigation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/comment-style/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/control-center-ui/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/crash-safety/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/data-flow/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_CATALOG/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_DUAL_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_HYGIENE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_MIGRATIONS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATA_GATE_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/MT5_HISTORY_DATA_CONTRACT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/dependency-map/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/mcp-bridge/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/observability-map/</loc></url>
@@ -245,7 +393,6 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/order_manager_architecture/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/overview/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/qa-assurance-contract/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/repository-hygiene/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/research-stack/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/architecture/runtime-certification-gate/</loc></url>
@@ -255,6 +402,9 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/contributing/contribution-guide/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/contributing/documentation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/ci/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/ops/ci-secrets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/ops/ci-telegram-operations/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/ops/ci_reliability_findings_2026-08-19/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/engineering/security/</loc></url>
@@ -278,18 +428,44 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/reference/faq/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/reference/glossary/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/reference/terminology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_API_UI_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_CHART_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_DATA_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_FULL_APPLICATION_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_SCHEMA_RECONCILIATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/BACKTEST_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/CANDIDATE_QUALITY_DISTRIBUTION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D_FROZEN/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/MODEL_BENCHMARK_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/MODEL_GOVERNANCE_70D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/NEAR_MISS_ANALYSIS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/SEARCH_LEARNING_BOUNDARIES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/SEARCH_SPACE_DEAD_ZONES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/strategy_factory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/xauusd_calibration_report/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/ATTENTION_ABLATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/CALIBRATION_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/RESEARCH_EDGE_AUDIT_2026_09_09/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/TCN_RECEPTIVE_FIELD/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/datasets/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/methodology/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/reproducibility/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/getting-started/</loc></url>
@@ -302,17 +478,33 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/es/reference/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/releases/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/ARCHITECTURE_GAP_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DB-FABRIC-001-phase0-inventory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/FRONTEND_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/LIFECYCLE_PROPAGATION_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/ML_API_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/ML_RUNTIME_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/STRATEGY_LIFECYCLE_MAP/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/code-navigation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/comment-style/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/control-center-ui/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/crash-safety/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/data-flow/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_CATALOG/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_DUAL_ARCHITECTURE/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_HYGIENE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_MIGRATIONS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATA_GATE_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/MT5_HISTORY_DATA_CONTRACT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/database/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/dependency-map/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/DEPENDENCY_MANAGEMENT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/execution-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/failure-recovery-matrix/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/frontend/UI_WAVE2_BRIEF/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/mcp-bridge/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/model-pipeline/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-log-contract/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/observability-map/</loc></url>
@@ -320,7 +512,6 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/order_manager_architecture/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/overview/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/qa-assurance-contract/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/QA_BLIND_SPOT_MATRIX/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/repository-hygiene/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/research-stack/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/architecture/runtime-certification-gate/</loc></url>
@@ -330,6 +521,9 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/contributing/contribution-guide/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/contributing/documentation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/ci/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-secrets/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci-telegram-operations/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/ops/ci_reliability_findings_2026-08-19/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/quality/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/release-process/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/engineering/security/</loc></url>
@@ -353,18 +547,44 @@
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/reference/faq/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/reference/glossary/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/reference/terminology/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_API_UI_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_CHART_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_DATA_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_FULL_APPLICATION_FLOW/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_POST_MIGRATION_BUG_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_SCHEMA_RECONCILIATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_SCHEMA_REFERENCE_MATRIX/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/70D_TEMPORAL_LIQUIDITY_FINAL_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/BACKTEST_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/CANDIDATE_QUALITY_DISTRIBUTION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D_FROZEN/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_70D_IMPLEMENTATION_MAP/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_70D_RESEARCH_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/MODEL_BENCHMARK_70D_LIQUIDITY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/MODEL_BENCHMARK_REPORT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/MODEL_GOVERNANCE_70D/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/NEAR_MISS_ANALYSIS/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/SEARCH_LEARNING_BOUNDARIES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/SEARCH_SPACE_DEAD_ZONES/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/strategy_factory/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/xauusd_calibration_report/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/ATTENTION_ABLATION/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/CALIBRATION_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/RESEARCH_EDGE_AUDIT_2026_09_09/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/TCN_RECEPTIVE_FIELD/</loc></url>
+  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/backtesting/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/counterfactuals/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/datasets/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/FEATURE_IMPORTANCE_AUDIT/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/LOSS_FUNCTION_BENCHMARK/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/methodology/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/OPTIMIZER_SCHEDULER_AUDIT/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/out-of-sample/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/replay/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/reproducibility/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/SAMPLE_UNIQUENESS_EMPIRICAL_STUDY/</loc></url>
-  <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/TRIPLE_BARRIER_CALIBRATION/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/validation/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/research/walk-forward/</loc></url>
   <url><loc>https://opselon.github.io/NexusTradingForexBot/de/getting-started/</loc></url>

@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>Research-to-Edge Pipeline Audit — 2026-09-09 · نکسوس اسکالپ انجین</title>
+<meta name='description' content='Research-to-Edge Pipeline Audit — 2026-09-09 — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09/'>
+<meta property='og:title' content='Research-to-Edge Pipeline Audit — 2026-09-09'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='Research-to-Edge Pipeline Audit — 2026-09-09 — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='Research-to-Edge Pipeline Audit — 2026-09-09'>
+<meta name='twitter:description' content='Research-to-Edge Pipeline Audit — 2026-09-09 — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/RESEARCH_EDGE_AUDIT_2026_09_09/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/RESEARCH_EDGE_AUDIT_2026_09_09/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/RESEARCH_EDGE_AUDIT_2026_09_09/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/RESEARCH_EDGE_AUDIT_2026_09_09/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/RESEARCH_EDGE_AUDIT_2026_09_09/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "Research-to-Edge Pipeline Audit — 2026-09-09", "description": "Research-to-Edge Pipeline Audit — 2026-09-09 — Nexus Scalp Engine documentation", "inLanguage": "fa", "url": "https://opselon.github.io/NexusTradingForexBot/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='جستجو در مستندات…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='پوسته' title='پوسته'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ روشن</button>
+        <button type='button' data-theme-set='dark'>☾ تیره</button>
+        <button type='button' data-theme-set='system'>🖥 سیستم</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='زبان' title='زبان'><span aria-hidden='true'>🌐</span><span class='lp-name'>فارسی</span></summary>
+      <div class='lang-menu'><a href='../../../research/RESEARCH_EDGE_AUDIT_2026_09_09/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>پیکربندی</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/mcp-bridge/'>پل MCP و ردّ تصمیم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/workflow-test-build-release/'>گردش کار تست، ساخت و انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.17 &amp; تاریخچه</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../research/RESEARCH_EDGE_AUDIT_2026_09_09/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/research/'>پژوهش</a> / <span class='crumb-current' aria-current='page'>RESEARCH EDGE AUDIT 2026 09 09</span></nav>
+<details class='toc-mobile'><summary>در این صفحه</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-pipeline-audit-ingestion--live-feedback'>1. Pipeline audit (ingestion → live feedback)</a></li><li class='toc-item toc-h2'><a href='#2-root-causes-found-ranked-by-edge-damage'>2. Root causes found (ranked by edge damage)</a></li><li class='toc-item toc-h2'><a href='#3-changes-made'>3. Changes made</a></li><li class='toc-item toc-h2'><a href='#4-evidence'>4. Evidence</a></li><li class='toc-item toc-h2'><a href='#5-remaining-weaknesses-next-highest-value-first'>5. Remaining weaknesses (next highest-value first)</a></li><li class='toc-item toc-h2'><a href='#6-round-2-additions-2026-09-09-same-mission-continuation'>6. Round-2 additions (2026-09-09, same mission continuation)</a></li><li class='toc-item toc-h3'><a href='#e2-resolution--economic-oos-floor-additive-contract'>E2 resolution — economic OOS floor (additive contract)</a></li><li class='toc-item toc-h3'><a href='#selection-bias-control-multiplicity'>Selection-bias control (multiplicity)</a></li><li class='toc-item toc-h3'><a href='#round-2-evidence'>Round-2 evidence</a></li><li class='toc-item toc-h3'><a href='#round-2b--automatic-multiplicity-wiring-in-the-research-loop'>Round-2b — automatic multiplicity wiring in the research loop</a></li><li class='toc-item toc-h3'><a href='#round-3--expectancy-per-regime-scoring--archive-only-retenti'>Round-3 — expectancy-per-regime scoring + archive-only retention</a></li><li class='toc-item toc-h3'><a href='#round-4--archive-aware-history-surface-api'>Round-4 — archive-aware history surface (API)</a></li><li class='toc-item toc-h3'><a href='#round-5--calibration-data--digest-retention-visibility'>Round-5 — calibration data + digest retention visibility</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='research-to-edge-pipeline-audit--2026-09-09'>Research-to-Edge Pipeline Audit — 2026-09-09</h1>
+<p>Owner: Research &amp; Edge Improvement Lead. Scope: the full evidence chain from data ingestion to live feedback. Constraint honored throughout: <strong>optimize for durable OOS edge, not for test pass-rate or metric inflation</strong> — zero gates weakened, zero thresholds lowered, zero production semantics changed.</p>
+<h2 id='1-pipeline-audit-ingestion--live-feedback'>1. Pipeline audit (ingestion → live feedback)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Stage</th><th>Mechanism</th><th>Verdict</th></tr></thead><tbody>
+<tr><td>Ingestion</td><td>Experience ledger (immutable, idempotency-keyed)</td><td>SOUND</td></tr>
+<tr><td>Dataset build</td><td><code>ResearchDatasetBuilder</code> — evidence census + causal ordering</td><td>SOUND</td></tr>
+<tr><td>Feature schema</td><td><code>scalp_v1</code>/70D contract with hashes stamped per sample</td><td>SOUND</td></tr>
+<tr><td>Splitting</td><td><code>split_temporal</code> purge 300s / embargo 60s defaults (BUG-140/183)</td><td>SOUND</td></tr>
+<tr><td>Backtest</td><td><code>compute_backtest</code> friction-capped 0.5R, deterministic</td><td>SOUND</td></tr>
+<tr><td>Walk-forward</td><td>fold PASS requires val&gt;0 AND oos&gt;=0 (BUG-244)</td><td>SOUND</td></tr>
+<tr><td>OOS gate</td><td>hard gate, empty-population refusal (PHASE 27)</td><td>SOUND, see §3</td></tr>
+<tr><td>Robustness</td><td>6 stress scenarios, degradation ceiling 0.25R</td><td>SOUND</td></tr>
+<tr><td>Scoring</td><td>decomposable, small-sample floor 8 / evidence floor 20</td><td>see §3</td></tr>
+<tr><td>Promotion</td><td>champion/challenger with paired bootstrap (PHASE 7B)</td><td>SOUND</td></tr>
+<tr><td>Provenance</td><td>run snapshots + gates + events + evidence, append-only</td><td>SOUND</td></tr>
+</tbody></table></div>
+<h2 id='2-root-causes-found-ranked-by-edge-damage'>2. Root causes found (ranked by edge damage)</h2>
+<ol>
+<li><strong>E1 — No statistical significance at strategy level.</strong> The OOS gate and</li>
+</ol>
+<p>the <code>VALIDATED</code> verdict operated on point estimates: +0.01R over 10 OOS trades passed. (Champion/challenger already had a bootstrap gate; the strategy pipeline did not.)</p>
+<ol>
+<li><strong>E2 — Breakeven OOS counts as evidence.</strong> <code>MIN_OOS_EXPECTANCY_R = 0.0</code></li>
+</ol>
+<p>means a 0.00R OOS window PASSES the hard gate; scoring then treats it as evidence. A breakeven OOS is not live-survivable edge.</p>
+<ol>
+<li><strong>P1 — O(n²) equity curve</strong> in <code>compute_sized_economic_pnl</code></li>
+</ol>
+<p>(<code>sum(prefix)</code> per element): 5k trades ≈ 60ms wasted, 50k trades ≈ 6s.</p>
+<ol>
+<li><strong>P2 — RiskEngine rebuilt per trade</strong> inside the sized re-valuation</li>
+</ol>
+<p>(5k constructions per backtest).</p>
+<ol>
+<li><strong>DB1 — Missing indexes on the observability hot path</strong> (EXPLAIN QUERY</li>
+</ol>
+<p>PLAN: TEMP B-TREE ORDER BY spills on <code>research_gates</code> (strategy+run), <code>research_runs</code> (strategy, executed_at), <code>research_evidence</code> (strategy, created_at, evidence_id)). These queries run on EVERY validation run and every forensic/API replay.</p>
+<p>Non-findings (checked, deliberate, left alone): robustness intentionally stress-tests the full family population (PHASE 27 scoped only BACKTEST+WF+OOS — commit d9e8ee68); all four engines share one friction baseline (<code>default_costs</code> wiring), so degradation is measured against a consistent world.</p>
+<h2 id='3-changes-made'>3. Changes made</h2>
+<ul>
+<li><strong>OOS bootstrap significance</strong> (<code>metrics.oos_significance</code>): deterministic</li>
+</ul>
+<p>seeded CI for mean OOS R; <code>decisive</code> = n ≥ 12 AND ci_low &gt; 0. <code>OOSGate</code> attaches it to every result (per-trade R recovered exactly from the equity curve — no re-simulation). <code>scoring</code> verdict: <code>VALIDATED</code> now requires decisive OOS evidence; noisy OOS (CI straddling 0) → <code>INCONCLUSIVE</code> with an explicit reason. Legacy <code>OOSResult</code> producers without the field keep the old contract (additive, provenance-preserving).</p>
+<ul>
+<li><strong>P1/P2 perf fixes</strong>: linear equity curve + shared RiskEngine. Identical</li>
+</ul>
+<p>outputs (volumes, sized R, equity curve verified trade-by-trade in tests).</p>
+<ul>
+<li><strong>AUDIT-0008 migration</strong> (audit domain v7→8): three evidence-based indexes,</li>
+</ul>
+<p>idempotent, table-aware on fresh baselines, <code>ANALYZE</code> refresh, rollback drops only the new indexes. Full migration-safety checker green.</p>
+<h2 id='4-evidence'>4. Evidence</h2>
+<ul>
+<li>End-to-end smoke (real ledger, 260 trades): VALIDATED, score 0.7271,</li>
+</ul>
+<p>OOS +0.239R, significance n=52 CI [0.010, 0.435] decisive.</p>
+<ul>
+<li>Performance: sized re-valuation 205→87ms; full backtest run 144→69ms</li>
+</ul>
+<p>(5k trades) — 2.1× overall.</p>
+<ul>
+<li>Tests: <code>test_research_edge_hardening_20260909.py</code> (11) +</li>
+</ul>
+<p><code>test_research_loop_smoke.py</code> (1) + full research/DB battery green.</p>
+<h2 id='5-remaining-weaknesses-next-highest-value-first'>5. Remaining weaknesses (next highest-value first)</h2>
+<ol>
+<li><strong>E2 unresolved</strong>: breakeven OOS still PASSES the gate itself (only the</li>
+</ol>
+<p>verdict layer blocks promotion). The gate threshold is a public contract consumed by tests/docs — tightening requires a coordinated decision.</p>
+<ol>
+<li><strong>Regime coverage</strong> is scored as distinct-regime count / 8 — a heuristic,</li>
+</ol>
+<p>not a per-regime expectancy decomposition (model_generation has <code>evaluate_regime_performance</code> but the strategy pipeline never calls it).</p>
+<ol>
+<li><strong>No Deflated Sharpe / SPA-style multiple-testing control</strong> when many</li>
+</ol>
+<p>candidates are mined from one dataset (selection bias across the registry is uncorrected).</p>
+<ol>
+<li>Research tables grow unbounded; evidence + events have no retention policy</li>
+</ol>
+<p>(history is never destroyed — needs an archival contract, not deletion).</p>
+<ol>
+<li>Heavy gates (WF×folds×stress) are sequential; the fold loop is</li>
+</ol>
+<p>parallelizable (no shared state) once the box allows threads.</p>
+<h2 id='6-round-2-additions-2026-09-09-same-mission-continuation'>6. Round-2 additions (2026-09-09, same mission continuation)</h2>
+<h3 id='e2-resolution--economic-oos-floor-additive-contract'>E2 resolution — economic OOS floor (additive contract)</h3>
+<ul>
+<li>New constant <code>MIN_ECONOMIC_OOS_EXPECTANCY_R = 0.02</code> in <code>research/oos.py</code>;</li>
+</ul>
+<p>the OOS gate DEFAULT is now the economic floor. Rationale: the canonical friction model consumes ~0.01–0.02R per trade in spread+slippage, so an OOS edge below 0.02R is indistinguishable from execution-noise — not a tradable edge.</p>
+<ul>
+<li><strong>Public-contract compatibility:</strong> the legacy constant</li>
+</ul>
+<p><code>MIN_OOS_EXPECTANCY_R = 0.0</code> is preserved and importable; an explicit <code>OOSGate(min_oos_expectancy_r=0.0)</code> restores the old semantics. The boundary rule ("never LOWER the OOS floor") is unchanged — this change RAISES the effective default, the documented tightening direction.</p>
+<ul>
+<li><code>tests/unit/test_phase27_consistency.py</code> TEST E updated deliberately to</li>
+</ul>
+<p>pin BOTH constants (documented contract change, not a silent edit).</p>
+<h3 id='selection-bias-control-multiplicity'>Selection-bias control (multiplicity)</h3>
+<ul>
+<li><code>metrics.deflated_sharpe_ratio(r_values, n_trials, trial_sr_variance=...)</code>:</li>
+</ul>
+<p>Bailey–de Prado DSR per-trade semantics with higher-moment estimator variance; <code>dsr &gt;= 0.95</code> is the "real after search" bar. Deterministic.</p>
+<ul>
+<li><code>metrics.spa_family_pvalue(family_r_lists, n_boot, seed)</code>: White Reality</li>
+</ul>
+<p>Check — bootstrap p-value that the BEST mined family's mean R is luck; <code>survivor = p &lt;= 0.05</code>. Deterministic via seeded RNG.</p>
+<ul>
+<li><code>OOSGate.evaluate(..., n_trials=None, family_r_lists=None)</code> attaches</li>
+</ul>
+<p><code>OOSResult.deflated_sharpe</code> / <code>OOSResult.spa</code> when the caller declares the multiplicity (fields stay None otherwise — no fabricated metrics).</p>
+<ul>
+<li><code>pipeline.validate_candidate(..., n_trials=..., family_r_lists=...)</code></li>
+</ul>
+<p>threads the multiplicity through, and <code>n_trials</code> lands on the run snapshot (provenance/auditability).</p>
+<ul>
+<li><code>scoring._selection_bias_control_passed</code> (+ <code>DSR_CONFIDENCE_FLOOR=0.95</code>):</li>
+</ul>
+<p>the verdict chain gains a hard gate — a mined candidate that fails DSR or SPA is INCONCLUSIVE with an explicit reason. Absent fields → legacy behavior.</p>
+<h3 id='round-2-evidence'>Round-2 evidence</h3>
+<ul>
+<li>DSR sanity: strong edge (SR 0.84) → dsr 0.997 @ 200 trials (survives);</li>
+</ul>
+<p>weak edge (SR 0.11) → dsr 0.12 @ 200 trials (deflated away); monotone in n_trials.</p>
+<ul>
+<li>SPA sanity: real edge buried in 50 noise families → p=0.0, survivor=True;</li>
+</ul>
+<p>40 pure-noise families → p=0.367, survivor=False.</p>
+<ul>
+<li>Sub-economic gate: an OOS window with +0.01R adjusted expectancy FAILS by</li>
+</ul>
+<p>default and PASSes only under the explicit legacy 0.0 floor.</p>
+<ul>
+<li>16 new tests in <code>tests/unit/test_research_selection_bias_20260909.py</code>.</li>
+</ul>
+<h3 id='round-2b--automatic-multiplicity-wiring-in-the-research-loop'>Round-2b — automatic multiplicity wiring in the research loop</h3>
+<p>The multiplicity controls are only effective if the loop feeds them without operator memory. <code>research.worker.ResearchWorker</code> (the production loop) now:</p>
+<ol>
+<li>At discovery: captures <code>n_trials</code> = number of mined candidates, and the</li>
+</ol>
+<p>per-family per-trade R lists keyed by each candidate's context fingerprint (the Reality Check set).</p>
+<ol>
+<li>At validation: passes both into <code>validate_candidate</code>, so</li>
+</ol>
+<p><code>OOSResult.deflated_sharpe</code> / <code>.spa</code> are populated automatically and the run snapshot records <code>n_trials</code> for after-the-fact audit.</p>
+<p>A cycle over an unchanged dataset remains a no-op (the dataset rebuild guard is untouched); the discovery -&gt; validation boundary (spec 27) is untouched — OOS evidence never flows back into discovery.</p>
+<h3 id='round-3--expectancy-per-regime-scoring--archive-only-retenti'>Round-3 — expectancy-per-regime scoring + archive-only retention</h3>
+<p><strong>Regime scoring (scoring.py).</strong> The regime dimension counted distinct regimes (breadth only). Now <code>_regime_expectancy_coverage</code> decomposes per regime actually traded: coverage = consistency (fraction of traded regimes with POSITIVE mean R) x breadth (n_regimes / 8 buckets), with UNKNOWN provenance discounted. A losing regime is penalized AND named in score.reasons; <code>StrategyScore.regime_diagnostics</code> carries the per-regime means. Optional field: legacy producers unchanged.</p>
+<p><strong>Archive-only retention (research/archive.py + AUDIT-0009 v8-&gt;9).</strong> <code>research_events</code> / <code>research_evidence</code> previously grew unbounded. <code>archive_research_history(conn, older_than_days=365, batch_size=5000)</code> moves expired rows into <code>research_events_archive</code> / <code>research_evidence_archive</code> (migration AUDIT-0009; same DB, same columns + archived_at). Safety contract: the DELETE only runs after a count-verified archive copy exists; any mismatch rolls back and deletes nothing; negative horizon refused; bounded batch. The worker calls it once per working validation cycle. History is never destroyed — the archive IS the history.</p>
+<h3 id='round-4--archive-aware-history-surface-api'>Round-4 — archive-aware history surface (API)</h3>
+<p>Retention is archive-only, so the read path must treat the archive as the history it is:</p>
+<ul>
+<li><code>ResearchObservabilityStore.list_events</code> / <code>.list_evidence</code> UNION live +</li>
+</ul>
+<p>archive by default (<code>include_archive=False</code> = hot-only legacy view). Explicit column lists keep the UNION valid (archive carries an extra archived_at stamp).</p>
+<ul>
+<li><code>history_counts()</code> exposes live vs archived row counts.</li>
+<li>New endpoint <code>/api/research/history</code> (retention visibility);</li>
+</ul>
+<p><code>/api/research/events</code> and <code>/api/research/evidence</code> gained <code>include_archive</code> (default true).</p>
+<p><strong>Silent-loss fix found by this round:</strong> <code>_archive_rows</code> originally copied only row IDs into the archive — payload columns were silently lost while row counts still matched. Round-4 tests pin FULL-ROW moves (message/content must survive the move); the archiver now copies every live column.</p>
+<h3 id='round-5--calibration-data--digest-retention-visibility'>Round-5 — calibration data + digest retention visibility</h3>
+<p><strong>Per-regime expectancy report (<code>research/regime_report.py</code>).</strong> Standalone, deterministic decomposition over a dataset for calibration sweeps against real data: per-regime n / mean_r / win_rate / share / consistent flags, sorted by |mean_r|; <code>regime_coverage</code> agrees exactly with the scorer's <code>_regime_expectancy_coverage</code> (pinned by test). <code>render_regime_report</code> gives an OK/NEG flagged text view.</p>
+<p><strong>Operational digest.</strong> New research line: events/evidence live+archived counts (📦 = archived), honest "no history yet" placeholder when empty — operator sees archive-only retention working without opening the API.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>در این صفحه</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-pipeline-audit-ingestion--live-feedback'>1. Pipeline audit (ingestion → live feedback)</a></li><li class='toc-item toc-h2'><a href='#2-root-causes-found-ranked-by-edge-damage'>2. Root causes found (ranked by edge damage)</a></li><li class='toc-item toc-h2'><a href='#3-changes-made'>3. Changes made</a></li><li class='toc-item toc-h2'><a href='#4-evidence'>4. Evidence</a></li><li class='toc-item toc-h2'><a href='#5-remaining-weaknesses-next-highest-value-first'>5. Remaining weaknesses (next highest-value first)</a></li><li class='toc-item toc-h2'><a href='#6-round-2-additions-2026-09-09-same-mission-continuation'>6. Round-2 additions (2026-09-09, same mission continuation)</a></li><li class='toc-item toc-h3'><a href='#e2-resolution--economic-oos-floor-additive-contract'>E2 resolution — economic OOS floor (additive contract)</a></li><li class='toc-item toc-h3'><a href='#selection-bias-control-multiplicity'>Selection-bias control (multiplicity)</a></li><li class='toc-item toc-h3'><a href='#round-2-evidence'>Round-2 evidence</a></li><li class='toc-item toc-h3'><a href='#round-2b--automatic-multiplicity-wiring-in-the-research-loop'>Round-2b — automatic multiplicity wiring in the research loop</a></li><li class='toc-item toc-h3'><a href='#round-3--expectancy-per-regime-scoring--archive-only-retenti'>Round-3 — expectancy-per-regime scoring + archive-only retention</a></li><li class='toc-item toc-h3'><a href='#round-4--archive-aware-history-surface-api'>Round-4 — archive-aware history surface (API)</a></li><li class='toc-item toc-h3'><a href='#round-5--calibration-data--digest-retention-visibility'>Round-5 — calibration data + digest retention visibility</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/research/RESEARCH_EDGE_AUDIT_2026_09_09.md'>ویرایش این صفحه در گیت‌هاب</a> · نسخه v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../fa/project/status/'>وضعیت پروژه</a> · <a href='../../../fa/reference/faq/'>پرسش‌های متداول</a> · <a href='../../../fa/releases/'>همه انتشارها</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../fa/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='جستجو در مستندات… — ⌘K' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>جستجو در مستندات……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "جستجو در مستندات…", "home": "خانه", "repo": "گیت‌هاب", "skip": "پرش به محتوا", "language": "زبان", "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است", "english": "انگلیسی", "version": "نسخه", "next": "بعدی", "prev": "قبلی", "on_github": "ویرایش این صفحه در گیت‌هاب", "menu": "منو", "whats_new": "تازه‌ها", "all_releases": "همه انتشارها", "get_started": "شروع کنید", "view_architecture": "معماری", "view_roadmap": "نقشه راه", "close": "بستن", "theme": "پوسته", "theme_light": "روشن", "theme_dark": "تیره", "theme_system": "سیستم", "copy": "کپی", "copied": "کپی شد", "copy_error": "خطا در کپی", "no_results": "نتیجه‌ای یافت نشد", "loading": "در حال بارگذاری…", "section": "بخش", "search_results": "نتایج جستجو", "explore_docs": "کاوش در مستندات", "full_matrix": "ماتریس کامل", "release_timeline": "خط زمان انتشارها", "hero_kicker": "پلتفرم پژوهش و اجرای معاملات کمّی", "hero_title_a": "نکسوس", "hero_title_b": "اسکالپ انجین", "hero_sub": "پلتفرم اسکالپ پژوهش‌محور، شش‌ضلعی و رویدادمحور برای متاتریدر ۵ — ویژگی‌های علّی، مدل‌های عمیق تحت حکمرانی، موتور ریسک ثابت‌شده، ابزار پژوهش قطعی و مشاهده‌پذیری فارنزیک در یک خط لوله قابل‌ممیزی.", "chip_released": "منتشرشده", "chip_rev": "ریویژن", "chip_research": "پژوهش: 50D زنده · 70D کاندیدا", "released_history": "تاریخچه", "release_history_kicker": "تاریخچه انتشارها", "releases_intro": "هر انتشار با هایلایت‌های واقعی خود، برگرفته از فراداده انتشارهای گیت‌هاب در زمان ساخت. منبع یکتای نسخه:", "nf404_title": "۴۰۴", "nf404_lead": "این صفحه مستندات وجود ندارد.", "nf404_home": "خانه", "footer_prefix": "", "brand": "نکسوس", "brand_dim": "اسکالپ انجین", "github_release": "انتشار در گیت‌هاب", "back_home": "بازگشت به خانه", "quickstart_label": "شروع سریع", "status_label": "وضعیت پروژه", "faq_label": "پرسش‌های متداول", "cap_engine": "موتور ویژگی علّی 50D", "cap_risk": "موتور ریسک + کلمپ‌های اجرا", "cap_oos": "Walk-Forward + گیت سخت OOS", "cap_factory": "کارخانه مدل مصنوع-محور", "cap_70d": "قرارداد 70D (پایه+اخبار+نقدینگی)", "cap_cf": "موتور خلاف‌واقع (قدم زدن NO_TRADE)", "pillar_evidence_t": "🧭 شواهد پیش از ادعا", "pillar_evidence_b": "سنجه‌های بدون شواهد «n/a» نمایش داده می‌شوند — هرگز صفر جعلی نیست. نتایج منفی منتشر می‌شوند: کاندیدای پژوهشی 70D توسط گیت OOS خودمان رد شد.", "pillar_safety_t": "🔒 ایمنی در ساخت", "pillar_safety_b": "پیش‌فرض PAPER · SHADOW با صفر اختیار سفارش · LIVE پشت تأیید صریح · کلمپ‌های سخت ریسک (HARD_MAX_LOTS، مارجین ≤20٪) در مسیر اجرا اعمال می‌شوند.", "pillar_research_t": "🔬 پژوهش قطعی", "pillar_research_b": "Walk-Forward با پاکسازی و تحریم، بازپخش بی‌دقیق (bit-exact)، دیتاست/مدل‌های اثرانگشت‌شده، منشأ در هر اجرا — یک قرارداد ویژگی مشترک برای زنده، بازپخش و آموزش.", "pillar_truth_t": "👁️ حقیقت زمان اجرا", "pillar_truth_b": "مشاهده‌پذیری فارنزیک: لاگ‌های تفکیک‌شده با شدت، همبستگی رخدادها، گیت استقرار. حقیقت بروکر بر وضعیت کهنه می‌چربد؛ گیت‌ها مرجع‌اند، تنظیمات فقط قصد.", "capability": "قابلیت", "status": "وضعیت", "chip_certified": "گواهی‌شده", "chip_implemented": "پیاده‌سازی‌شده", "chip_experimental": "آزمایشی", "chip_research_l": "پژوهشی", "cap_highlights": "هایلایت قابلیت‌ها", "callout_important": "مهم", "callout_note": "یادداشت", "callout_warning": "هشدار", "how_it_works": "نکسوس چگونه کار می‌کند", "reading_time": "دقیقه مطالعه", "toc_title": "در این صفحه", "toc_empty": "بدون سرفصل", "last_updated": "آخرین به‌روزرسانی", "share": "اشتراک", "edit_page": "ویرایش این صفحه", "related_title": "ادامه کاوش", "related_sub": "بعدی در این بخش", "up_next": "بعدی", "also_read": "همچنین بخوانید", "prev_page": "قبلی", "next_page": "بعدی", "breadcrumb_home": "خانه", "hero_eyebrow_project": "پروژه", "hero_eyebrow_architecture": "معماری", "hero_eyebrow_research": "پژوهش", "hero_eyebrow_engineering": "مهندسی", "hero_eyebrow_guides": "راهنما", "hero_eyebrow_getting_started": "شروع", "hero_eyebrow_contributing": "مشارکت", "hero_eyebrow_reference": "مرجع", "hero_eyebrow_releases": "انتشارها", "kpi_certified": "گواهی‌شده", "kpi_experimental": "آزمایشی", "kpi_coverage": "پوشش", "steps_title": "مراحل", "copy_code": "کپی", "diagram_title": "نمودار سیستم", "diagram_sub": "نمای تعاملی خط لوله", "stats_live": "قرارداد زنده", "callout_tip": "نکته", "callout_info": "اطلاعات", "callout_success": "موفق", "callout_danger": "خطر", "anchor_copy": "کپی پیوند", "anchor_copied": "پیوند کپی شد", "feedback_title": "آیا مفید بود؟", "feedback_yes": "بله", "feedback_no": "خیر", "feedback_thanks": "سپاس از بازخورد شما", "prose_meta": "مقاله", "word_count": "واژه", "toc_toggle": "فهرست", "hero_desc_project": "نکسوس چیست، چه چیزی گواهی‌شده و چه چیزی آزمایشی است.", "hero_desc_architecture": "موتور چگونه ساخته شده: لایه‌های شش‌ضلعی و مسیر تیک تا تصمیم.", "hero_desc_research": "داده تاریخی چگونه به شواهد ابطال‌پذیر تبدیل می‌شود.", "hero_desc_engineering": "گیت‌های کیفیت، معماری CI و وضعیت امنیتی.", "hero_desc_guides": "کار روزانه با موتور.", "hero_desc_getting_started": "نصب، اجرا و پیکربندی موتور.", "hero_desc_contributing": "قرارداد مهندسی و نحوه مشارکت.", "hero_desc_reference": "مرجع CLI، واژه‌نامه و پاسخ‌های صادقانه.", "hero_desc_releases": "هر انتشار با هایلایت‌های واقعی.", "on_this_page": "در این صفحه"};
+window.NEXUS_LANG = "fa";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

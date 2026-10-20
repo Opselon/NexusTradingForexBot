@@ -5,16 +5,21 @@
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief) · Nexus Scalp Engine</title>
 <meta name='description' content='UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
 <link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/'>
 <meta property='og:title' content='UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief)'>
 <meta property='og:type' content='website'>
 <meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/'>
 <meta property='og:site_name' content='Nexus Scalp Engine'>
-<meta name='twitter:card' content='summary'>
+<meta property='og:description' content='UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
 <meta name='twitter:title' content='UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief)'>
 <meta name='twitter:description' content='UI WAVE 2 — Modern React Parity Console (&quot;deep work&quot; brief) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
 <link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/frontend/UI_WAVE2_BRIEF/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/frontend/UI_WAVE2_BRIEF/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/frontend/UI_WAVE2_BRIEF/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/frontend/UI_WAVE2_BRIEF/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/frontend/UI_WAVE2_BRIEF/'>
-<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "UI WAVE 2 — Modern React Parity Console (\"deep work\" brief)", "description": "UI WAVE 2 — Modern React Parity Console (\"deep work\" brief) — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"}}</script>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "UI WAVE 2 — Modern React Parity Console (\"deep work\" brief)", "description": "UI WAVE 2 — Modern React Parity Console (\"deep work\" brief) — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/architecture/frontend/UI_WAVE2_BRIEF/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
 <link rel='preconnect' href='https://fonts.googleapis.com'>
 <link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
 <link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
@@ -32,11 +37,13 @@
   </button>
   <div class='brand'>
     <a href='../../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
-    <span class='brand-badge'>v9.0.14</span>
+    <span class='brand-badge'>v9.0.17</span>
   </div>
   <div class='header-actions'>
-    <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
-    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Buscar…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
     <details class='theme-picker'>
       <summary aria-label='Tema' title='Tema'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -46,7 +53,7 @@
       </div>
     </details>
     <details class='lang-picker'>
-      <summary aria-label='Idioma'>🌐 Español</summary>
+      <summary aria-label='Idioma' title='Idioma'><span aria-hidden='true'>🌐</span><span class='lp-name'>Español</span></summary>
       <div class='lang-menu'><a href='../../../../architecture/frontend/UI_WAVE2_BRIEF/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
     </details>
     <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
@@ -82,6 +89,7 @@
 <li><a class='' href='../../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
 <li><a class='' href='../../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
 <li><a class='' href='../../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/mcp-bridge/'>Puente MCP y traza</a> <span class='fallback-tag' title='English source'>EN</span></li>
 <li><a class='' href='../../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../../es/research/'>Investigación</a></div>
@@ -125,47 +133,38 @@
 <li><a class='' href='../../../../es/reference/faq/'>FAQ</a></li>
 </ul>
 <div class='nav-section'><a class='' href='../../../../es/releases/'>Versiones</a></div>
-<ul class='nav-list'><li><a href='../../../../es/releases/'>v9.0.14 &amp; historial</a></li></ul>
+<ul class='nav-list'><li><a href='../../../../es/releases/'>v9.0.17 &amp; historial</a></li></ul>
 </nav>
 <main id='content' class='content' tabindex='-1'>
 <div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../../architecture/frontend/UI_WAVE2_BRIEF/'>inglés</a></div>
 <nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../es/architecture/'>Arquitectura</a> / <a href='../../../../es/architecture/frontend/'>frontend</a> / <span class='crumb-current' aria-current='page'>UI WAVE2 BRIEF</span></nav>
-<h1 id='ui-wave-2--modern-react-parity-console-deep-work-brief'>UI WAVE 2 — Modern React Parity Console ("deep work" brief)</h1>
-<p>Worktree: <code>C:/Users/Capsizer/source/repos/nse_ui_wave2</code> · branch <code>ui/wave2-modern-react</code> (base b7274225).</p>
-<p>All frontend work happens under <code>frontend/</code> ONLY. Never touch <code>Web/</code>, <code>src/nexus_scalp/</code>, or the</p>
-<p>main checkout.</p>
+<details class='toc-mobile'><summary>En esta página</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#mission'>Mission</a></li><li class='toc-item toc-h2'><a href='#architecture-already-at-head--follow-it-do-not-invent-a-new'>Architecture (already at HEAD — follow it, do not invent a new one)</a></li><li class='toc-item toc-h2'><a href='#hard-invariants-non-negotiable-repo-law'>Hard invariants (non-negotiable, repo law)</a></li><li class='toc-item toc-h2'><a href='#known-defects-to-fix-in-this-wave-from-docsauditwave20260914'>Known defects to fix in this wave (from docs/audit/wave_20260914/09_indicators_ui.md)</a></li><li class='toc-item toc-h2'><a href='#acceptance-gates-each-lane-runs-its-own-before-committing'>Acceptance gates (each lane runs its own before committing)</a></li><li class='toc-item toc-h2'><a href='#lane-ownership-stay-inside-anything-outside--integration-own'>Lane ownership (stay inside; anything outside = integration owner only)</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='ui-wave-2--modern-react-parity-console-deep-work-brief'>UI WAVE 2 — Modern React Parity Console ("deep work" brief)</h1>
+<p>Worktree: <code>C:/Users/Capsizer/source/repos/nse_ui_wave2</code> · branch <code>ui/wave2-modern-react</code> (base b7274225). All frontend work happens under <code>frontend/</code> ONLY. Never touch <code>Web/</code>, <code>src/nexus_scalp/</code>, or the main checkout.</p>
 <h2 id='mission'>Mission</h2>
-<p>Port everything the legacy <code>Web/</code> dashboard does into the clean-architecture React console at</p>
-<p><code>/alt</code>, and make it prettier, more modern, and better rendered — without breaking a single invariant.</p>
-<h2 id='architecture-already-at-head--follow-it-do-not-invent-a-new-'>Architecture (already at HEAD — follow it, do not invent a new one)</h2>
+<p>Port everything the legacy <code>Web/</code> dashboard does into the clean-architecture React console at <code>/alt</code>, and make it prettier, more modern, and better rendered — without breaking a single invariant.</p>
+<h2 id='architecture-already-at-head--follow-it-do-not-invent-a-new'>Architecture (already at HEAD — follow it, do not invent a new one)</h2>
 <ul>
 <li><code>src/app/featureModule.ts</code> — <code>defineFeature({meta, lazy})</code>; every feature folder</li>
 </ul>
-<p><code>src/features/&lt;name&gt;/</code> has <code>api.ts</code> (transport calls), <code>model.ts</code> (DTO types/normalizers),</p>
-<p><code>useCases.ts</code> (react-query keys/fns), <code>ui/&lt;Name&gt;Page.tsx</code>, <code>index.ts</code> (registration).</p>
+<p><code>src/features/&lt;name&gt;/</code> has <code>api.ts</code> (transport calls), <code>model.ts</code> (DTO types/normalizers), <code>useCases.ts</code> (react-query keys/fns), <code>ui/&lt;Name&gt;Page.tsx</code>, <code>index.ts</code> (registration).</p>
 <ul>
 <li>Register new features in <code>src/app/featureRegistry.ts</code> (one line + import). Sidebar order = file order.</li>
-<li>Transport: <code>@/core/transport</code> — <code>getV1</code> (all <code>/api/v1/<em></code> envelope), <code>getLegacy</code> (<code>/api/</em></code>),</li>
+<li>Transport: <code>@/core/transport</code> — <code>getV1</code> (all <code>/api/v1/*</code> envelope), <code>getLegacy</code> (<code>/api/*</code>),</li>
 </ul>
 <p><code>send</code>, <code>sendV1</code>, <code>drop</code>, <code>toQuery</code>. Auth is handled by core/middleware — never add headers yourself.</p>
 <ul>
 <li>Realtime: SSE ONLY (<code>/api/ticks/stream</code>) via <code>src/hooks/useRealtime.ts</code></li>
 </ul>
-<p>(<code>useRealtimeSnapshot</code>, <code>useRealtimeStatus</code>, <code>useRealtimeVersion</code>, <code>useCoreEvent</code>) over</p>
-<p><code>src/websocket/realtimeSocket.ts</code> (state_version out-of-order guard). WS is NOT available (ws="none").</p>
+<p>(<code>useRealtimeSnapshot</code>, <code>useRealtimeStatus</code>, <code>useRealtimeVersion</code>, <code>useCoreEvent</code>) over <code>src/websocket/realtimeSocket.ts</code> (state_version out-of-order guard). WS is NOT available (ws="none").</p>
 <ul>
 <li>Primitives: <code>src/components/primitives.tsx</code> (Panel, MetricCard, DataTable, StatusBadge, ProbBar,</li>
 </ul>
-<p>Segmented, Skeleton, EmptyState, ErrorState, ConfirmModal, ToastHost). Viz: <code>src/components/viz/</code></p>
-<p>(Gauge, Sparkline, HeatBar, DrawdownChart, EquityCurveChart, PnlWaterfall, geometry.ts — SVG/canvas</p>
-<p>helpers, no external chart libs).</p>
+<p>Segmented, Skeleton, EmptyState, ErrorState, ConfirmModal, ToastHost). Viz: <code>src/components/viz/</code> (Gauge, Sparkline, HeatBar, DrawdownChart, EquityCurveChart, PnlWaterfall, geometry.ts — SVG/canvas helpers, no external chart libs).</p>
 <ul>
 <li>Theme: <code>src/styles/theme.css</code> CSS custom properties (--bg, --panel, --accent #41a6f2, --green,</li>
 </ul>
-<p>--red, --amber, --violet, mono/sans stacks). Density via <code>body.dense</code>. New CSS: one scoped file per</p>
-<p>feature (<code>ui/&lt;feature&gt;.css</code>) using the tokens; light glassmorphism, depth shadows via</p>
-<p>--elevate-hi/--elevate-lo, CSS 3D transforms (perspective/transform-style: preserve-3d) for card</p>
-<p>lift are welcome. No CSS framework, no CDN.</p>
+<p>--red, --amber, --violet, mono/sans stacks). Density via <code>body.dense</code>. New CSS: one scoped file per feature (<code>ui/&lt;feature&gt;.css</code>) using the tokens; light glassmorphism, depth shadows via</p>
+<p>--elevate-hi/--elevate-lo, CSS 3D transforms (perspective/transform-style: preserve-3d) for card lift are welcome. No CSS framework, no CDN.</p>
 <ul>
 <li>Deps: DO NOT add npm packages (bundle stays small, offline vendor rule). Canvas 2D + SVG + CSS 3D</li>
 </ul>
@@ -189,9 +188,7 @@
 <ul>
 <li>D5: pivot <code>rows</code> is a dict keyed by level <code>Record&lt;level, Record&lt;column, number|null&gt;&gt;</code> —</li>
 </ul>
-<p><code>types/features.ts:34-38</code> and <code>ai-analysis/model.ts:121</code> declare it wrong; <code>AiAnalysisPage.tsx:345-357</code></p>
-<p>crashes on it. Fix DTOs, render a real pivot MATRIX (levels × 7 families: Classic/Fibonacci/Camarilla/</p>
-<p>Woodie/Demas/DeMark/Fibonacci variants as backend sends), delete phantom fields signal/kind/label/params.</p>
+<p><code>types/features.ts:34-38</code> and <code>ai-analysis/model.ts:121</code> declare it wrong; <code>AiAnalysisPage.tsx:345-357</code> crashes on it. Fix DTOs, render a real pivot MATRIX (levels × 7 families: Classic/Fibonacci/Camarilla/ Woodie/Demas/DeMark/Fibonacci variants as backend sends), delete phantom fields signal/kind/label/params.</p>
 <ul>
 <li>No ErrorBoundary exists anywhere → add <code>src/components/ErrorBoundary.tsx</code> and wrap routes in AppShell.</li>
 <li>D3 note: both UIs dodge the 1D/1W/1H 500 by curated TF lists — keep curated lists; do NOT add those</li>
@@ -200,8 +197,7 @@
 <ul>
 <li>Legacy <code>radar</code> object (SSE snapshot field, typed in <code>types/domain.ts:243</code>) is rendered by legacy</li>
 </ul>
-<p>Market Radar (app.js:9995+) but by NO React page — port it verbatim (state, best setup type/direction/</p>
-<p>quality, compatible strategies, news blackout, decision, updated) with a modern look.</p>
+<p>Market Radar (app.js:9995+) but by NO React page — port it verbatim (state, best setup type/direction/ quality, compatible strategies, news blackout, decision, updated) with a modern look.</p>
 <ul>
 <li>indicatorsApi.ts is unused — the new indicator console should use it.</li>
 </ul>
@@ -218,12 +214,12 @@
 <li>Lane I indicators: <code>src/features/ai-analysis/**</code>, <code>src/types/features.ts</code>, <code>src/components/ErrorBoundary.tsx</code>, <code>src/app/AppShell.tsx</code> (boundary wrap only)</li>
 <li>Lane N news: <code>src/features/news/**</code></li>
 <li>Lane P ux-3d: <code>src/features/command-center/**</code>, <code>src/components/CommandPalette.tsx</code>, <code>src/components/AttentionStrip.tsx</code>, <code>src/components/ModeIndicator.tsx</code>, <code>src/hooks/useMutationFeedback.ts</code>, <code>src/styles/theme.css</code> (tokens only, additive)</li>
-<li>Lane X platform-pages: <code>src/features/database/<strong></code>, <code>src/features/debug/</strong></code>, <code>src/features/governance/<strong></code>, <code>src/features/incidents/</strong></code>, <code>src/features/rules/<strong></code>, <code>src/features/factory/</strong></code>, <code>src/features/health/<strong></code>, <code>src/features/liquidity/</strong></code>, <code>src/features/account/<strong></code>, <code>src/features/marketplace/</strong></code>, <code>src/features/research/<strong></code>, <code>src/features/config/</strong></code>, <code>src/features/control-center/<strong></code>, <code>src/pages/</strong></code> (except Dashboard)</li>
-</ul>
+<li>Lane X platform-pages: <code>src/features/database/**</code>, <code>src/features/debug/**</code>, <code>src/features/governance/**</code>, <code>src/features/incidents/**</code>, <code>src/features/rules/**</code>, <code>src/features/factory/**</code>, <code>src/features/health/**</code>, <code>src/features/liquidity/**</code>, <code>src/features/account/**</code>, <code>src/features/marketplace/**</code>, <code>src/features/research/**</code>, <code>src/features/config/**</code>, <code>src/features/control-center/**</code>, <code>src/pages/**</code> (except Dashboard)</li>
+</ul></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>En esta página</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#mission'>Mission</a></li><li class='toc-item toc-h2'><a href='#architecture-already-at-head--follow-it-do-not-invent-a-new'>Architecture (already at HEAD — follow it, do not invent a new one)</a></li><li class='toc-item toc-h2'><a href='#hard-invariants-non-negotiable-repo-law'>Hard invariants (non-negotiable, repo law)</a></li><li class='toc-item toc-h2'><a href='#known-defects-to-fix-in-this-wave-from-docsauditwave20260914'>Known defects to fix in this wave (from docs/audit/wave_20260914/09_indicators_ui.md)</a></li><li class='toc-item toc-h2'><a href='#acceptance-gates-each-lane-runs-its-own-before-committing'>Acceptance gates (each lane runs its own before committing)</a></li><li class='toc-item toc-h2'><a href='#lane-ownership-stay-inside-anything-outside--integration-own'>Lane ownership (stay inside; anything outside = integration owner only)</a></li></ul></aside></div>
 
 <footer class='page-footer'>
   <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
-    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/frontend/UI_WAVE2_BRIEF.md'>Editar esta página en GitHub</a> · Versión v9.0.14 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/8566bd3'>8566bd3</a></span>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/frontend/UI_WAVE2_BRIEF.md'>Editar esta página en GitHub</a> · Versión v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
     <span><a href='../../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../../es/reference/faq/'>FAQ</a> · <a href='../../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
   </div>
   <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../es/project/status/'>Evidence-graded status</a>.</div>
@@ -237,9 +233,10 @@
   </div>
 </div>
 <script>
-window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales."};
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales.", "on_this_page": "En esta página"};
 window.NEXUS_LANG = "es";
 (function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
   try {
     var saved = localStorage.getItem("nexus-theme");
     var theme = saved || "system";

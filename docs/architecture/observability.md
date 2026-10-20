@@ -66,3 +66,7 @@ The observability audit maintains a public gap ledger
 (OBS-001…016 — e.g. redaction eating correlation IDs on some paths,
 silent DB batch drops). See
 `docs/architecture/observability-map.md` in the repository.
+
+## See also
+
+- [MT5 MCP bridge & decision trace](mcp-bridge.md) — the transport, its read-only guarantees and the trace routes/SSE contract.

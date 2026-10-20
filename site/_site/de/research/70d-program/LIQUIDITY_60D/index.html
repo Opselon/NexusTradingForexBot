@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang='de' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1) · Nexus Scalp Engine</title>
+<meta name='description' content='LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D/'>
+<meta property='og:title' content='LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1)'>
+<meta name='twitter:description' content='LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/research/70d-program/LIQUIDITY_60D/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/research/70d-program/LIQUIDITY_60D/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/research/70d-program/LIQUIDITY_60D/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/research/70d-program/LIQUIDITY_60D/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1)", "description": "LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1) — Nexus Scalp Engine documentation", "inLanguage": "de", "url": "https://opselon.github.io/NexusTradingForexBot/de/research/70d-program/LIQUIDITY_60D/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Zum Inhalt springen</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menü' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../de/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Doku durchsuchen…' aria-label='Doku durchsuchen…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Doku durchsuchen…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Design' title='Design'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Hell</button>
+        <button type='button' data-theme-set='dark'>☾ Dunkel</button>
+        <button type='button' data-theme-set='system'>🖥 System</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Sprache' title='Sprache'><span aria-hidden='true'>🌐</span><span class='lp-name'>Deutsch</span></summary>
+      <div class='lang-menu'><a href='../../../../research/70d-program/LIQUIDITY_60D/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <span class='lang-current' lang='de'>Deutsch ✓</span></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../de/'>Start</a>
+<div class='nav-section'><a class='' href='../../../../de/getting-started/'>Einstieg</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/getting-started/installation/'>Installation</a></li>
+<li><a class='' href='../../../../de/getting-started/quickstart/'>Quickstart</a></li>
+<li><a class='' href='../../../../de/getting-started/first-run/'>Erster Lauf</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/getting-started/configuration/'>Konfiguration</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/project/'>Projekt</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/project/vision/'>Vision &amp; Warum</a></li>
+<li><a class='' href='../../../../de/project/scope/'>Umfang</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/project/status/'>Projektstatus</a></li>
+<li><a class='' href='../../../../de/project/capabilities/'>Fähigkeitsmatrix</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/project/roadmap/'>Roadmap</a></li>
+<li><a class='' href='../../../../de/project/milestones/'>Meilensteine</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/architecture/'>Architektur</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/architecture/overview/'>Überblick</a></li>
+<li><a class='' href='../../../../de/architecture/system-map/'>Systemkarte</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/data-flow/'>Datenfluss</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/runtime/'>Laufzeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/research-stack/'>Forschungsstack</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/model-pipeline/'>Modellpipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/execution-pipeline/'>Ausführungspipeline</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/observability/'>Observability</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/mcp-bridge/'>MCP-Brücke &amp; Trace</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/architecture/database/'>Datenbank</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../de/research/'>Forschung</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/research/methodology/'>Methodik</a></li>
+<li><a class='' href='../../../../de/research/datasets/'>Datensätze</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/out-of-sample/'>OOS-Gate</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/counterfactuals/'>Kontrafaktische</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/research/validation/'>Validierung</a></li>
+<li><a class='' href='../../../../de/research/reproducibility/'>Reproduzierbarkeit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/engineering/'>Engineering</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/engineering/quality/'>Qualität &amp; Tests</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/ci/'>CI-Architektur</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/release-process/'>Release-Prozess</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/workflow-test-build-release/'>Test-, Build- und Release-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/engineering/security/'>Sicherheit</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/guides/'>Anleitungen</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/guides/cli/'>CLI-Anleitung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/api/'>API-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/troubleshooting/'>Fehlerbehebung</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/guides/common-workflows/'>Typische Workflows</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/contributing/'>Mitwirken</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/contributing/contribution-guide/'>Beitragsleitfaden</a></li>
+<li><a class='' href='../../../../de/contributing/documentation/'>Dokumentations-Workflow</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/contributing/add-language/'>Sprache hinzufügen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/reference/'>Referenz</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../de/reference/cli-reference/'>CLI-Referenz</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/glossary/'>Glossar</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/terminology/'>Terminologie &amp; Übersetzungen</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../de/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../de/releases/'>Releases</a></div>
+<ul class='nav-list'><li><a href='../../../../de/releases/'>v9.0.17 &amp; Historie</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Englische Quelle — Übersetzung ausstehend — <a href='../../../research/70d-program/LIQUIDITY_60D/'>Englisch</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../de/research/'>Forschung</a> / <a href='../../../../de/research/70d-program/'>70d program</a> / <span class='crumb-current' aria-current='page'>LIQUIDITY 60D</span></nav>
+<details class='toc-mobile'><summary>Auf dieser Seite</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#0-invariants-every-feature'>0. Invariants (every feature)</a></li><li class='toc-item toc-h2'><a href='#feature-registry-indices-5059'>Feature registry (indices 50..59)</a></li><li class='toc-item toc-h2'><a href='#feature-definitions'>Feature definitions</a></li><li class='toc-item toc-h3'><a href='#50--liquidity01-bsldistanceatr'>50 — LIQUIDITY_01 bsl_distance_atr</a></li><li class='toc-item toc-h3'><a href='#51--liquidity02-ssldistanceatr'>51 — LIQUIDITY_02 ssl_distance_atr</a></li><li class='toc-item toc-h3'><a href='#52--liquidity03-eqhstrength'>52 — LIQUIDITY_03 eqh_strength</a></li><li class='toc-item toc-h3'><a href='#53--liquidity04-eqlstrength'>53 — LIQUIDITY_04 eql_strength</a></li><li class='toc-item toc-h3'><a href='#54--liquidity05-htfliquidityscore'>54 — LIQUIDITY_05 htf_liquidity_score</a></li><li class='toc-item toc-h3'><a href='#55--liquidity06-internalliquiditydistance'>55 — LIQUIDITY_06 internal_liquidity_distance</a></li><li class='toc-item toc-h3'><a href='#56--liquidity07-externalliquiditydistance'>56 — LIQUIDITY_07 external_liquidity_distance</a></li><li class='toc-item toc-h3'><a href='#57--liquidity08-liquidityconfluence'>57 — LIQUIDITY_08 liquidity_confluence</a></li><li class='toc-item toc-h3'><a href='#58--liquidity09-liquiditysweepstate'>58 — LIQUIDITY_09 liquidity_sweep_state</a></li><li class='toc-item toc-h3'><a href='#59--liquidity10-postsweepdisplacement'>59 — LIQUIDITY_10 post_sweep_displacement</a></li><li class='toc-item toc-h2'><a href='#normalization-contract'>Normalization contract</a></li><li class='toc-item toc-h2'><a href='#missing-value-policy-summary'>Missing-value policy (summary)</a></li><li class='toc-item toc-h2'><a href='#schemamanifest-integration'>Schema/manifest integration</a></li><li class='toc-item toc-h2'><a href='#config'>Config</a></li><li class='toc-item toc-h2'><a href='#known-limitations'>Known limitations</a></li><li class='toc-item toc-h2'><a href='#test-coverage'>Test coverage</a></li><li class='toc-item toc-h2'><a href='#1-the-70d-contract--scalpv4'>1. The 70D contract — scalp_v4</a></li><li class='toc-item toc-h2'><a href='#2-liquidity-runtime-governor--featuresliquidityruntimepy'>2. Liquidity runtime governor — features/liquidity_runtime.py</a></li><li class='toc-item toc-h2'><a href='#3-api-surface'>3. API surface</a></li><li class='toc-item toc-h2'><a href='#4-ui'>4. UI</a></li><li class='toc-item toc-h2'><a href='#5-model-compatibility'>5. Model compatibility</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='liquidity-60d-feature-contract-scalpliquidityv1'>LIQUIDITY 60D FEATURE CONTRACT (scalp_liquidity_v1)</h1>
+<blockquote><p>TASK-01-60D-LIQUIDITY · 2026-08-19 · Agent: Hermes-LiquidityFoundation</p><p>Schema id: <code>scalp_liquidity_v1</code> (dimension 60, supersedes <code>scalp_v1</code>)</p><p>Producer: <code>src/nexus_scalp/features/liquidity_engine.py::compute_liquidity_features</code></p><p>The 60D vector = the protected 50D <code>scalp_v1</code> contract (UNCHANGED) + 10</p><p>liquidity dimensions at indices 50..59.</p></blockquote>
+<hr>
+<h2 id='0-invariants-every-feature'>0. Invariants (every feature)</h2>
+<ol>
+<li><strong>Causal</strong>: only bars closed at/before the decision timestamp contribute.</li>
+</ol>
+<p>A swing is usable only from its <code>confirmed_at</code> (candidate bar + 5 bars).</p>
+<ol>
+<li><strong>No future leakage</strong>: adding bars beyond T never changes the features at</li>
+</ol>
+<p>T (TEST-LIQ-28 historical invariance).</p>
+<ol>
+<li><strong>One ATR</strong>: values are ATR-normalized with the canonical mean-TR-14</li>
+</ol>
+<p>semantics of <code>ScalpFeatureEngine.compute_from_bars</code> (features/scalp_features.py lines 528-537; floor <code>safe_atr = max(atr, 0.20)</code>).</p>
+<ol>
+<li><strong>Finite + clipped</strong>: all outputs finite and within [-3,+3] (the same</li>
+</ol>
+<p>central convention as the 50D sanitizer).</p>
+<ol>
+<li><strong>Deterministic</strong>: same bars + same decision_at -&gt; identical floats.</li>
+<li><strong>No I/O</strong>: the engine is a pure function of bars (no SQL, no DB, no</li>
+</ol>
+<p>network, no filesystem).</p>
+<hr>
+<h2 id='feature-registry-indices-5059'>Feature registry (indices 50..59)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>idx</th><th>name</th><th>category</th><th>source</th><th>timeframe</th><th>units</th><th>missing →</th></tr></thead><tbody>
+<tr><td>50</td><td>bsl_distance_atr</td><td>BSL distance</td><td>confirmed swings/EQH/PDH/PWH/session-H/HTF-highs</td><td>M1..D1</td><td>ATR</td><td>3.0</td></tr>
+<tr><td>51</td><td>ssl_distance_atr</td><td>SSL distance</td><td>confirmed swings/EQL/PDL/PWL/session-L/HTF-lows</td><td>M1..D1</td><td>ATR</td><td>3.0</td></tr>
+<tr><td>52</td><td>eqh_strength</td><td>structure</td><td>confirmed equal highs (ATR tolerance)</td><td>M1..D1</td><td>[0,1]</td><td>0.0</td></tr>
+<tr><td>53</td><td>eql_strength</td><td>structure</td><td>confirmed equal lows (ATR tolerance)</td><td>M1..D1</td><td>[0,1]</td><td>0.0</td></tr>
+<tr><td>54</td><td>htf_liquidity_score</td><td>HTF evidence</td><td>completed H1/H4/D1 buckets only</td><td>H1/H4/D1</td><td>[-3,3]</td><td>0.0</td></tr>
+<tr><td>55</td><td>internal_liquidity_distance</td><td>range</td><td>confirmed pools inside active range</td><td>M1..H1</td><td>ATR</td><td>3.0</td></tr>
+<tr><td>56</td><td>external_liquidity_distance</td><td>range</td><td>confirmed pools at/beyond range edges</td><td>M1..D1</td><td>ATR</td><td>3.0</td></tr>
+<tr><td>57</td><td>liquidity_confluence</td><td>clustering</td><td>confirmed pools in zones (source diversity)</td><td>M1..D1</td><td>[0,3]</td><td>0.0</td></tr>
+<tr><td>58</td><td>liquidity_sweep_state</td><td>sweep state</td><td>reactive sweep detector (penetration+rejection)</td><td>M1</td><td>signed int</td><td>0.0</td></tr>
+<tr><td>59</td><td>post_sweep_displacement</td><td>sweep outcome</td><td>displacement after sweep confirmation</td><td>M1</td><td>ATR</td><td>0.0</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='feature-definitions'>Feature definitions</h2>
+<h3 id='50--liquidity01-bsldistanceatr'>50 — LIQUIDITY_01 bsl_distance_atr</h3>
+<ul>
+<li><strong>Definition</strong>: distance (in ATR) from the mid price P to the nearest</li>
+</ul>
+<p>active CONFIRMED Buy-Side Liquidity level L above P.</p>
+<ul>
+<li><strong>Formula</strong>: <code>(L - P) / ATR</code>, clipped [-3,+3].</li>
+<li><strong>Sources</strong>: confirmed swing highs, confirmed EQH, PDH, PWH, session</li>
+</ul>
+<p>high, meaningful HTF highs (all pools must have <code>usable_at &lt;= T</code>).</p>
+<ul>
+<li><strong>Causal confirmation</strong>: a swing high is usable only from</li>
+</ul>
+<p><code>confirmed_at = time of (swing bar + 5)</code> — never earlier. Session/daily levels are confirmed by the last completed bar of their window at T.</p>
+<ul>
+<li><strong>Missing</strong>: no BSL above P → <code>3.0</code> (far; never NaN/Inf).</li>
+<li><strong>Notes</strong>: raw distance only — NOT a directional prediction. When the</li>
+</ul>
+<p>level is &gt; 3 ATR away the clipped value is 3.0 (the contract's "far" saturation), identical to the 50D convention.</p>
+<h3 id='51--liquidity02-ssldistanceatr'>51 — LIQUIDITY_02 ssl_distance_atr</h3>
+<ul>
+<li><strong>Definition</strong>: distance (in ATR) from P to the nearest active CONFIRMED</li>
+</ul>
+<p>Sell-Side Liquidity level L below P.</p>
+<ul>
+<li><strong>Formula</strong>: <code>(P - L) / ATR</code>, clipped [-3,+3]. Mirror of LIQUIDITY_01.</li>
+<li><strong>Sources</strong>: confirmed swing lows, confirmed EQL, PDL, PWL, session low,</li>
+</ul>
+<p>HTF lows.</p>
+<ul>
+<li><strong>Missing</strong>: no SSL below P → <code>3.0</code>.</li>
+</ul>
+<h3 id='52--liquidity03-eqhstrength'>52 — LIQUIDITY_03 eqh_strength</h3>
+<ul>
+<li><strong>Definition</strong>: strength of the most recent Equal-Highs cluster.</li>
+<li><strong>Formula</strong>: cluster of swing-high values with</li>
+</ul>
+<p><code>|high_a - high_b| &lt;= ATR * 0.30</code> (volatility-aware tolerance — NOT float equality). Strength = <code>softmax over clusters of base(1+ln(member_count)) * closeness(exp(-|v-P|/ATR)) * recency(exp(-bars_since/200))</code>.</p>
+<ul>
+<li><strong>Anti-leakage</strong>: a future touch belongs to a cluster whose</li>
+</ul>
+<p><code>latest</code> advances only when the confirming bar closes — strength at T is computed from members confirmed at/before T only.</p>
+<ul>
+<li><strong>Missing</strong>: no EQH evidence → <code>0.0</code>.</li>
+</ul>
+<h3 id='53--liquidity04-eqlstrength'>53 — LIQUIDITY_04 eql_strength</h3>
+<ul>
+<li>Mirror of EQH on swing lows. Same tolerance architecture, scoring,</li>
+</ul>
+<p>normalization, clustering (reuses the same <code>_cluster_equal_levels</code>).</p>
+<h3 id='54--liquidity05-htfliquidityscore'>54 — LIQUIDITY_05 htf_liquidity_score</h3>
+<ul>
+<li><strong>Definition</strong>: signed aggregate of HTF liquidity evidence near price</li>
+</ul>
+<p>from COMPLETED H1/H4/D1 buckets (subject to config).</p>
+<ul>
+<li><strong>Formula</strong>: for each completed bucket, for high/low within 6 ATR of</li>
+</ul>
+<p>last_close: <code>sign * proximity(1/(1+dist)) * timeframe_weight(H1 0.9, H4 1.2, D1 1.6)</code>; total <code>= tanh(sum) * 3</code>.</p>
+<ul>
+<li><strong>CRITICAL</strong>: a currently-forming H1 candle CANNOT contribute — only</li>
+</ul>
+<p>buckets whose end time &lt;= decision T. Explicitly tested (TEST-LIQ-13/25): the future final high of the forming H1 is invisible.</p>
+<ul>
+<li><strong>Missing</strong>: no HTF evidence → <code>0.0</code>.</li>
+</ul>
+<h3 id='55--liquidity06-internalliquiditydistance'>55 — LIQUIDITY_06 internal_liquidity_distance</h3>
+<ul>
+<li><strong>Definition</strong>: distance (in ATR) to the nearest meaningful CONFIRMED</li>
+</ul>
+<p>pool strictly INSIDE the active structural range.</p>
+<ul>
+<li><strong>Range</strong>: min..max of confirmed pool prices. A pool is INTERNAL when</li>
+</ul>
+<p><code>range_min + 0.25*ATR &lt; price &lt; range_max - 0.25*ATR</code>.</p>
+<ul>
+<li><strong>Distinction</strong>: internal = levels inside the envelope; external = the</li>
+</ul>
+<p>envelope edge levels themselves (the breakout targets).</p>
+<ul>
+<li><strong>Missing</strong>: none → <code>3.0</code>.</li>
+</ul>
+<h3 id='56--liquidity07-externalliquiditydistance'>56 — LIQUIDITY_07 external_liquidity_distance</h3>
+<ul>
+<li><strong>Definition</strong>: distance (in ATR) to the nearest confirmed pool OUTSIDE</li>
+</ul>
+<p>the active range (at or beyond either edge).</p>
+<ul>
+<li><strong>Sources</strong>: major swings, PDH/PDL, PWH/PWL, HTF extremes.</li>
+<li><strong>Distinction is explicit and testable</strong> (TEST-LIQ-14/15).</li>
+</ul>
+<h3 id='57--liquidity08-liquidityconfluence'>57 — LIQUIDITY_08 liquidity_confluence</h3>
+<ul>
+<li><strong>Definition</strong>: cluster confirmed pools within <code>0.75 * ATR</code> into zones;</li>
+</ul>
+<p>score = best zone's <code>(1 + ln(distinct_sources)) + (tf_sum/1440)*0.5 + sum(strength)*0.25</code>.</p>
+<ul>
+<li><strong>Important</strong>: duplicate references to the SAME underlying level (same</li>
+</ul>
+<p>side+source+price≈) collapse to ONE source — 4 references to one pool are NOT 4 independent sources (TEST-LIQ-17).</p>
+<ul>
+<li><strong>Missing</strong>: no pools → <code>0.0</code>.</li>
+</ul>
+<h3 id='58--liquidity09-liquiditysweepstate'>58 — LIQUIDITY_09 liquidity_sweep_state</h3>
+<ul>
+<li><strong>Definition</strong>: signed interaction state vs the nearest relevant pool:</li>
+</ul>
+<p>-2 SWEPT_AND_DISPLACED, -1 SWEPT, 0 NO_RELEVANT_LIQUIDITY, +1 APPROACHING, +2 TOUCHED, +3 RECLAIMED.</p>
+<ul>
+<li><strong>Strict causal sweep</strong>: penetration alone is NOT a sweep (breakout).</li>
+</ul>
+<p>The detector requires: a CONFIRMED pool + penetration + a LATER bar closing back beyond the pool (rejection/reclaim evidence). The sweep is confirmed only when the rejecting bar closes → the event timestamp reflects the rejection bar, never the penetration bar.</p>
+<ul>
+<li><strong>Missing/no relevant pool</strong>: <code>0.0</code>.</li>
+</ul>
+<h3 id='59--liquidity10-postsweepdisplacement'>59 — LIQUIDITY_10 post_sweep_displacement</h3>
+<ul>
+<li><strong>Definition</strong>: ATR-normalized displacement AFTER a confirmed sweep, in</li>
+</ul>
+<p>the rejection direction.</p>
+<ul>
+<li><strong>Formula</strong>: for a BSL sweep: <code>(close[rejection+1] - low[sweep_bar]) / ATR</code> (positive</li>
+</ul>
+<p>when price fell away); SSL mirrored.</p>
+<ul>
+<li><strong>Anti-leakage</strong>: measured ONLY from bars AFTER the sweep-confirming bar;</li>
+</ul>
+<p>pre-sweep price action never enters (TEST-LIQ-27).</p>
+<ul>
+<li><strong>Missing</strong>: no recent confirmed sweep → <code>0.0</code>.</li>
+</ul>
+<hr>
+<h2 id='normalization-contract'>Normalization contract</h2>
+<ul>
+<li>Ten values: all clipped [-3,+3] by ONE central <code>_clip3()</code> (never ten</li>
+</ul>
+<p>clip functions); NaN/Inf → 0.0.</p>
+<ul>
+<li>No scaler fitted on future/OOS data; the feature layer exposes raw</li>
+</ul>
+<p>reproducible values (any later train-only scaler is applied downstream by the existing architecture).</p>
+<ul>
+<li>Deterministic, causal, training/live identical.</li>
+</ul>
+<h2 id='missing-value-policy-summary'>Missing-value policy (summary)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>condition</th><th>value</th><th>why</th></tr></thead><tbody>
+<tr><td>no active pool (BSL/SSL/internal/external)</td><td>3.0</td><td>"far" saturation, consistent with [-3,3]</td></tr>
+<tr><td>not enough history / no swings</td><td>documented defaults (3.0/0.0)</td><td>never NaN/Inf/random</td></tr>
+<tr><td>ATR unavailable</td><td>canonical MIN_ATR 0.20 floor</td><td>matches 50D safe_atr</td></tr>
+<tr><td>HTF data unavailable / forming bucket</td><td>0.0</td><td>no evidence</td></tr>
+<tr><td>no relevant sweep</td><td>0.0</td><td>neutral</td></tr>
+</tbody></table></div>
+<h2 id='schemamanifest-integration'>Schema/manifest integration</h2>
+<ul>
+<li><code>features/schema.py</code> registers <code>scalp_liquidity_v1</code> (dimension 60,</li>
+</ul>
+<p>supersedes scalp_v1) — additive; scalp_v1 stays ACTIVE (live contract unchanged), scalp_v2 (TASK-5 momentum) untouched.</p>
+<ul>
+<li>Dataset manifest records <code>feature_schema_id=scalp_liquidity_v1</code>,</li>
+</ul>
+<p>feature columns feat_0..feat_59. Verification: <code>verify_liquidity_artifact</code> (60 features, all finite, all in [-3,3]).</p>
+<ul>
+<li>Model manifests: 60D models declare <code>feature_dimension=60</code> +</li>
+</ul>
+<p><code>build_metadata.input_dimension=60</code>; the runtime rejects any input whose width differs (no silent pad/truncate). Legacy 50D models remain loadable.</p>
+<h2 id='config'>Config</h2>
+<ul>
+<li><code>model.liquidity_features_enabled</code> (default <strong>false</strong>): false → existing</li>
+</ul>
+<p>50D behavior; true → the 60D liquidity layer is available to candidate pipelines. The switch never silently alters schema expectations: when enabled, manifests are explicitly 60D.</p>
+<h2 id='known-limitations'>Known limitations</h2>
+<ul>
+<li>Session/daily pools are confirmed by "last completed bar of the visible</li>
+</ul>
+<p>window" — they update intra-window (correct for causality, but a "session high" is only a pool once the session's bars are seen).</p>
+<ul>
+<li><code>equal_high_low_strengths</code> uses a softmax over close clusters: when only</li>
+</ul>
+<p>ONE cluster exists its strength is 1.0 by construction (no denominator competition) — the value is a RELATIVE strength, not an absolute.</p>
+<ul>
+<li>HTF proximity band is 6 ATR; pools farther away contribute 0 to the</li>
+</ul>
+<p>score by design (they are captured by the distance features instead).</p>
+<ul>
+<li>The sweep detector evaluates the single NEAREST pool per decision</li>
+</ul>
+<p>(multi-pool simultaneous sweeps are not aggregated in one tick).</p>
+<ul>
+<li>Performance: the engine re-derives pools from the bar window per call</li>
+</ul>
+<p>(pure function). For high-frequency live use, cache the pool state and confirm only newly closed bars (incremental update path).</p>
+<h2 id='test-coverage'>Test coverage</h2>
+<ul>
+<li>tests/unit/test_liquidity_engine_contract.py (TEST-LIQ-01..11, 32-37, 44)</li>
+<li>tests/unit/test_liquidity_engine_causality.py (TEST-LIQ-12/13, 18-28,</li>
+</ul>
+<p>TEST-60D-BASE-01)</p>
+<ul>
+<li>tests/unit/test_liquidity_engine_features.py (TEST-LIQ-14-17, 29-31,</li>
+</ul>
+<p>38-40, 45)</p>
+<ul>
+<li>tests/helpers/liquidity_fixtures.py (deterministic ramp/spike/sweep</li>
+</ul>
+<p>fixtures — flat bars are avoided because they become fractal pivots everywhere)</p>
+<hr>
+<h1 id='task-02-70d-integration-appendix--the-70d-contract--runtime'>TASK-02-70D-INTEGRATION APPENDIX — the 70D contract &amp; runtime control plane</h1>
+<blockquote><p>TASK-02-70D-INTEGRATION · 2026-08-19 · Agent: Hermes-70D-Integration (TASK-2)</p><p>The 60D <code>scalp_liquidity_v1</code> contract above is TASK-1's deliverable and is</p><p>UNCHANGED by this appendix. This section documents the 70D integration</p><p>layer built on top of it.</p></blockquote>
+<h2 id='1-the-70d-contract--scalpv4'>1. The 70D contract — <code>scalp_v4</code></h2>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='Kopieren' title='Kopieren'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>schema_id  = scalp_v4      (registered in src/nexus_scalp/features/schema.py)
+dimension  = 70
+BASE       = feat_0  .. feat_49    (scalp_v1 50D, protected, byte-identical)
+FAMILY     = feat_50 .. feat_59    (slot-50..59 family: TASK-5 scalp_v2
+                                    momentum extras under their own schema id;
+                                    TASK-1 liquidity 10D under scalp_liquidity_v1)
+LIQUIDITY  = feat_60 .. feat_69    (TASK-1 liquidity features, canonical
+                                    as_vector() order)</code></pre></div>
+<p>Rationale for the schema id: the brief's <code>scalp_v3</code> name was already taken by the repo's forward-declared 350D research contract (registered + asserted in existing tests). Per brief TEST-29 ("Adapt names to the actual repository contract") TASK-2 registers <code>scalp_v4</code>; <code>scalp_v3</code>/350D stays untouched.</p>
+<h2 id='2-liquidity-runtime-governor--featuresliquidityruntimepy'>2. Liquidity runtime governor — <code>features/liquidity_runtime.py</code></h2>
+<ul>
+<li><code>LiquidityGovernor</code> — thread-safe runtime holder of the real snapshot,</li>
+</ul>
+<p>explicit status (ENABLED/DISABLED/DEGRADED/UNAVAILABLE), causal state (VALID/STALE/INVALID), latency, source, model compatibility.</p>
+<ul>
+<li><code>build_70d_vector(features50, family_10, liquidity_10)</code> — strict assembly,</li>
+</ul>
+<p>raises on width mismatch (INV-009), never pads/truncates.</p>
+<ul>
+<li><code>resolve_model_compatibility(...)</code> — explicit matrix:</li>
+</ul>
+<p>scalp_v2/60D + 60D runtime PASS · scalp_v4/70D + 70D runtime PASS · 60D model + 70D runtime BLOCK (LIQUIDITY_ENABLED_BUT_MODEL_INCOMPATIBLE) · unknown -&gt; UNKNOWN (never guessed).</p>
+<ul>
+<li>Enabled flag persisted through <code>SettingsService</code> key</li>
+</ul>
+<p><code>model.liquidity_features_enabled</code> (HOT_RESTRICTED) — the UI toggle routes through POST /api/liquidity/toggle; never a UI-only flag, never live.yaml direct writes (INV-010).</p>
+<ul>
+<li>The governor computes on the engine's new-bar cadence (pure numpy, no DB,</li>
+</ul>
+<p>information-only — never touches orders/SL/TP/risk/execution).</p>
+<h2 id='3-api-surface'>3. API surface</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Endpoint</th><th>Purpose</th></tr></thead><tbody>
+<tr><td>GET /api/liquidity/state</td><td>status + 10 real values + latency + schema + model compatibility</td></tr>
+<tr><td>GET /api/liquidity/features</td><td>ten values with index 60..69, source, timestamp, status</td></tr>
+<tr><td>POST /api/liquidity/toggle</td><td>persist + hot-apply (body <code>{"enabled": bool}</code>)</td></tr>
+<tr><td>/api/live/state + /api/status</td><td>canonical graph embeds <code>liquidity</code> section (SSE carries it too)</td></tr>
+</tbody></table></div>
+<h2 id='4-ui'>4. UI</h2>
+<ul>
+<li>New "Liquidity Intelligence" tab (Web/index.html): status badge, schema,</li>
+</ul>
+<p>dimension, feature count, source, causal state, last update, latency, model compatibility, enable/disable toggle, ten per-value cards (index 60..69).</p>
+<ul>
+<li>Feature matrix groups rendered from the canonical /api/status features</li>
+</ul>
+<p>payload; liquidity entries are the LIVE ENGINE values only.</p>
+<ul>
+<li>Chart overlays: liquidity pool lines drawn ONLY from the real snapshot</li>
+</ul>
+<p>pools (window.__liquidityPools). No liquidity -&gt; no lines, chart intact.</p>
+<ul>
+<li>Console traces: [LIQUIDITY_UI] state_loaded / request_failed / toggle_*</li>
+</ul>
+<p>with correlation ids.</p>
+<h2 id='5-model-compatibility'>5. Model compatibility</h2>
+<ul>
+<li>No padding, no truncation, no silent upgrade/downgrade.</li>
+<li>A 70D <code>scalp_v4</code> artifact is a SEPARATE candidate architecture; existing</li>
+</ul>
+<p>60D <code>scalp_v2</code> models remain loadable and never auto-migrate.</p>
+<ul>
+<li>No auto-promotion: nothing in this task promotes 70D to Champion.</li>
+</ul>
+<h2 id='6-newsliquidity-independence'>6. News/Liquidity independence</h2>
+<p>News (12D news_context_v1 stream) and Liquidity (10D at 60..69) are independent families: either can be enabled/disabled/unavailable without affecting the other (TEST-70D-06..09/28). The system never substitutes one for the other.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>Auf dieser Seite</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#0-invariants-every-feature'>0. Invariants (every feature)</a></li><li class='toc-item toc-h2'><a href='#feature-registry-indices-5059'>Feature registry (indices 50..59)</a></li><li class='toc-item toc-h2'><a href='#feature-definitions'>Feature definitions</a></li><li class='toc-item toc-h3'><a href='#50--liquidity01-bsldistanceatr'>50 — LIQUIDITY_01 bsl_distance_atr</a></li><li class='toc-item toc-h3'><a href='#51--liquidity02-ssldistanceatr'>51 — LIQUIDITY_02 ssl_distance_atr</a></li><li class='toc-item toc-h3'><a href='#52--liquidity03-eqhstrength'>52 — LIQUIDITY_03 eqh_strength</a></li><li class='toc-item toc-h3'><a href='#53--liquidity04-eqlstrength'>53 — LIQUIDITY_04 eql_strength</a></li><li class='toc-item toc-h3'><a href='#54--liquidity05-htfliquidityscore'>54 — LIQUIDITY_05 htf_liquidity_score</a></li><li class='toc-item toc-h3'><a href='#55--liquidity06-internalliquiditydistance'>55 — LIQUIDITY_06 internal_liquidity_distance</a></li><li class='toc-item toc-h3'><a href='#56--liquidity07-externalliquiditydistance'>56 — LIQUIDITY_07 external_liquidity_distance</a></li><li class='toc-item toc-h3'><a href='#57--liquidity08-liquidityconfluence'>57 — LIQUIDITY_08 liquidity_confluence</a></li><li class='toc-item toc-h3'><a href='#58--liquidity09-liquiditysweepstate'>58 — LIQUIDITY_09 liquidity_sweep_state</a></li><li class='toc-item toc-h3'><a href='#59--liquidity10-postsweepdisplacement'>59 — LIQUIDITY_10 post_sweep_displacement</a></li><li class='toc-item toc-h2'><a href='#normalization-contract'>Normalization contract</a></li><li class='toc-item toc-h2'><a href='#missing-value-policy-summary'>Missing-value policy (summary)</a></li><li class='toc-item toc-h2'><a href='#schemamanifest-integration'>Schema/manifest integration</a></li><li class='toc-item toc-h2'><a href='#config'>Config</a></li><li class='toc-item toc-h2'><a href='#known-limitations'>Known limitations</a></li><li class='toc-item toc-h2'><a href='#test-coverage'>Test coverage</a></li><li class='toc-item toc-h2'><a href='#1-the-70d-contract--scalpv4'>1. The 70D contract — scalp_v4</a></li><li class='toc-item toc-h2'><a href='#2-liquidity-runtime-governor--featuresliquidityruntimepy'>2. Liquidity runtime governor — features/liquidity_runtime.py</a></li><li class='toc-item toc-h2'><a href='#3-api-surface'>3. API surface</a></li><li class='toc-item toc-h2'><a href='#4-ui'>4. UI</a></li><li class='toc-item toc-h2'><a href='#5-model-compatibility'>5. Model compatibility</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/de/research/70d-program/LIQUIDITY_60D.md'>Diese Seite auf GitHub bearbeiten</a> · Version v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../de/project/status/'>Projektstatus</a> · <a href='../../../../de/reference/faq/'>FAQ</a> · <a href='../../../../de/releases/'>Alle Releases</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../de/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Doku durchsuchen… — ⌘K' aria-label='Doku durchsuchen…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Doku durchsuchen……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Doku durchsuchen…", "home": "Start", "repo": "GitHub", "skip": "Zum Inhalt springen", "language": "Sprache", "partial": "Englische Quelle — Übersetzung ausstehend", "english": "Englisch", "version": "Version", "next": "Weiter", "prev": "Zurück", "on_github": "Diese Seite auf GitHub bearbeiten", "menu": "Menü", "whats_new": "Neuigkeiten", "all_releases": "Alle Releases", "get_started": "Erste Schritte", "view_architecture": "Architektur", "view_roadmap": "Roadmap", "close": "Schließen", "theme": "Design", "theme_light": "Hell", "theme_dark": "Dunkel", "theme_system": "System", "copy": "Kopieren", "copied": "Kopiert", "copy_error": "Kopieren fehlgeschlagen", "no_results": "Keine Ergebnisse", "loading": "Wird geladen…", "section": "Bereich", "search_results": "Suchergebnisse", "explore_docs": "Die Dokumentation erkunden", "full_matrix": "Vollständige Matrix", "release_timeline": "Release-Zeitleiste", "hero_kicker": "QUANTITATIVE HANDELSFORSCHUNGS- UND EXECUTION-PLATTFORM", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Eine forschungsgetriebene, hexagonale, ereignisgesteuerte Scalping-Plattform für MetaTrader 5 — kausale Features, governete Deep-Learning-Modelle, ein invariantes Risikosystem, deterministische Forschungswerkzeuge und forensische Observability in einer prüfbaren Pipeline.", "chip_released": "veröffentlicht", "chip_rev": "Rev", "chip_research": "Forschung: 50D live · 70D Kandidat", "released_history": "Historie", "release_history_kicker": "RELEASE-HISTORIE", "releases_intro": "Jedes Release mit seinen echten Highlights, abgeleitet aus GitHub-Release-Metadaten zur Build-Zeit. Einzelquelle für Versionen:", "nf404_title": "404", "nf404_lead": "Diese Dokumentationsseite existiert nicht.", "nf404_home": "Start", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Release auf GitHub", "back_home": "Zurück zur Startseite", "quickstart_label": "Quickstart", "status_label": "Projektstatus", "faq_label": "FAQ", "cap_engine": "Kausale 50D-Feature-Engine", "cap_risk": "Risikomotor + Ausführungs-Klemmen", "cap_oos": "Walk-Forward + hartes OOS-Gate", "cap_factory": "Artefakt-zentrierte Modellfabrik", "cap_70d": "70D-Vertrag (Basis+News+Liquidität)", "cap_cf": "Kontrafaktische Engine (NO_TRADE-Wanderung)", "pillar_evidence_t": "🧭 Evidenz vor Behauptungen", "pillar_evidence_b": "Metriken ohne Evidenz zeigen n/a — nie falsche Nullen. Negative Ergebnisse werden veröffentlicht: Unser 70D-Forschungskandidat wurde vom eigenen OOS-Gate abgelehnt.", "pillar_safety_t": "🔒 Sicherheit durch Konstruktion", "pillar_safety_b": "PAPER als Standard · SHADOW ohne Order-Autorität · LIVE hinter expliziter Bestätigung · harte Risikoklemmen (HARD_MAX_LOTS, Marge ≤20%) im Ausführungspfad erzwungen.", "pillar_research_t": "🔬 Deterministische Forschung", "pillar_research_b": "Gepurgtes + Embargo-Walk-Forward, bit-exaktes Replay, fingerprintierte Datensätze/Modelle, Provenienz bei jedem Lauf — derselbe Feature-Vertrag für Live, Replay und Training.", "pillar_truth_t": "👁️ Laufzeit-Wahrheit", "pillar_truth_b": "Forensische Observability: schweregetrennte Logs, Incident-Korrelation, Deploy-Gate. Broker-Wahrheit schlägt veralteten Zustand; Gates sind Autoritäten, Settings sind Absicht.", "capability": "Fähigkeit", "status": "Status", "chip_certified": "ZERTIFIZIERT", "chip_implemented": "IMPLEMENTIERT", "chip_experimental": "EXPERIMENTELL", "chip_research_l": "FORSCHUNG", "cap_highlights": "Fähigkeiten im Fokus", "callout_important": "WICHTIG", "callout_note": "HINWEIS", "callout_warning": "WARNUNG", "how_it_works": "So funktioniert Nexus", "reading_time": "Min. Lesezeit", "toc_title": "Auf dieser Seite", "toc_empty": "Keine Überschriften", "last_updated": "Zuletzt aktualisiert", "share": "Teilen", "edit_page": "Seite bearbeiten", "related_title": "Weiter erkunden", "related_sub": "Weiter in diesem Abschnitt", "up_next": "Weiter", "also_read": "Auch lesen", "prev_page": "Zurück", "next_page": "Weiter", "breadcrumb_home": "Start", "hero_eyebrow_project": "Projekt", "hero_eyebrow_architecture": "Architektur", "hero_eyebrow_research": "Forschung", "hero_eyebrow_engineering": "Engineering", "hero_eyebrow_guides": "Anleitungen", "hero_eyebrow_getting_started": "Einstieg", "hero_eyebrow_contributing": "Mitwirken", "hero_eyebrow_reference": "Referenz", "hero_eyebrow_releases": "Releases", "kpi_certified": "Zertifiziert", "kpi_experimental": "Experimentell", "kpi_coverage": "Abdeckung", "steps_title": "Schritte", "copy_code": "Kopieren", "diagram_title": "Systemdiagramm", "diagram_sub": "Interaktive Pipeline-Ansicht", "stats_live": "Live-Vertrag", "callout_tip": "TIPP", "callout_info": "INFO", "callout_success": "ERFOLG", "callout_danger": "GEFAHR", "anchor_copy": "Link kopieren", "anchor_copied": "Link kopiert", "feedback_title": "War das hilfreich?", "feedback_yes": "Ja", "feedback_no": "Nein", "feedback_thanks": "Danke für dein Feedback", "prose_meta": "Artikel", "word_count": "Wörter", "toc_toggle": "Inhalt", "hero_desc_project": "Was Nexus ist, was zertifiziert vs. experimentell ist.", "hero_desc_architecture": "Wie die Engine gebaut ist: hexagonale Schichten.", "hero_desc_research": "Wie historische Daten zu falsifizierbarer Evidenz werden.", "hero_desc_engineering": "Qualitäts-Gates, CI-Architektur und Sicherheitspostur.", "hero_desc_guides": "Die Engine im Alltag bedienen.", "hero_desc_getting_started": "Engine installieren und konfigurieren.", "hero_desc_contributing": "Der Ingenieursvertrag und wie man beiträgt.", "hero_desc_reference": "CLI-Referenz, Glossar und ehrliche Antworten.", "hero_desc_releases": "Jedes Release mit echten Highlights.", "on_this_page": "Auf dieser Seite"};
+window.NEXUS_LANG = "de";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

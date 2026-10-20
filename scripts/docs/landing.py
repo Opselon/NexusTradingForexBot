@@ -50,7 +50,10 @@ def _land(B, lang: str, key: str) -> str:
 def status_board(B, lang: str, from_rel: str) -> str:
     """Hero status board — static facts proven by the repo docs. Live values
     (release/commit/CI) are hydrated client-side from data/project-status.json;
-    the markup ships with build-time version/revision which ARE known."""
+    the markup ships with build-time version/revision which ARE known.
+
+    Eight cells => a clean 4x2 grid at desktop and 2x4 on phones (no ragged
+    last row, no cell that spans a gutter)."""
     rows = [
         ("engine", "READY", ""),
         ("market", "XAUUSD · M1", ""),
@@ -59,7 +62,9 @@ def status_board(B, lang: str, from_rel: str) -> str:
         ("research", "70D", "candidate"),
         ("risk", "GUARDED", ""),
         ("observability", "ACTIVE", ""),
+        ("locales", str(len(B.LANGUAGES)), ""),
     ]
+
     cells = "".join(
         f"<div class='st-cell'><span class='st-k'>{html.escape(_land(B, lang, 'status.' + k))}</span>"
         f"<span class='st-v {extra}'>{html.escape(v)}</span></div>"
@@ -86,6 +91,7 @@ def hero(B, lang: str, from_rel: str) -> str:
             "PAPER / SHADOW / LIVE",
         ]
     )
+    cmd = 'pip install -e ".[dev]"\nnexus doctor && nexus start'
     return (
         "<section class='land-hero' id='top'>"
         "<div class='lh-grid'>"
@@ -98,6 +104,13 @@ def hero(B, lang: str, from_rel: str) -> str:
         f"<div class='lh-actions'>"
         f"<a class='btn btn-primary btn-lg' href='{B.page_href('getting-started/quickstart/', lang, from_rel)}'>{html.escape(_land(B, lang, 'cta_explore'))} →</a>"
         f"<a class='btn btn-ghost btn-lg' href='{B.REPO_URL}'>GitHub ↗</a>"
+        "</div>"
+        "<div class='lh-cmd'>"
+        f"<div class='lh-cmd-head'><span class='lh-cmd-dot' aria-hidden='true'></span>"
+        f"<span>{html.escape(ui['quickstart_label'])} · PAPER</span>"
+        f"<button class='lh-cmd-copy' type='button' data-copy-text='{html.escape(cmd, quote=True)}' "
+        f"aria-label='{html.escape(ui['copy'])}' title='{html.escape(ui['copy'])}'>⧉</button></div>"
+        f"<pre class='lh-cmd-pre' dir='ltr'><code>{html.escape(cmd)}</code></pre>"
         "</div>"
         f"<div class='lh-chips'>{chips}</div>"
         "</div>"
@@ -439,20 +452,55 @@ def project_pulse(B, lang: str, from_rel: str) -> str:
     return pulse
 
 
+FRESH_ITEMS = [
+    ("architecture/mcp-bridge", "🛰", "fresh_mcp_t", "fresh_mcp_b"),
+    ("architecture/mcp-bridge", "🧭", "fresh_trace_t", "fresh_trace_b"),
+    ("research/reproducibility", "🎯", "fresh_replay_t", "fresh_replay_b"),
+    ("architecture/runtime", "🧷", "fresh_mem_t", "fresh_mem_b"),
+]
+
+
+def fresh_on_main(B, lang: str, from_rel: str) -> str:
+    """Merged-after-release strip.
+
+    Only capabilities that landed on main after the published release belong
+    here, described by what the code guarantees (read-only, fails closed,
+    off by default) — never a performance claim.
+    """
+    cards = "".join(
+        f"<a class='fresh-item' href='{B.page_href(rel, lang, from_rel)}'>"
+        f"<span class='fi-ic' aria-hidden='true'>{icon}</span>"
+        f"<span class='fi-t'>{html.escape(_land(B, lang, tkey))}</span>"
+        f"<span class='fi-b'>{html.escape(_land(B, lang, bkey))}</span></a>"
+        for rel, icon, tkey, bkey in FRESH_ITEMS
+    )
+    return (
+        "<section class='fresh-strip' id='fresh' aria-labelledby='fresh-title'>"
+        "<div class='fresh-head'>"
+        "<span class='fresh-dot' aria-hidden='true'></span>"
+        f"<h2 id='fresh-title'>{html.escape(_land(B, lang, 'fresh_title'))}</h2>"
+        f"<span class='fresh-badge'>{html.escape(_land(B, lang, 'fresh_badge'))}</span>"
+        "</div>"
+        f"<div class='fresh-grid'>{cards}</div>"
+        "</section>"
+    )
+
+
 def section_nav(B, lang: str, from_rel: str) -> str:
     """Landing section navigation strip (the docs sidebar is hidden on the
-    landing): anchors through the experience + quickstart + releases + a live
-    status chip. Labels reuse existing locale keys (no new translation load).
-    Note: the EN docs hub IS the site root, so no docs-hub link here."""
+    landing): a single-row, horizontally scrollable rail of SHORT labels plus
+    a persistent status chip. Long section titles stay as headings; the rail
+    only carries scan-able anchors, so it never wraps into two ragged rows.
+    """
     anchors = [
-        ("pipeline", "pipe_title"),
-        ("why", "why_title"),
-        ("modes", "modes_title"),
-        ("research", "res_title"),
-        ("market", "market_title"),
-        ("architecture", "arch_title"),
-        ("console", "console_title"),
-        ("pulse", "pulse_title"),
+        ("pipeline", "nav_pipe"),
+        ("why", "nav_why"),
+        ("modes", "nav_modes"),
+        ("research", "nav_research"),
+        ("market", "nav_market"),
+        ("architecture", "nav_arch"),
+        ("console", "nav_console"),
+        ("pulse", "nav_pulse"),
     ]
     ui = B.UI(lang)
     items = "".join(
@@ -463,12 +511,13 @@ def section_nav(B, lang: str, from_rel: str) -> str:
         "<nav class='land-nav glass' aria-label='"
         + html.escape(ui["explore_docs"])
         + "'>"
-        + items
+        + f"<div class='lnav-scroll'>{items}"
         + f"<a class='lnav-link lnav-docs' href='{B.page_href('getting-started/quickstart/', lang, from_rel)}'>{html.escape(ui['quickstart_label'])} →</a>"
         + f"<a class='lnav-link' href='{B.page_href('releases/', lang, from_rel)}'>{html.escape(ui['all_releases'])}</a>"
+        + "</div>"
         + f"<a class='lnav-status' href='{B.page_href('project/status/', lang, from_rel)}'>"
         + "<span class='st-dot' aria-hidden='true'></span>"
-        + html.escape(ui["status_label"])
+        + f"<span class='lnav-status-t'>{html.escape(ui['status_label'])}</span>"
         + "</a>"
         + "</nav>"
     )
@@ -481,6 +530,7 @@ def landing_body(
     return (
         section_nav(B, lang, from_rel)
         + hero(B, lang, from_rel)
+        + fresh_on_main(B, lang, from_rel)
         + data_core(B, lang, from_rel)
         + why_nexus(B, lang, from_rel)
         + three_modes(B, lang, from_rel)

@@ -256,6 +256,7 @@ NAV_SECTIONS: list[tuple[str, list[str]]] = [
             "model-pipeline",
             "execution-pipeline",
             "observability",
+            "mcp-bridge",
             "database",
         ],
     ),
@@ -353,8 +354,10 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
     i = 0
     in_code = False
     code_buf: list[str] = []
+    code_lang = ""
     list_stack: list[str] = []
     table_buf: list[str] = []
+    used_ids: dict[str, int] = {}
 
     def esc(s: str) -> str:
         return html.escape(s, quote=False)
@@ -366,7 +369,15 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
 
     def inline(s: str) -> str:
         s = esc(s)
-        s = re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+        # Code spans are extracted first: a URL inside `backticks` is literal
+        # text, and must not be turned into an anchor later.
+        code_spans: list[str] = []
+
+        def keep_code(m: re.Match) -> str:
+            code_spans.append(m.group(1))
+            return f"\x00{len(code_spans) - 1}\x00"
+
+        s = re.sub(r"`([^`]+)`", keep_code, s)
 
         def repl(m: re.Match) -> str:
             return f'<a href="{fix_target(m.group(2))}">{m.group(1)}</a>'
@@ -374,7 +385,16 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
         s = re.sub(r"\[([^\]]+)\]\(([^)\s]+)\)", repl, s)
         s = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
         s = re.sub(r"(?<!\w)\*([^*\n]+)\*(?!\w)", r"<em>\1</em>", s)
-        s = re.sub(r"(https?://[^\s<)]+)", r'<a href="\1">\1</a>', s)
+        # Bare-URL autolink: only on TEXT between tags. Running it over the whole
+        # string re-wrapped the href of a markdown link into `<a href="<a href=…`,
+        # which silently broke every external link on the page.
+        parts = re.split(r"(<[^>]+>)", s)
+        for idx in range(0, len(parts), 2):
+            parts[idx] = re.sub(
+                r"(https?://[^\s<)\"']+[^\s<)\"'.,;:])", r'<a href="\1">\1</a>', parts[idx]
+            )
+        s = "".join(parts)
+        s = re.sub(r"\x00(\d+)\x00", lambda m: f"<code>{code_spans[int(m.group(1))]}</code>", s)
         return s
 
     def flush_table() -> None:
@@ -404,15 +424,21 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
         if line.strip().startswith("```"):
             if in_code:
                 cls = "code-ltr has-copy"
+                fence_label = code_lang or "text"
                 out.append(
-                    f"<div class='codeblock'><button class='copy-btn' type='button' aria-label='Copy code'>⧉</button>"
+                    "<div class='codeblock'>"
+                    f"<div class='codeblock-header'><span class='lang'>{html.escape(fence_label)}</span>"
+                    f"<div class='actions'><button class='copy-btn' type='button' aria-label='{html.escape(t(lang, 'ui.copy'))}' "
+                    f"title='{html.escape(t(lang, 'ui.copy'))}'>⧉</button></div></div>"
                     f"<pre dir='ltr' class='{cls}'><code>{html.escape(chr(10).join(code_buf))}</code></pre></div>"
                 )
                 code_buf = []
+                code_lang = ""
                 in_code = False
             else:
                 flush_table()
                 close_lists()
+                code_lang = line.strip().strip("`").strip()
                 in_code = True
             i += 1
             continue
@@ -425,7 +451,16 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
             flush_table()
             close_lists()
             level = len(m.group(1))
-            slug = re.sub(r"[^a-z0-9-]", "", m.group(2).lower().replace(" ", "-"))[:60]
+            slug = re.sub(r"[^a-z0-9-]", "", m.group(2).lower().replace(" ", "-"))[:60].strip("-")
+            if not slug:
+                # Non-Latin headings (fa/ar) have no ASCII slug: keep a stable
+                # anchor instead of emitting id='' (which breaks every deep link).
+                slug = f"section-{len(used_ids) + 1}"
+            base_slug = slug
+            seen = used_ids.get(base_slug, 0)
+            used_ids[base_slug] = seen + 1
+            if seen:
+                slug = f"{base_slug}-{seen + 1}"
             out.append(f"<h{level} id='{esc(slug)}'>{inline(m.group(2))}</h{level}>")
             i += 1
             continue
@@ -487,8 +522,28 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
         close_lists()
         if line.strip() == "---":
             out.append("<hr>")
-        elif line.strip():
-            out.append(f"<p>{inline(line.strip())}</p>")
+            i += 1
+            continue
+        if line.strip():
+            # Markdown soft-wrap: consecutive non-blank lines are ONE paragraph.
+            # The old renderer emitted a <p> per physical line, which split
+            # wrapped sentences into orphaned fragments across the whole docs tree.
+            para = [line.strip()]
+            j = i + 1
+            while j < len(lines):
+                nxt = lines[j].strip()
+                if (
+                    not nxt
+                    or nxt.startswith(("```", "#", "|", ">", "-", "*"))
+                    or nxt == "---"
+                    or re.match(r"^\d+\.\s", nxt)
+                ):
+                    break
+                para.append(nxt)
+                j += 1
+            out.append(f"<p>{inline(' '.join(para))}</p>")
+            i = j
+            continue
         i += 1
     flush_table()
     close_lists()
@@ -497,6 +552,44 @@ def render_markdown(src: str, from_rel: str, lang: str) -> str:
             f"<pre dir='ltr' class='code-ltr'><code>{html.escape(chr(10).join(code_buf))}</code></pre>"
         )
     return "\n".join(out)
+
+
+TOC_HEADING_RE = re.compile(r"<h([23]) id='([^']+)'>(.*?)</h\1>", re.S)
+
+
+def extract_toc(body_html: str) -> list[tuple[int, str, str]]:
+    """Headings available for an in-page table of contents (h2 + h3 only)."""
+    items: list[tuple[int, str, str]] = []
+    for m in TOC_HEADING_RE.finditer(body_html):
+        label = html.unescape(re.sub(r"<[^>]+>", "", m.group(3))).strip()
+        if label and m.group(2):
+            items.append((int(m.group(1)), m.group(2), label))
+    return items
+
+
+def doc_layout(body_html: str, toc: list[tuple[int, str, str]], lang: str) -> str:
+    """Wrap a page body in the reading layout: measure-limited prose + a sticky
+    'On this page' rail (collapsible on narrow screens).
+
+    Only pages with enough structure get a TOC — a two-item rail is noise.
+    """
+    if len(toc) < 3:
+        return f"<article class='prose prose-enhanced'>{body_html}</article>"
+    label = html.escape(t(lang, "ui.on_this_page"))
+    items = "".join(
+        f"<li class='toc-item toc-h{level}'><a href='#{html.escape(anchor)}'>"
+        f"{html.escape(text)}</a></li>"
+        for level, anchor, text in toc[:24]
+    )
+    return (
+        f"<details class='toc-mobile'><summary>{label}</summary><ul class='toc-list'>{items}</ul></details>"
+        "<div class='docs-layout'>"
+        f"<article class='prose prose-enhanced'>{body_html}</article>"
+        "<aside class='toc' aria-labelledby='toc-title'>"
+        f"<div class='toc-title' id='toc-title'>{label}</div>"
+        f"<ul class='toc-list'>{items}</ul>"
+        "</aside></div>"
+    )
 
 
 def page_title(fm: dict[str, str], body: str, fallback: str) -> str:
@@ -633,8 +726,10 @@ def build_header(lang: str, rel: str) -> str:
     <span class='brand-badge'>v{PROJECT_VERSION}</span>
   </div>
   <div class='header-actions'>
-    <input id='doc-search' class='search' type='search' placeholder='{html.escape(ui["search"])}' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
-    <button id='cmdk-open' class='chip' type='button' aria-label='Command palette' title='⌘K / Ctrl+K'>⌘K</button>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='{html.escape(ui["search"])}' aria-label='{html.escape(ui["search"])}' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='{html.escape(ui["search"])}' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
     <details class='theme-picker'>
       <summary aria-label='{html.escape(ui["theme"])}' title='{html.escape(ui["theme"])}'>◐</summary>
       <div class='lang-menu theme-menu'>
@@ -644,7 +739,7 @@ def build_header(lang: str, rel: str) -> str:
       </div>
     </details>
     <details class='lang-picker'>
-      <summary aria-label='{html.escape(ui["language"])}'>🌐 {html.escape(LANGUAGES[lang]["native"])}</summary>
+      <summary aria-label='{html.escape(ui["language"])}' title='{html.escape(ui["language"])}'><span aria-hidden='true'>🌐</span><span class='lp-name'>{html.escape(LANGUAGES[lang]["native"])}</span></summary>
       {lang_switcher(lang, rel, from_rel)}
     </details>
     <a class='repo-link' href='{REPO_URL}'>{html.escape(ui["repo"])} ↗</a>
@@ -732,19 +827,50 @@ def shell(
         )
         + f"<link rel='alternate' hreflang='x-default' href='{PAGES_URL}{abs_url(rel, 'en')}'>"
     )
-    jsonld = json.dumps(
-        {
+    is_home = body_class == "landing-page"
+    og_image = f"{PAGES_URL}/assets/pics/web.png"
+    org = {"@type": "Organization", "name": "Nexus Scalp Engine", "url": REPO_URL}
+    if is_home:
+        jsonld_data: dict = {
             "@context": "https://schema.org",
-            "@type": "TechArticle" if rel not in ("", "docs-hub") else "WebSite",
+            "@graph": [
+                {
+                    "@type": "WebSite",
+                    "name": "Nexus Scalp Engine",
+                    "url": canonical,
+                    "inLanguage": lang,
+                    "description": desc,
+                    "publisher": org,
+                },
+                {
+                    "@type": "SoftwareApplication",
+                    "name": "Nexus Scalp Engine",
+                    "applicationCategory": "FinanceApplication",
+                    "operatingSystem": "Windows 10/11 x64",
+                    "description": desc,
+                    "url": canonical,
+                    "downloadUrl": f"{REPO_URL}/releases/latest",
+                    "codeRepository": REPO_URL,
+                    "license": f"{REPO_URL}/blob/main/LICENSE",
+                    "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
+                    "softwareVersion": PROJECT_VERSION,
+                },
+            ],
+        }
+    else:
+        jsonld_data = {
+            "@context": "https://schema.org",
+            "@type": "TechArticle",
             "headline": title,
             "description": desc[:200],
             "inLanguage": lang,
             "url": canonical,
-            "author": {"@type": "Organization", "name": "Nexus Scalp Engine"},
-            "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine"},
-        },
-        ensure_ascii=False,
-    )
+            "author": org,
+            "publisher": org,
+            "isPartOf": {"@type": "WebSite", "url": f"{PAGES_URL}/"},
+        }
+    jsonld = json.dumps(jsonld_data, ensure_ascii=False)
+    theme_color = "#04070f" if is_home else "#ffffff"
     status_flag = (
         ""
         if (translated or lang == "en")
@@ -769,15 +895,20 @@ def shell(
 <meta charset='utf-8'>
 <meta name='viewport' content='width=device-width, initial-scale=1'>
 <title>{html.escape(title)} · {html.escape(t(lang, "ui.brand"))} {html.escape(t(lang, "ui.brand_dim"))}</title>
-<meta name='description' content='{html.escape(desc[:150])}'>
+<meta name='description' content='{html.escape(desc[:160])}'>
+<meta name='theme-color' content='{theme_color}'>
 <link rel='canonical' href='{canonical}'>
 <meta property='og:title' content='{html.escape(title)}'>
 <meta property='og:type' content='website'>
 <meta property='og:url' content='{canonical}'>
 <meta property='og:site_name' content='Nexus Scalp Engine'>
-<meta name='twitter:card' content='summary'>
+<meta property='og:description' content='{html.escape(desc[:200])}'>
+<meta property='og:image' content='{og_image}'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
 <meta name='twitter:title' content='{html.escape(title)}'>
-<meta name='twitter:description' content='{html.escape(desc[:150])}'>
+<meta name='twitter:description' content='{html.escape(desc[:200])}'>
+<meta name='twitter:image' content='{og_image}'>
 {hreflang_links}
 <script type='application/ld+json'>{jsonld}</script>
 <link rel='preconnect' href='https://fonts.googleapis.com'>
@@ -818,6 +949,7 @@ def shell(
 window.NEXUS_LOCALE = {locale_json};
 window.NEXUS_LANG = {lang_json};
 (function(){{  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
   try {{
     var saved = localStorage.getItem("nexus-theme");
     var theme = saved || "system";
@@ -1248,6 +1380,7 @@ def main() -> int:
             title = PAGE_TITLES.get(rel) or page_title(fm, body, rel)
             desc = fm.get("description", f"{title} — Nexus Scalp Engine documentation")
             html_body = render_markdown(body, rel, lang)
+            html_body = doc_layout(html_body, extract_toc(html_body), lang)
             crumb = breadcrumbs(lang, rel, rel)
             if crumb:
                 html_body = crumb + "\n" + html_body

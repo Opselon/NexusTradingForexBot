@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang='fa' dir='rtl'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0) · نکسوس اسکالپ انجین</title>
+<meta name='description' content='STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/STRATEGY_LIFECYCLE_MAP/'>
+<meta property='og:title' content='STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/fa/architecture/STRATEGY_LIFECYCLE_MAP/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0)'>
+<meta name='twitter:description' content='STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/STRATEGY_LIFECYCLE_MAP/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/STRATEGY_LIFECYCLE_MAP/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/STRATEGY_LIFECYCLE_MAP/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/STRATEGY_LIFECYCLE_MAP/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/STRATEGY_LIFECYCLE_MAP/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/STRATEGY_LIFECYCLE_MAP/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0)", "description": "STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0) — Nexus Scalp Engine documentation", "inLanguage": "fa", "url": "https://opselon.github.io/NexusTradingForexBot/fa/architecture/STRATEGY_LIFECYCLE_MAP/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>پرش به محتوا</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='منو' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../fa/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='جستجو در مستندات…' aria-label='جستجو در مستندات…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='جستجو در مستندات…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='پوسته' title='پوسته'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ روشن</button>
+        <button type='button' data-theme-set='dark'>☾ تیره</button>
+        <button type='button' data-theme-set='system'>🖥 سیستم</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='زبان' title='زبان'><span aria-hidden='true'>🌐</span><span class='lp-name'>فارسی</span></summary>
+      <div class='lang-menu'><a href='../../../architecture/STRATEGY_LIFECYCLE_MAP/' lang='en' hreflang='en'>English</a> <span class='lang-current' lang='fa'>فارسی ✓</span> <a href='../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <a href='../../../es/' lang='es' hreflang='es' title='Landing page — translation not built'>Español</a> <a href='../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>گیت‌هاب ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../fa/'>خانه</a>
+<div class='nav-section'><a class='' href='../../../fa/getting-started/'>شروع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/getting-started/installation/'>نصب</a></li>
+<li><a class='' href='../../../fa/getting-started/quickstart/'>شروع سریع</a></li>
+<li><a class='' href='../../../fa/getting-started/first-run/'>اجرای اول</a></li>
+<li><a class='' href='../../../fa/getting-started/configuration/'>پیکربندی</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/project/'>پروژه</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/project/vision/'>چشم‌انداز و چرایی</a></li>
+<li><a class='' href='../../../fa/project/scope/'>محدوده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/status/'>وضعیت پروژه</a></li>
+<li><a class='' href='../../../fa/project/capabilities/'>ماتریس قابلیت‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/project/roadmap/'>نقشه راه</a></li>
+<li><a class='' href='../../../fa/project/milestones/'>نقاط عطف</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../fa/architecture/'>معماری</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/architecture/overview/'>نمای کلی</a></li>
+<li><a class='' href='../../../fa/architecture/system-map/'>نقشه سیستم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/data-flow/'>جریان داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/runtime/'>زمان اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/research-stack/'>پشته پژوهش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/model-pipeline/'>خط لوله مدل</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/execution-pipeline/'>خط لوله اجرا</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/observability/'>مشاهده‌پذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/mcp-bridge/'>پل MCP و ردّ تصمیم</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/architecture/database/'>پایگاه داده</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/research/'>پژوهش</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/research/methodology/'>روش‌شناسی</a></li>
+<li><a class='' href='../../../fa/research/datasets/'>دیتاست‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/backtesting/'>بک‌تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/out-of-sample/'>گیت OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/replay/'>بازپخش</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/counterfactuals/'>خلاف‌واقع</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/research/validation/'>اعتبارسنجی</a></li>
+<li><a class='' href='../../../fa/research/reproducibility/'>بازتولیدپذیری</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/engineering/'>مهندسی</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/engineering/quality/'>کیفیت و تست</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/ci/'>معماری CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/release-process/'>فرایند انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/workflow-test-build-release/'>گردش کار تست، ساخت و انتشار</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/engineering/security/'>امنیت</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/guides/'>راهنما</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/guides/cli/'>راهنمای CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/api/'>مرجع API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/troubleshooting/'>عیب‌یابی</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/guides/common-workflows/'>گردش‌کارهای رایج</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/contributing/'>مشارکت</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/contributing/contribution-guide/'>راهنمای مشارکت</a></li>
+<li><a class='' href='../../../fa/contributing/documentation/'>گردش‌کار مستندات</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/contributing/add-language/'>افزودن زبان</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/reference/'>مرجع</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../fa/reference/cli-reference/'>مرجع CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/glossary/'>واژه‌نامه</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/terminology/'>اصطلاحات و ترجمه‌ها</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../fa/reference/faq/'>پرسش‌های متداول</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../fa/releases/'>انتشارها</a></div>
+<ul class='nav-list'><li><a href='../../../fa/releases/'>v9.0.17 &amp; تاریخچه</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است — <a href='../../architecture/STRATEGY_LIFECYCLE_MAP/'>انگلیسی</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../fa/architecture/'>معماری</a> / <span class='crumb-current' aria-current='page'>STRATEGY LIFECYCLE MAP</span></nav>
+<details class='toc-mobile'><summary>در این صفحه</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-executive-summary'>1. Executive Summary</a></li><li class='toc-item toc-h2'><a href='#2-canonical-state-machine'>2. Canonical State Machine</a></li><li class='toc-item toc-h3'><a href='#state-definitions--invariants'>State Definitions &amp; Invariants</a></li><li class='toc-item toc-h2'><a href='#3-data-sources-storage-and-write-paths'>3. Data Sources, Storage, and Write Paths</a></li><li class='toc-item toc-h2'><a href='#4-execution-eligibility--safety-rules'>4. Execution Eligibility &amp; Safety Rules</a></li><li class='toc-item toc-h2'><a href='#5-observability-gaps-identified'>5. Observability Gaps Identified</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='strategylifecyclemapmd--forensic-baseline-phase-0'>STRATEGY_LIFECYCLE_MAP.md — Forensic Baseline (Phase 0)</h1>
+<h2 id='1-executive-summary'>1. Executive Summary</h2>
+<p>This document provides the canonical forensic map of the Nexus Scalp Engine strategy lifecycle, data provenance, storage layers, event flows, execution eligibility gates, and observability hooks. It implements <strong>Phase 0</strong> of the Strategy Command Center mandate.</p>
+<hr>
+<h2 id='2-canonical-state-machine'>2. Canonical State Machine</h2>
+<p>The strategy lifecycle is governed by <code>CandidateLifecycle</code> (defined in <code>nexus_scalp.research.models</code> and enforced by <code>nexus_scalp.research.lifecycle</code>).</p>
+<div class='codeblock'><div class='codeblock-header'><span class='lang'>text</span><div class='actions'><button class='copy-btn' type='button' aria-label='کپی' title='کپی'>⧉</button></div></div><pre dir='ltr' class='code-ltr has-copy'><code>DISCOVERED
+  │
+  ▼
+BACKTESTING
+  │
+  ▼
+VALIDATING
+  │
+  ▼
+OOS_TESTING
+  │
+  ▼
+ROBUSTNESS_TESTING
+  │
+  ▼
+VALIDATED ──(Operator Approval / Spec 21)──► ACTIVE (Live Execution Boundary)
+  │
+  ├──► SHADOW (Sandbox / Paper)
+  │
+  ├──► DEGRADED
+  │
+  └──► RETIRED / REJECTED</code></pre></div>
+<h3 id='state-definitions--invariants'>State Definitions &amp; Invariants</h3>
+<div class='table-wrap'><table>
+<thead><tr><th>State</th><th>Purpose</th><th>Entry Condition</th><th>Exit Condition</th><th>Allowed Transitions</th><th>Forbidden Transitions</th><th>Blocking Conditions</th><th>AI Involvement</th><th>Human Involvement</th><th>Required Evidence</th><th>Failure Conditions</th><th>Recovery Path</th><th>Persistence</th><th>Events</th><th>Existing Tests</th><th>Execution Implications</th></tr></thead><tbody>
+<tr><td><strong>DISCOVERED</strong></td><td>Raw hypothesis / feature cluster from discovery engine</td><td>Feature cluster discovery from experience dataset</td><td>Candidate candidate record upserted</td><td>BACKTESTING, REJECTED</td><td>VALIDATED, ACTIVE, SHADOW</td><td>Insufficient samples (&lt; MIN_EVIDENCE_SAMPLES), low variance</td><td>High (AI hypothesis / feature discovery)</td><td>Low / review</td><td>Experience sample set, discovery window</td><td>Zero samples, empty family distribution</td><td>Re-run discovery pipeline</td><td><code>strategy_registry</code></td><td><code>candidate_discovered</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Ineligible for live/shadow execution</td></tr>
+<tr><td><strong>BACKTESTING</strong></td><td>Deterministic friction backtest (spec 13)</td><td>Transition from DISCOVERED</td><td>BacktestResult successfully generated</td><td>VALIDATING, REJECTED</td><td>ACTIVE, VALIDATED, SHADOW</td><td>Missing dataset, invalid feature dimension</td><td>None (deterministic simulator)</td><td>None</td><td>Dataset ID, ExecutionAssumptions</td><td>Negative expectancy, extreme drawdown</td><td>Adjust hyperparameters or re-sample</td><td><code>strategy_registry</code> (backtest json)</td><td><code>backtest_completed</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Ineligible</td></tr>
+<tr><td><strong>VALIDATING</strong></td><td>Walk-forward split validation (spec 14)</td><td>Transition from BACKTESTING</td><td>WalkForwardResult generated</td><td>OOS_TESTING, REJECTED</td><td>ACTIVE, SHADOW</td><td>Unstable folds, high degradation</td><td>None (algorithmic split)</td><td>None</td><td>Walk-forward folds, train/val/oos metrics</td><td>Walk-forward failure, degradation &gt; threshold</td><td>Re-optimize search space</td><td><code>strategy_registry</code> (walkforward json)</td><td><code>walk_forward_completed</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Ineligible</td></tr>
+<tr><td><strong>OOS_TESTING</strong></td><td>Hard out-of-sample evaluation (spec 15)</td><td>Transition from VALIDATING</td><td>OOSResult generated</td><td>ROBUSTNESS_TESTING, REJECTED</td><td>ACTIVE, SHADOW</td><td>OOS expectancy &lt;= 0</td><td>None</td><td>None</td><td>OOS samples, in-sample vs out-of-sample comparison</td><td>OOS failure, negative OOS expectancy</td><td>Re-run data split</td><td><code>strategy_registry</code> (oos json)</td><td><code>oos_completed</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Ineligible</td></tr>
+<tr><td><strong>ROBUSTNESS_TESTING</strong></td><td>Perturbation / stress testing (spread, slippage, latency) (spec 16)</td><td>Transition from OOS_TESTING</td><td>RobustnessResult generated</td><td>VALIDATED, REJECTED, DEGRADED</td><td>ACTIVE, SHADOW</td><td>Excessive sensitivity to spread/latency</td><td>None</td><td>None</td><td>Stress expectations, degradation metrics</td><td>Robustness failure, breakdown under latency</td><td>Widen search space tolerance</td><td><code>strategy_registry</code> (robustness json)</td><td><code>robustness_completed</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Ineligible</td></tr>
+<tr><td><strong>VALIDATED</strong></td><td>All research gates passed; scored (spec 17)</td><td>Successful robustness pass + StrategyScore computed</td><td>Operator promotion or shadow transition</td><td>SHADOW, ACTIVE, REJECTED, DEGRADED</td><td>DISCOVERED, BACKTESTING</td><td>None</td><td>Low (score synthesis)</td><td>Required for ACTIVE promotion</td><td>Complete Backtest, WF, OOS, Robustness + Score</td><td>Post-validation degradation</td><td>Self-heal or re-test</td><td><code>strategy_registry</code></td><td><code>strategy_validated</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Eligible for shadow/paper; eligible for ACTIVE <strong>only</strong> via deliberate operator approval (spec 21)</td></tr>
+<tr><td><strong>SHADOW</strong></td><td>Sandbox / paper trading evaluation</td><td>Transition from VALIDATED</td><td>Shadow evaluation running</td><td>ACTIVE, DEGRADED, REJECTED</td><td>DISCOVERED, BACKTESTING</td><td>Live risk limit breach, broker disconnect</td><td>None</td><td>Oversight</td><td>Shadow trade ledger, fill latency, slippage tracking</td><td>Shadow expectancy divergence from backtest</td><td>Pause shadow, inspect telemetry</td><td><code>strategy_registry</code> + shadow ledger</td><td><code>shadow_started</code>, <code>shadow_update</code></td><td><code>test_model_lifecycle_phase10.py</code></td><td>Paper execution only; NO live capital routing</td></tr>
+<tr><td><strong>ACTIVE</strong></td><td>Live production execution</td><td>Deliberate operator-gated promotion (spec 21) from SHADOW or VALIDATED</td><td>Retirement or degradation</td><td>DEGRADED, RETIRED</td><td>DISCOVERED, BACKTESTING, VALIDATING</td><td>Risk engine circuit breaker, drawdown limit</td><td>None</td><td>Strict (mandatory manual signoff)</td><td>Production fills, live risk approval, audit trace</td><td>Drawdown breach, data feed corruption, latency spike</td><td>Emergency stop, fallback to SHADOW/RETIRED</td><td><code>strategy_registry</code> + <code>experience_model_registry</code></td><td><code>model_promoted_active</code></td><td><code>test_model_lifecycle_api.py</code></td><td>Fully trade-eligible in production</td></tr>
+<tr><td><strong>DEGRADED</strong></td><td>Performance decay or anomaly detected</td><td>Operational anomaly, runtime regression, expectancy drop</td><td>Self-heal or retirement</td><td>RETIRED, REJECTED, VALIDATED</td><td>DISCOVERED</td><td>Unresolved degradation</td><td>None</td><td>Recommended review</td><td>Anomaly score, health metrics, recent losses</td><td>Persistent underperformance</td><td>Re-test or retire</td><td><code>strategy_registry</code></td><td><code>strategy_degraded</code></td><td><code>test_nse_lifecycle_regression_matrix.py</code></td><td>Blocked from new live allocation</td></tr>
+<tr><td><strong>REJECTED</strong></td><td>Failed a research gate or regression guard</td><td>Gate failure (OOS, Robustness, WF) or regression refusal</td><td>None (terminal state)</td><td>None (terminal)</td><td>Any except DISCOVERED</td><td>Terminal state</td><td>None</td><td>None</td><td>Failure reason, failing gate metrics</td><td>N/A (terminal)</td><td>Create new candidate version</td><td><code>strategy_registry</code></td><td><code>strategy_rejected</code></td><td><code>test_lifecycle_e2e_v3.py</code></td><td>Strictly ineligible</td></tr>
+<tr><td><strong>RETIRED</strong></td><td>Superseded or manually decommissioned</td><td>Operator action or permanent replacement by new Champion</td><td>None (terminal state)</td><td>None (terminal)</td><td>Any except DISCOVERED</td><td>Terminal state</td><td>None</td><td>Required</td><td>Retirement reason, replacement strategy ID</td><td>N/A (terminal)</td><td>N/A</td><td><code>strategy_registry</code></td><td><code>strategy_retired</code></td><td><code>test_model_lifecycle_api.py</code></td><td>Strictly ineligible</td></tr>
+</tbody></table></div>
+<hr>
+<h2 id='3-data-sources-storage-and-write-paths'>3. Data Sources, Storage, and Write Paths</h2>
+<ol>
+<li><strong>Authoritative Source</strong>: The immutable experience ledger (<code>audit_experiences</code>, <code>audit_experience_outcomes</code>, <code>audit_ledger</code>). All research datasets and candidate generations are causally derived from closed experiences.</li>
+<li><strong>Research Store</strong>: <code>nexus_scalp.research.store</code> and <code>nexus_scalp.research.registry</code> (<code>strategy_registry</code> table in SQLite).</li>
+<li><strong>Model Registry</strong>: <code>nexus_scalp.model_lifecycle.registry</code> (<code>experience_model_registry</code> table with additive lifecycle columns: <code>lifecycle_status</code>, <code>training_run_id</code>, <code>parent_model_id</code>, <code>gate_summary</code>, etc.).</li>
+<li><strong>Write Channels</strong>: All mutations flow through <code>AuditRepository</code> background queue (<code>_queue.put_nowait</code>). The UI and read models never mutate domain state directly.</li>
+</ol>
+<hr>
+<h2 id='4-execution-eligibility--safety-rules'>4. Execution Eligibility &amp; Safety Rules</h2>
+<ul>
+<li><strong>Rule 1</strong>: A strategy must never trade live unless its lifecycle state is <code>ACTIVE</code> (or explicitly gated shadow/paper).</li>
+<li><strong>Rule 2</strong>: <code>require_validation_gate(lifecycle)</code> enforces that only <code>VALIDATED</code>, <code>SHADOW</code>, or <code>ACTIVE</code> can be considered for live use.</li>
+<li><strong>Rule 3</strong>: Champion / Challenger promotion requires passing Phase 10 model lifecycle gates without skipping steps.</li>
+<li><strong>Rule 4</strong>: Anti-regression check (<code>_is_stronger</code>) prevents silent downgrades of established validation truth.</li>
+</ul>
+<hr>
+<h2 id='5-observability-gaps-identified'>5. Observability Gaps Identified</h2>
+<ol>
+<li><strong>AI Attribution Traceability</strong>: While discovery logs AI hypotheses, attribution weights (e.g., AI vs deterministic rules) are not explicitly stored as first-class decision contribution records.</li>
+<li><strong>Real-time Transition Telemetry</strong>: WebSocket broadcast of state transitions currently relies on polling or factory worker ticks; needs a unified event bus projection.</li>
+<li><strong>Evidence Completeness Checks</strong>: No automated pre-check ensures all required artifacts (backtest, OOS, robustness) are present before entering validation-gated states.</li>
+</ol></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>در این صفحه</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-executive-summary'>1. Executive Summary</a></li><li class='toc-item toc-h2'><a href='#2-canonical-state-machine'>2. Canonical State Machine</a></li><li class='toc-item toc-h3'><a href='#state-definitions--invariants'>State Definitions &amp; Invariants</a></li><li class='toc-item toc-h2'><a href='#3-data-sources-storage-and-write-paths'>3. Data Sources, Storage, and Write Paths</a></li><li class='toc-item toc-h2'><a href='#4-execution-eligibility--safety-rules'>4. Execution Eligibility &amp; Safety Rules</a></li><li class='toc-item toc-h2'><a href='#5-observability-gaps-identified'>5. Observability Gaps Identified</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/fa/architecture/STRATEGY_LIFECYCLE_MAP.md'>ویرایش این صفحه در گیت‌هاب</a> · نسخه v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../fa/project/status/'>وضعیت پروژه</a> · <a href='../../../fa/reference/faq/'>پرسش‌های متداول</a> · <a href='../../../fa/releases/'>همه انتشارها</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../fa/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='جستجو در مستندات… — ⌘K' aria-label='جستجو در مستندات…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>جستجو در مستندات……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "جستجو در مستندات…", "home": "خانه", "repo": "گیت‌هاب", "skip": "پرش به محتوا", "language": "زبان", "partial": "متن انگلیسی نمایش داده می‌شود — ترجمه این صفحه هنوز تکمیل نشده است", "english": "انگلیسی", "version": "نسخه", "next": "بعدی", "prev": "قبلی", "on_github": "ویرایش این صفحه در گیت‌هاب", "menu": "منو", "whats_new": "تازه‌ها", "all_releases": "همه انتشارها", "get_started": "شروع کنید", "view_architecture": "معماری", "view_roadmap": "نقشه راه", "close": "بستن", "theme": "پوسته", "theme_light": "روشن", "theme_dark": "تیره", "theme_system": "سیستم", "copy": "کپی", "copied": "کپی شد", "copy_error": "خطا در کپی", "no_results": "نتیجه‌ای یافت نشد", "loading": "در حال بارگذاری…", "section": "بخش", "search_results": "نتایج جستجو", "explore_docs": "کاوش در مستندات", "full_matrix": "ماتریس کامل", "release_timeline": "خط زمان انتشارها", "hero_kicker": "پلتفرم پژوهش و اجرای معاملات کمّی", "hero_title_a": "نکسوس", "hero_title_b": "اسکالپ انجین", "hero_sub": "پلتفرم اسکالپ پژوهش‌محور، شش‌ضلعی و رویدادمحور برای متاتریدر ۵ — ویژگی‌های علّی، مدل‌های عمیق تحت حکمرانی، موتور ریسک ثابت‌شده، ابزار پژوهش قطعی و مشاهده‌پذیری فارنزیک در یک خط لوله قابل‌ممیزی.", "chip_released": "منتشرشده", "chip_rev": "ریویژن", "chip_research": "پژوهش: 50D زنده · 70D کاندیدا", "released_history": "تاریخچه", "release_history_kicker": "تاریخچه انتشارها", "releases_intro": "هر انتشار با هایلایت‌های واقعی خود، برگرفته از فراداده انتشارهای گیت‌هاب در زمان ساخت. منبع یکتای نسخه:", "nf404_title": "۴۰۴", "nf404_lead": "این صفحه مستندات وجود ندارد.", "nf404_home": "خانه", "footer_prefix": "", "brand": "نکسوس", "brand_dim": "اسکالپ انجین", "github_release": "انتشار در گیت‌هاب", "back_home": "بازگشت به خانه", "quickstart_label": "شروع سریع", "status_label": "وضعیت پروژه", "faq_label": "پرسش‌های متداول", "cap_engine": "موتور ویژگی علّی 50D", "cap_risk": "موتور ریسک + کلمپ‌های اجرا", "cap_oos": "Walk-Forward + گیت سخت OOS", "cap_factory": "کارخانه مدل مصنوع-محور", "cap_70d": "قرارداد 70D (پایه+اخبار+نقدینگی)", "cap_cf": "موتور خلاف‌واقع (قدم زدن NO_TRADE)", "pillar_evidence_t": "🧭 شواهد پیش از ادعا", "pillar_evidence_b": "سنجه‌های بدون شواهد «n/a» نمایش داده می‌شوند — هرگز صفر جعلی نیست. نتایج منفی منتشر می‌شوند: کاندیدای پژوهشی 70D توسط گیت OOS خودمان رد شد.", "pillar_safety_t": "🔒 ایمنی در ساخت", "pillar_safety_b": "پیش‌فرض PAPER · SHADOW با صفر اختیار سفارش · LIVE پشت تأیید صریح · کلمپ‌های سخت ریسک (HARD_MAX_LOTS، مارجین ≤20٪) در مسیر اجرا اعمال می‌شوند.", "pillar_research_t": "🔬 پژوهش قطعی", "pillar_research_b": "Walk-Forward با پاکسازی و تحریم، بازپخش بی‌دقیق (bit-exact)، دیتاست/مدل‌های اثرانگشت‌شده، منشأ در هر اجرا — یک قرارداد ویژگی مشترک برای زنده، بازپخش و آموزش.", "pillar_truth_t": "👁️ حقیقت زمان اجرا", "pillar_truth_b": "مشاهده‌پذیری فارنزیک: لاگ‌های تفکیک‌شده با شدت، همبستگی رخدادها، گیت استقرار. حقیقت بروکر بر وضعیت کهنه می‌چربد؛ گیت‌ها مرجع‌اند، تنظیمات فقط قصد.", "capability": "قابلیت", "status": "وضعیت", "chip_certified": "گواهی‌شده", "chip_implemented": "پیاده‌سازی‌شده", "chip_experimental": "آزمایشی", "chip_research_l": "پژوهشی", "cap_highlights": "هایلایت قابلیت‌ها", "callout_important": "مهم", "callout_note": "یادداشت", "callout_warning": "هشدار", "how_it_works": "نکسوس چگونه کار می‌کند", "reading_time": "دقیقه مطالعه", "toc_title": "در این صفحه", "toc_empty": "بدون سرفصل", "last_updated": "آخرین به‌روزرسانی", "share": "اشتراک", "edit_page": "ویرایش این صفحه", "related_title": "ادامه کاوش", "related_sub": "بعدی در این بخش", "up_next": "بعدی", "also_read": "همچنین بخوانید", "prev_page": "قبلی", "next_page": "بعدی", "breadcrumb_home": "خانه", "hero_eyebrow_project": "پروژه", "hero_eyebrow_architecture": "معماری", "hero_eyebrow_research": "پژوهش", "hero_eyebrow_engineering": "مهندسی", "hero_eyebrow_guides": "راهنما", "hero_eyebrow_getting_started": "شروع", "hero_eyebrow_contributing": "مشارکت", "hero_eyebrow_reference": "مرجع", "hero_eyebrow_releases": "انتشارها", "kpi_certified": "گواهی‌شده", "kpi_experimental": "آزمایشی", "kpi_coverage": "پوشش", "steps_title": "مراحل", "copy_code": "کپی", "diagram_title": "نمودار سیستم", "diagram_sub": "نمای تعاملی خط لوله", "stats_live": "قرارداد زنده", "callout_tip": "نکته", "callout_info": "اطلاعات", "callout_success": "موفق", "callout_danger": "خطر", "anchor_copy": "کپی پیوند", "anchor_copied": "پیوند کپی شد", "feedback_title": "آیا مفید بود؟", "feedback_yes": "بله", "feedback_no": "خیر", "feedback_thanks": "سپاس از بازخورد شما", "prose_meta": "مقاله", "word_count": "واژه", "toc_toggle": "فهرست", "hero_desc_project": "نکسوس چیست، چه چیزی گواهی‌شده و چه چیزی آزمایشی است.", "hero_desc_architecture": "موتور چگونه ساخته شده: لایه‌های شش‌ضلعی و مسیر تیک تا تصمیم.", "hero_desc_research": "داده تاریخی چگونه به شواهد ابطال‌پذیر تبدیل می‌شود.", "hero_desc_engineering": "گیت‌های کیفیت، معماری CI و وضعیت امنیتی.", "hero_desc_guides": "کار روزانه با موتور.", "hero_desc_getting_started": "نصب، اجرا و پیکربندی موتور.", "hero_desc_contributing": "قرارداد مهندسی و نحوه مشارکت.", "hero_desc_reference": "مرجع CLI، واژه‌نامه و پاسخ‌های صادقانه.", "hero_desc_releases": "هر انتشار با هایلایت‌های واقعی.", "on_this_page": "در این صفحه"};
+window.NEXUS_LANG = "fa";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../assets/docs-enhance.js' defer></script>
+<script src='../../../assets/search.js' defer></script>
+
+</body>
+</html>

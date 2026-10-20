@@ -25,13 +25,28 @@
   }
 
   /* ---------- reveal on scroll (landing sections) ---------- */
-  var reveals = doc.querySelectorAll(".land-sec, .land-hero");
+  var reveals = doc.querySelectorAll(".land-sec, .land-hero, .fresh-strip");
   if (reveals.length && "IntersectionObserver" in window && !reduced) {
     var rio = new IntersectionObserver(function (es) {
       es.forEach(function (e) { if (e.isIntersecting) { e.target.classList.add("in"); rio.unobserve(e.target); } });
     }, { threshold: 0.1, rootMargin: "0px 0px -40px 0px" });
     reveals.forEach(function (el) { rio.observe(el); });
-  } else {
+  }
+
+  /* Safety net: if a section scrolled past the fold before its observer
+     callback ran (fast wheel/keyboard jumps), reveal it on the next tick. */
+  function revealPassed() {
+    var vh = window.innerHeight || 800;
+    reveals.forEach(function (el) {
+      if (!el.classList.contains("in") && el.getBoundingClientRect().top < vh * 1.1) {
+        el.classList.add("in");
+      }
+    });
+  }
+  window.addEventListener("scroll", revealPassed, { passive: true });
+  window.addEventListener("resize", revealPassed, { passive: true });
+  revealPassed();
+  if (!(reveals.length && "IntersectionObserver" in window && !reduced)) {
     reveals.forEach(function (el) { el.classList.add("in"); });
   }
 
@@ -54,6 +69,9 @@
       var sec = doc.getElementById(id);
       if (sec) spy.observe(sec);
     });
+    if (navLinks[0] && !navLinks.some(function (l) { return l.getAttribute("aria-current"); })) {
+      navLinks[0].setAttribute("aria-current", "true");
+    }
   }
 
   /* ---------- seeded PRNG (deterministic demo data) ---------- */

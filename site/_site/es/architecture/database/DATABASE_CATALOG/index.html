@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang='es' dir='ltr'>
+<head>
+<meta charset='utf-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1'>
+<title>DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM) · Nexus Scalp Engine</title>
+<meta name='description' content='DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM) — Nexus Scalp Engine documentation'>
+<meta name='theme-color' content='#ffffff'>
+<link rel='canonical' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_CATALOG/'>
+<meta property='og:title' content='DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM)'>
+<meta property='og:type' content='website'>
+<meta property='og:url' content='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_CATALOG/'>
+<meta property='og:site_name' content='Nexus Scalp Engine'>
+<meta property='og:description' content='DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM) — Nexus Scalp Engine documentation'>
+<meta property='og:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<meta property='og:image:alt' content='Nexus Scalp Engine — control center with XAUUSD M1 chart and risk overlays'>
+<meta name='twitter:card' content='summary_large_image'>
+<meta name='twitter:title' content='DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM)'>
+<meta name='twitter:description' content='DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM) — Nexus Scalp Engine documentation'>
+<meta name='twitter:image' content='https://opselon.github.io/NexusTradingForexBot/assets/pics/web.png'>
+<link rel='alternate' hreflang='en' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_CATALOG/'> <link rel='alternate' hreflang='fa' href='https://opselon.github.io/NexusTradingForexBot/fa/architecture/database/DATABASE_CATALOG/'> <link rel='alternate' hreflang='ar' href='https://opselon.github.io/NexusTradingForexBot/ar/architecture/database/DATABASE_CATALOG/'> <link rel='alternate' hreflang='es' href='https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_CATALOG/'> <link rel='alternate' hreflang='de' href='https://opselon.github.io/NexusTradingForexBot/de/architecture/database/DATABASE_CATALOG/'><link rel='alternate' hreflang='x-default' href='https://opselon.github.io/NexusTradingForexBot/architecture/database/DATABASE_CATALOG/'>
+<script type='application/ld+json'>{"@context": "https://schema.org", "@type": "TechArticle", "headline": "DATABASE CATALOG — Canonical Table & Capability Reference (TASK-DB-PLATFORM)", "description": "DATABASE CATALOG — Canonical Table & Capability Reference (TASK-DB-PLATFORM) — Nexus Scalp Engine documentation", "inLanguage": "es", "url": "https://opselon.github.io/NexusTradingForexBot/es/architecture/database/DATABASE_CATALOG/", "author": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "publisher": {"@type": "Organization", "name": "Nexus Scalp Engine", "url": "https://github.com/Opselon/NexusTradingForexBot"}, "isPartOf": {"@type": "WebSite", "url": "https://opselon.github.io/NexusTradingForexBot/"}}</script>
+<link rel='preconnect' href='https://fonts.googleapis.com'>
+<link rel='preconnect' href='https://fonts.gstatic.com' crossorigin>
+<link href='https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap' rel='stylesheet'>
+<link rel='stylesheet' href='../../../../assets/styles.css'>
+<link rel='stylesheet' href='../../../../assets/docs-enhance.css'>
+
+<link rel='icon' href='../../../../assets/favicon.svg' type='image/svg+xml'>
+</head>
+<body class=''>
+<div class='reading-progress' id='reading-progress' aria-hidden='true'></div>
+<a class='skip-link' href='#content'>Ir al contenido</a>
+<header class='site-header'>
+  <button class='nav-toggle' id='nav-toggle' aria-label='Menú' aria-expanded='false' aria-controls='sidebar'>
+    <span></span><span></span><span></span>
+  </button>
+  <div class='brand'>
+    <a href='../../../../es/' class='brand-link'><span class='brand-mark'>⚡</span> Nexus <span class='brand-dim'>Scalp Engine</span></a>
+    <span class='brand-badge'>v9.0.17</span>
+  </div>
+  <div class='header-actions'>
+    <div class='search-group'>
+      <input id='doc-search' class='search' type='search' placeholder='Buscar…' aria-label='Buscar…' autocomplete='off'>
+      <button id='cmdk-open' class='search-kbd' type='button' aria-label='Buscar…' title='⌘K / Ctrl+K'><span class='ck-key'>⌘K</span><span class='ck-icon' aria-hidden='true'>⌕</span></button>
+    </div>
+    <details class='theme-picker'>
+      <summary aria-label='Tema' title='Tema'>◐</summary>
+      <div class='lang-menu theme-menu'>
+        <button type='button' data-theme-set='light'>☀ Claro</button>
+        <button type='button' data-theme-set='dark'>☾ Oscuro</button>
+        <button type='button' data-theme-set='system'>🖥 Sistema</button>
+      </div>
+    </details>
+    <details class='lang-picker'>
+      <summary aria-label='Idioma' title='Idioma'><span aria-hidden='true'>🌐</span><span class='lp-name'>Español</span></summary>
+      <div class='lang-menu'><a href='../../../../architecture/database/DATABASE_CATALOG/' lang='en' hreflang='en'>English</a> <a href='../../../../fa/' lang='fa' hreflang='fa' title='Landing page — translation not built'>فارسی</a> <a href='../../../../ar/' lang='ar' hreflang='ar' title='Landing page — translation not built'>العربية</a> <span class='lang-current' lang='es'>Español ✓</span> <a href='../../../../de/' lang='de' hreflang='de' title='Landing page — translation not built'>Deutsch</a></div>
+    </details>
+    <a class='repo-link' href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a>
+  </div>
+</header>
+<div id='sidebar-backdrop' aria-hidden='true'></div>
+<div class='layout'>
+<nav class='sidebar' id='sidebar' aria-label='primary'>
+<a class='nav-home' href='../../../../es/'>Inicio</a>
+<div class='nav-section'><a class='' href='../../../../es/getting-started/'>Inicio</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/getting-started/installation/'>Instalación</a></li>
+<li><a class='' href='../../../../es/getting-started/quickstart/'>Inicio rápido</a></li>
+<li><a class='' href='../../../../es/getting-started/first-run/'>Primera ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/getting-started/configuration/'>Configuración</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/project/'>Proyecto</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/project/vision/'>Visión y propósito</a></li>
+<li><a class='' href='../../../../es/project/scope/'>Alcance</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/status/'>Estado del proyecto</a></li>
+<li><a class='' href='../../../../es/project/capabilities/'>Matriz de capacidades</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/project/roadmap/'>Hoja de ruta</a></li>
+<li><a class='' href='../../../../es/project/milestones/'>Hitos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='active' href='../../../../es/architecture/'>Arquitectura</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/architecture/overview/'>Visión general</a></li>
+<li><a class='' href='../../../../es/architecture/system-map/'>Mapa del sistema</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/data-flow/'>Flujo de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/runtime/'>Runtime</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/research-stack/'>Pila de investigación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/model-pipeline/'>Pipeline de modelos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/execution-pipeline/'>Pipeline de ejecución</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/observability/'>Observabilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/mcp-bridge/'>Puente MCP y traza</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/architecture/database/'>Base de datos</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/research/'>Investigación</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/research/methodology/'>Metodología</a></li>
+<li><a class='' href='../../../../es/research/datasets/'>Datasets</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/backtesting/'>Backtesting</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/walk-forward/'>Walk-Forward</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/out-of-sample/'>Puerta OOS</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/replay/'>Replay</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/counterfactuals/'>Contrafactuales</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/research/validation/'>Validación</a></li>
+<li><a class='' href='../../../../es/research/reproducibility/'>Reproducibilidad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/engineering/'>Ingeniería</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/engineering/quality/'>Calidad y pruebas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/ci/'>Arquitectura de CI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/release-process/'>Proceso de release</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/workflow-test-build-release/'>Flujo de trabajo de pruebas, build y releases</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/engineering/security/'>Seguridad</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/guides/'>Guías</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/guides/cli/'>Guía CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/api/'>Referencia API</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/troubleshooting/'>Solución de problemas</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/guides/common-workflows/'>Flujos comunes</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/contributing/'>Contribuir</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/contributing/contribution-guide/'>Guía de contribución</a></li>
+<li><a class='' href='../../../../es/contributing/documentation/'>Flujo de documentación</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/contributing/add-language/'>Añadir un idioma</a> <span class='fallback-tag' title='English source'>EN</span></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/reference/'>Referencia</a></div>
+<ul class='nav-list'>
+<li><a class='' href='../../../../es/reference/cli-reference/'>Referencia CLI</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/glossary/'>Glosario</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/terminology/'>Terminología y traducciones</a> <span class='fallback-tag' title='English source'>EN</span></li>
+<li><a class='' href='../../../../es/reference/faq/'>FAQ</a></li>
+</ul>
+<div class='nav-section'><a class='' href='../../../../es/releases/'>Versiones</a></div>
+<ul class='nav-list'><li><a href='../../../../es/releases/'>v9.0.17 &amp; historial</a></li></ul>
+</nav>
+<main id='content' class='content' tabindex='-1'>
+<div class='translation-note'>Fuente en inglés — traducción pendiente — <a href='../../../architecture/database/DATABASE_CATALOG/'>inglés</a></div>
+<nav class='breadcrumbs' aria-label='breadcrumb'><a href='../../../../es/architecture/'>Arquitectura</a> / <a href='../../../../es/architecture/database/'>Base de datos</a> / <span class='crumb-current' aria-current='page'>DATABASE CATALOG</span></nav>
+<details class='toc-mobile'><summary>En esta página</summary><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-persistence-domains-one-sqlite-file--one-pg-database-each'>1. Persistence domains (one SQLite file / one PG database each)</a></li><li class='toc-item toc-h2'><a href='#2-auditdb-tables-required-unless-marked-optional'>2. audit.db tables (required unless marked OPTIONAL)</a></li><li class='toc-item toc-h2'><a href='#3-newsdb-tables-all-created-by-newsdatabaseinitializeschema'>3. news.db tables (all created by NewsDatabase.initialize_schema; version 2)</a></li><li class='toc-item toc-h2'><a href='#4-candleinteldb-tables-version-2'>4. candle_intel.db tables (version 2)</a></li><li class='toc-item toc-h2'><a href='#5-capability-semantics-not-the-old-phase-tables-missing-coll'>5. Capability semantics (NOT the old &quot;phase tables missing&quot; collapse)</a></li><li class='toc-item toc-h2'><a href='#6-db--repository--service--api--client-map-client-visible-pa'>6. DB → repository → service → API → client map (client-visible paths)</a></li><li class='toc-item toc-h2'><a href='#7-retention--growth-notes-audit-18-no-data-moved'>7. Retention &amp; growth notes (audit §18, no data moved)</a></li><li class='toc-item toc-h2'><a href='#8-postgresql-portability-status'>8. PostgreSQL portability status</a></li></ul></details><div class='docs-layout'><article class='prose prose-enhanced'><h1 id='database-catalog--canonical-table--capability-reference-task'>DATABASE CATALOG — Canonical Table &amp; Capability Reference (TASK-DB-PLATFORM)</h1>
+<blockquote><p>Owner: Database Platform (Nexus-Main DB/data-plane) — 2026-09-02.</p><p>Source of truth: actual <code>CREATE TABLE</code>/<code>ALTER TABLE</code> statements in code and the</p><p>live operator databases; never docs alone. This catalog is the reference for</p><p>completeness checks (<code>nexus db status/verify</code>, doctor, /api/db/status,</p><p>/api/debug/state, /api/db/manage/status).</p><p>SSOT rule: <code>database/manifest.py</code> (expected schema) and <code>database/registry.py</code></p><p>(expected version = baseline + migrations) must always agree — pinned by</p><p><code>tests/unit/test_database_platform_task_db.py::TestManifestRegistryAgreement</code>.</p></blockquote>
+<h2 id='1-persistence-domains-one-sqlite-file--one-pg-database-each'>1. Persistence domains (one SQLite file / one PG database each)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Domain</th><th>File (SQLite)</th><th>PG database</th><th>Schema version</th><th>Migration count</th><th>Bootstrap owner</th></tr></thead><tbody>
+<tr><td>audit</td><td>artifacts/audit.db</td><td>nse_audit</td><td>7</td><td>6 (AUDIT-0002..0007)</td><td>AuditRepository._setup_storage + gate skeletons</td></tr>
+<tr><td>news</td><td>artifacts/news.db</td><td>nse_news</td><td>2</td><td>1 (NEWS-0002)</td><td>NewsDatabase.__init__ (SchemaMixin)</td></tr>
+<tr><td>candle_intel</td><td>artifacts/candle_intel.db</td><td>nse_candle_intel</td><td>2</td><td>1 (CANDLE-0002)</td><td>CandleIntelStore init</td></tr>
+<tr><td>settings</td><td>%LOCALAPPDATA%/NexusScalpEngine/databases/app_settings.db</td><td>—</td><td>(not versioned)</td><td>0</td><td>SettingsDatabase init</td></tr>
+<tr><td>strategies</td><td>artifacts/strategies.db</td><td>—</td><td>(not versioned)</td><td>0</td><td>StrategyResearchStore.ensure_schema</td></tr>
+<tr><td>secrets</td><td>&lt;user-data&gt;/secrets.enc</td><td>—</td><td>n/a</td><td>n/a</td><td>SecureSecretStore (file-backed, never a DB)</td></tr>
+</tbody></table></div>
+<h2 id='2-auditdb-tables-required-unless-marked-optional'>2. audit.db tables (required unless marked OPTIONAL)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Table</th><th>Subsystem</th><th>Class</th><th>API consumer</th><th>UI consumer</th><th>Notes</th></tr></thead><tbody>
+<tr><td>trading_rules_config</td><td>strategy rules</td><td>REQUIRED_FOR_BOOT</td><td>/api (rules)</td><td>rules panel</td><td>seeded 30 rules; BUG-197 heal added rule_name/is_enabled/category/parameters to skeleton</td></tr>
+<tr><td>audit_signals</td><td>signal audit</td><td>REQUIRED_FOR_FEATURE</td><td>/api/debug/state, debug</td><td>Debug tab</td><td>signal_dedup_key unique; CHG-0043 decision-evidence columns</td></tr>
+<tr><td>audit_guard_telemetry</td><td>guard telemetry</td><td>REQUIRED_FOR_FEATURE</td><td>diagnostics</td><td>Debug</td><td>window index</td></tr>
+<tr><td>audit_orders</td><td>execution/orders</td><td>REQUIRED_FOR_FEATURE</td><td>accounting, incidents</td><td>Performance tab</td><td>(ticket, order_id) index AUDIT-0002; execution_id ALTER</td></tr>
+<tr><td>audit_ledger</td><td>accounting</td><td>REQUIRED_FOR_FEATURE</td><td>/api accounting, ledger UI</td><td>Performance</td><td>ticket INTEGER PK (BUG-197 retype on empty skeleton); close_time index AUDIT-0004; exit-evidence columns AUDIT-0003 (old rows stay ''/0.0 = NOT_RECORDED)</td></tr>
+<tr><td>audit_executions</td><td>execution</td><td>REQUIRED_FOR_FEATURE</td><td>accounting</td><td>Performance</td><td>orphan check green on real DB</td></tr>
+<tr><td>audit_account_snapshots</td><td>accounting</td><td>REQUIRED_FOR_FEATURE</td><td>accounting</td><td>Performance</td><td>3408 rows real</td></tr>
+<tr><td>audit_experiences / audit_experience_outcomes / audit_experience_corrections</td><td>experience</td><td>REQUIRED_FOR_FEATURE</td><td>experience worker</td><td>Debug/intelligence</td><td></td></tr>
+<tr><td>strategy_intelligence_registry / experience_model_registry</td><td>intelligence</td><td>REQUIRED_FOR_FEATURE</td><td>intelligence</td><td>Debug</td><td></td></tr>
+<tr><td>position_lifecycle_events</td><td>trade lifecycle</td><td>REQUIRED_FOR_FEATURE</td><td>TASK-3/7 forensics</td><td>Debug</td><td></td></tr>
+<tr><td>trade_autopsies / behavior_detections / behavior_analysis / anomaly_events</td><td>intelligence</td><td>REQUIRED_FOR_FEATURE</td><td>TASK-2</td><td>Debug</td><td></td></tr>
+<tr><td>strategy_evolution_candidates</td><td>research</td><td>OPTIONAL</td><td>research</td><td>Debug</td><td></td></tr>
+<tr><td>intelligence_worker_state / research_worker_state</td><td>workers</td><td>LAZY_INITIALIZED</td><td>worker checkpoints</td><td>Debug</td><td>created by first worker run</td></tr>
+<tr><td>strategy_registry / research_runs</td><td>research</td><td>REQUIRED_FOR_FEATURE</td><td>research API</td><td>Research</td><td>created by AuditRepository bootstrap (not lazy despite doctor's old wording)</td></tr>
+<tr><td>research_gates / research_events / research_evidence / research_run_snapshots / research_worker_heartbeat</td><td>research</td><td>OPTIONAL</td><td>research</td><td>Research detail</td><td></td></tr>
+<tr><td>factory_generations / factory_candidates / factory_failures / factory_events / factory_runs / factory_provider_usage / factory_loop_state</td><td>strategy factory</td><td>OPTIONAL (feature)</td><td>factory API</td><td>Factory panel</td><td>LAZY via strategies/research_store bootstrap</td></tr>
+<tr><td>incidents / incident_events / incident_value_traces / incident_quarantine</td><td>incident response</td><td>REQUIRED_FOR_FEATURE</td><td>/api/diagnostics/*</td><td>Incident Center</td><td>AUDIT-0006</td></tr>
+<tr><td>model_promotion_audit / model_rollback_audit</td><td>governance</td><td>REQUIRED_FOR_FEATURE</td><td>/api/models/governance/*</td><td>Governance UI</td><td>AUDIT-0005</td></tr>
+<tr><td>model_governance_events / model_governance_state / model_shadow_comparisons / model_runtime_health</td><td>governance</td><td>LAZY_INITIALIZED</td><td>governance, forensics</td><td>Governance UI</td><td>GovernanceStore.ensure_schema on first write</td></tr>
+<tr><td>shadow_runs / shadow_decisions / shadow_promotions</td><td>shadow (Phase 11)</td><td>LAZY_INITIALIZED / SHADOW_ONLY</td><td>/api/models/shadow/*</td><td>Shadow UI</td><td>ShadowStore.ensure_schema on first decision; absence = NOT_INITIALIZED by design (forensics CHECK-SHD-01 treats as UNKNOWN)</td></tr>
+<tr><td>training_runs / model_comparisons</td><td>training</td><td>LAZY_INITIALIZED</td><td>model lifecycle</td><td>Training UI</td><td>ModelLifecycleStore.ensure_schema on first run</td></tr>
+<tr><td>shadow70_observations / shadow70_events / shadow70_feature_health / shadow70_drift_alerts</td><td>70D shadow</td><td>SHADOW_ONLY / LAZY_INITIALIZED</td><td>/api/models/shadow70* (attach)</td><td>Shadow70 UI</td><td>Shadow70Store.ensure_schema on first observation; runtime disabled by default (INV-018)</td></tr>
+<tr><td>release_metadata</td><td>release</td><td>REQUIRED_FOR_FEATURE</td><td>updater, /api status</td><td>Settings/About</td><td>AUDIT-0007 key/value</td></tr>
+<tr><td>audit_broker_orders / audit_broker_deals / audit_broker_trades / audit_broker_history_meta</td><td>broker history</td><td>OPTIONAL (LIVE_ONLY)</td><td>broker sync</td><td>Performance</td><td>sync worker</td></tr>
+<tr><td>application_settings / configuration_metadata / settings_audit</td><td>settings (encroached)</td><td>FOREIGN_SCHEMA in audit.db</td><td>settings service</td><td>Settings UI</td><td>BUG-146 legacy co-tenancy; expected extension, not corruption</td></tr>
+<tr><td>schema_meta / schema_migrations</td><td>platform</td><td>REQUIRED_FOR_BOOT</td><td>/api/db/status, doctor</td><td>Debug</td><td>migration ledger</td></tr>
+</tbody></table></div>
+<h2 id='3-newsdb-tables-all-created-by-newsdatabaseinitializeschema'>3. news.db tables (all created by NewsDatabase.initialize_schema; version 2)</h2>
+<p>news_sources, news_articles (NOT "articles"), news_article_versions, news_entities, news_topics, news_analysis, news_impacts, news_consensus, news_analysis_runs, news_worker_state, news_event_links, news_trade_links, news_health, news_analyzed_hashes, news_junk_hashes, news_prune_audit, news_ai_analysis, schema_migrations, schema_meta.</p>
+<ul>
+<li>Doctor previously probed <code>articles</code>/<code>events</code> — tables that NEVER existed in any</li>
+</ul>
+<p>revision (proven via git -S across history) → permanent false WARN. Corrected (CHG-0043 health): probe <code>news_articles</code>/<code>news_impacts</code>; disabled feature → DISABLED state; absent DB → NOT_INITIALIZED.</p>
+<h2 id='4-candleinteldb-tables-version-2'>4. candle_intel.db tables (version 2)</h2>
+<p>candles, candle_closures, candle_patterns, market_regimes, feature_vectors, trade_proposals, trade_decisions, open_positions, exit_signals, risk_evaluations, rule_vetoes, audit_log, schema_migrations, schema_meta.</p>
+<h2 id='5-capability-semantics-not-the-old-phase-tables-missing-coll'>5. Capability semantics (NOT the old "phase tables missing" collapse)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>State</th><th>Meaning</th><th>Example</th></tr></thead><tbody>
+<tr><td>REQUIRED_FOR_BOOT missing</td><td>FAIL (genuine defect)</td><td>audit_ledger absent after engine start</td></tr>
+<tr><td>LAZY_INITIALIZED absent</td><td>NOT_INITIALIZED (INFO, never WARN)</td><td>shadow_runs before first shadow decision</td></tr>
+<tr><td>Feature disabled</td><td>DISABLED (operator choice)</td><td>news.enabled=false, no news.db</td></tr>
+<tr><td>Optional domain absent</td><td>NOT_APPLICABLE / NOT_INITIALIZED</td><td>strategies.db before setup runs</td></tr>
+<tr><td>Foreign table present</td><td>EXPECTED_EXTENSION (surface, never drop)</td><td>settings tables inside audit.db</td></tr>
+<tr><td>schema_meta missing but tables match</td><td>baseline-recorded at current version</td><td>pre-TASK-10 legacy DB</td></tr>
+<tr><td>Version &gt; expected</td><td>DB_DOWNGRADE_BLOCKED</td><td>rolled-back app version</td></tr>
+</tbody></table></div>
+<h2 id='6-db--repository--service--api--client-map-client-visible-pa'>6. DB → repository → service → API → client map (client-visible paths)</h2>
+<div class='table-wrap'><table>
+<thead><tr><th>Capability</th><th>Repository/Store</th><th>Service/API</th><th>UI</th></tr></thead><tbody>
+<tr><td>Migration/schema truth</td><td>DatabaseMigrationEngine.status()</td><td>/api/db/status, /api/db/manage/status, doctor DATABASE</td><td>Debug DB card (schema_version — BUG-195), DB Management panel</td></tr>
+<tr><td>Per-domain versions for operator snapshot</td><td>default_db_versions_provider (BUG-196 state key)</td><td>/api/operator/summary database section</td><td>operator summary</td></tr>
+<tr><td>DB explorer / SQL console</td><td>db_console router</td><td>/api/db/console/*</td><td>SSMS-style panel</td></tr>
+<tr><td>Incidents</td><td>IncidentStore (limits clamped 1..500)</td><td>/api/diagnostics/*</td><td>Incident Center</td></tr>
+<tr><td>Shadow runs/decisions</td><td>ShadowStore.list_runs/list_decisions (limit params)</td><td>/api/models/shadow/*</td><td>Shadow UI</td></tr>
+<tr><td>Governance audits</td><td>GovernanceStore + AUDIT-0005 tables</td><td>/api/models/governance/*</td><td>Governance UI</td></tr>
+<tr><td>Accounting/ledger</td><td>AuditRepository ledger queries</td><td>accounting API</td><td>Performance tab</td></tr>
+<tr><td>Release metadata</td><td>release_metadata KV</td><td>updater + /api/version</td><td>About/Update</td></tr>
+</tbody></table></div>
+<h2 id='7-retention--growth-notes-audit-18-no-data-moved'>7. Retention &amp; growth notes (audit §18, no data moved)</h2>
+<ul>
+<li>Real-DB observations (2026-09-02): audit_broker_orders 10 431 / audit_broker_deals</li>
+</ul>
+<p>8 288 / audit_orders 8 463 / audit_signals 2 194 / news_articles 16 263 — bounded by hygiene worker (TASK-11) with news_prune_audit trail. No unbounded log table found; broker history rows are LIVE_ONLY sync mirrors, candidates for future parquet archival (documented, NOT moved here).</p>
+<ul>
+<li>Perf: <code>ORDER BY COALESCE(NULLIF(close_time,''), timestamp)</code> full-scans; the</li>
+</ul>
+<p>AUDIT-0004 covering index serves the plain <code>close_time</code> ordering path. Finding recorded; no hot-path change made (327 rows → 2 ms today).</p>
+<h2 id='8-postgresql-portability-status'>8. PostgreSQL portability status</h2>
+<ul>
+<li>Code path complete: DatabaseConfig provider switch, PostgreSQLDriver,</li>
+</ul>
+<p>ddl_port (AUTOINCREMENT→BIGSERIAL etc.), SqliteToPostgresMigrator with checkpoints, CI database-provider arm (real postgres:16 service).</p>
+<ul>
+<li>psycopg lives in the <code>postgres</code> extra; PG integration tests self-skip when</li>
+</ul>
+<p>NSE_PG_TEST_URL is unset (local default) and run against the CI service.</p>
+<ul>
+<li>CI URL quirk (documented, not a secret leak): the env var value is a masked</li>
+</ul>
+<p><code>***</code> placeholder acting as a feature flag — the tests authenticate via the secret-store password (<code>_ensure_pw</code>), not the env URL.</p></article><aside class='toc' aria-labelledby='toc-title'><div class='toc-title' id='toc-title'>En esta página</div><ul class='toc-list'><li class='toc-item toc-h2'><a href='#1-persistence-domains-one-sqlite-file--one-pg-database-each'>1. Persistence domains (one SQLite file / one PG database each)</a></li><li class='toc-item toc-h2'><a href='#2-auditdb-tables-required-unless-marked-optional'>2. audit.db tables (required unless marked OPTIONAL)</a></li><li class='toc-item toc-h2'><a href='#3-newsdb-tables-all-created-by-newsdatabaseinitializeschema'>3. news.db tables (all created by NewsDatabase.initialize_schema; version 2)</a></li><li class='toc-item toc-h2'><a href='#4-candleinteldb-tables-version-2'>4. candle_intel.db tables (version 2)</a></li><li class='toc-item toc-h2'><a href='#5-capability-semantics-not-the-old-phase-tables-missing-coll'>5. Capability semantics (NOT the old &quot;phase tables missing&quot; collapse)</a></li><li class='toc-item toc-h2'><a href='#6-db--repository--service--api--client-map-client-visible-pa'>6. DB → repository → service → API → client map (client-visible paths)</a></li><li class='toc-item toc-h2'><a href='#7-retention--growth-notes-audit-18-no-data-moved'>7. Retention &amp; growth notes (audit §18, no data moved)</a></li><li class='toc-item toc-h2'><a href='#8-postgresql-portability-status'>8. PostgreSQL portability status</a></li></ul></aside></div>
+
+<footer class='page-footer'>
+  <div style='display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;width:100%'>
+    <span><a href='https://github.com/Opselon/NexusTradingForexBot/edit/main/site/content/es/architecture/database/DATABASE_CATALOG.md'>Editar esta página en GitHub</a> · Versión v9.0.17 · rev <a href='https://github.com/Opselon/NexusTradingForexBot/commit/c1e2c28'>c1e2c28</a></span>
+    <span><a href='../../../../es/project/status/'>Estado del proyecto</a> · <a href='../../../../es/reference/faq/'>FAQ</a> · <a href='../../../../es/releases/'>Todas las versiones</a> · <a href='https://github.com/Opselon/NexusTradingForexBot'>GitHub ↗</a></span>
+  </div>
+  <div style='margin-top:10px;color:var(--muted);font-size:.82rem'>Research & engineering platform — not a promise of profit. Leveraged scalping carries extreme risk. <a href='../../../../es/project/status/'>Evidence-graded status</a>.</div>
+</footer>
+</main>
+</div>
+<div id='cmdk' class='cmdk' aria-hidden='true' role='dialog' aria-label='Command palette'>
+  <div class='cmdk-box' role='listbox' aria-label='Search results'>
+    <input class='cmdk-input' placeholder='Buscar… — ⌘K' aria-label='Buscar…' autocomplete='off'>
+    <div class='cmdk-list'><div class='search-empty'>Buscar……</div></div>
+  </div>
+</div>
+<script>
+window.NEXUS_LOCALE = {"search": "Buscar…", "home": "Inicio", "repo": "GitHub", "skip": "Ir al contenido", "language": "Idioma", "partial": "Fuente en inglés — traducción pendiente", "english": "inglés", "version": "Versión", "next": "Siguiente", "prev": "Anterior", "on_github": "Editar esta página en GitHub", "menu": "Menú", "whats_new": "Novedades", "all_releases": "Todas las versiones", "get_started": "Comenzar", "view_architecture": "Arquitectura", "view_roadmap": "Hoja de ruta", "close": "Cerrar", "theme": "Tema", "theme_light": "Claro", "theme_dark": "Oscuro", "theme_system": "Sistema", "copy": "Copiar", "copied": "Copiado", "copy_error": "Error al copiar", "no_results": "Sin resultados", "loading": "Cargando…", "section": "Sección", "search_results": "Resultados de búsqueda", "explore_docs": "Explora la documentación", "full_matrix": "Matriz completa", "release_timeline": "Cronología de versiones", "hero_kicker": "PLATAFORMA DE INVESTIGACIÓN Y EJECUCIÓN DE TRADING CUANTITATIVO", "hero_title_a": "Nexus", "hero_title_b": "Scalp Engine", "hero_sub": "Una plataforma de scalping basada en investigación, hexagonal y dirigida por eventos para MetaTrader 5 — características causales, modelos profundos gobernados, un motor de riesgo invariante, herramientas de investigación deterministas y observabilidad forense en un pipeline auditable.", "chip_released": "publicada", "chip_rev": "rev", "chip_research": "investigación: 50D vivo · 70D candidato", "released_history": "historial", "release_history_kicker": "HISTORIAL DE VERSIONES", "releases_intro": "Cada versión con sus novedades reales, derivadas de los metadatos de GitHub en tiempo de compilación. Fuente única de versión:", "nf404_title": "404", "nf404_lead": "Esta página de documentación no existe.", "nf404_home": "Inicio", "footer_prefix": "", "brand": "Nexus", "brand_dim": "Scalp Engine", "github_release": "Versión en GitHub", "back_home": "Volver al inicio", "quickstart_label": "Inicio rápido", "status_label": "Estado del proyecto", "faq_label": "FAQ", "cap_engine": "Motor de características causales 50D", "cap_risk": "Motor de riesgo + límites de ejecución", "cap_oos": "Walk-Forward + puerta OOS estricta", "cap_factory": "Fábrica de modelos artefacto-céntrica", "cap_70d": "Contrato 70D (Base+Noticias+Liquidez)", "cap_cf": "Motor contrafactual (recorrido NO_TRADE)", "pillar_evidence_t": "🧭 Evidencia antes que afirmaciones", "pillar_evidence_b": "Las métricas sin evidencia muestran n/a — nunca ceros falsos. Los resultados negativos se publican: nuestro candidato insignia 70D fue rechazado por nuestra propia puerta OOS.", "pillar_safety_t": "🔒 Seguridad por construcción", "pillar_safety_b": "PAPER por defecto · SHADOW sin autoridad de órdenes · LIVE tras confirmación explícita · límites estrictos de riesgo (HARD_MAX_LOTS, margen ≤20%) aplicados en la ruta de ejecución.", "pillar_research_t": "🔬 Investigación determinista", "pillar_research_b": "Walk-forward purgado y con embargo, replay bit-exacto, datasets/modelos con huella, procedencia en cada ejecución — el mismo contrato de características para vivo, replay y entrenamiento.", "pillar_truth_t": "👁️ Verdad del runtime", "pillar_truth_b": "Observabilidad forense: logs por severidad, correlación de incidentes, puerta de despliegue. La verdad del bróker gana al estado obsoleto; las puertas son la autoridad, la configuración es intención.", "capability": "Capacidad", "status": "Estado", "chip_certified": "CERTIFICADO", "chip_implemented": "IMPLEMENTADO", "chip_experimental": "EXPERIMENTAL", "chip_research_l": "INVESTIGACIÓN", "cap_highlights": "Capacidades destacadas", "callout_important": "IMPORTANTE", "callout_note": "NOTA", "callout_warning": "ADVERTENCIA", "how_it_works": "Cómo funciona Nexus", "reading_time": "min de lectura", "toc_title": "En esta página", "toc_empty": "Sin encabezados", "last_updated": "Actualizado", "share": "Compartir", "edit_page": "Editar esta página", "related_title": "Sigue explorando", "related_sub": "A continuación en esta sección", "up_next": "Siguiente", "also_read": "Lee también", "prev_page": "Anterior", "next_page": "Siguiente", "breadcrumb_home": "Inicio", "hero_eyebrow_project": "Proyecto", "hero_eyebrow_architecture": "Arquitectura", "hero_eyebrow_research": "Investigación", "hero_eyebrow_engineering": "Ingeniería", "hero_eyebrow_guides": "Guías", "hero_eyebrow_getting_started": "Inicio", "hero_eyebrow_contributing": "Contribuir", "hero_eyebrow_reference": "Referencia", "hero_eyebrow_releases": "Versiones", "kpi_certified": "Certificado", "kpi_experimental": "Experimental", "kpi_coverage": "Cobertura", "steps_title": "Pasos", "copy_code": "Copiar", "diagram_title": "Diagrama del sistema", "diagram_sub": "Vista interactiva del pipeline", "stats_live": "Contrato vivo", "callout_tip": "CONSEJO", "callout_info": "INFO", "callout_success": "ÉXITO", "callout_danger": "PELIGRO", "anchor_copy": "Copiar enlace", "anchor_copied": "Enlace copiado", "feedback_title": "¿Te resultó útil?", "feedback_yes": "Sí", "feedback_no": "No", "feedback_thanks": "Gracias por tu comentario", "prose_meta": "Artículo", "word_count": "palabras", "toc_toggle": "Contenidos", "hero_desc_project": "Qué es Nexus, qué está certificado vs experimental.", "hero_desc_architecture": "Cómo está construido el motor: capas hexagonales y camino del tick.", "hero_desc_research": "Cómo los datos históricos se convierten en evidencia falsable.", "hero_desc_engineering": "Puertas de calidad, arquitectura de CI y postura de seguridad.", "hero_desc_guides": "Operar el motor día a día.", "hero_desc_getting_started": "Instala, ejecuta y configura el motor.", "hero_desc_contributing": "El contrato de ingeniería y cómo contribuir.", "hero_desc_reference": "Referencia CLI, glosario y respuestas honestas.", "hero_desc_releases": "Cada versión con sus novedades reales.", "on_this_page": "En esta página"};
+window.NEXUS_LANG = "es";
+(function(){  /* theme boot: persisted light/dark/system, no FOUC */
+  document.documentElement.classList.add("js");
+  try {
+    var saved = localStorage.getItem("nexus-theme");
+    var theme = saved || "system";
+    var dark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    document.documentElement.setAttribute("data-theme-pref", theme);
+  } catch (e) {}
+})();
+</script>
+<script src='../../../../assets/docs-enhance.js' defer></script>
+<script src='../../../../assets/search.js' defer></script>
+
+</body>
+</html>

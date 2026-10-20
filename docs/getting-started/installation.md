@@ -101,7 +101,7 @@ python -m venv .venv
 source .venv/bin/activate
 
 pip install --upgrade pip
-pip install -e .[dev]
+pip install -e ".[dev]"
 
 # Smoke-test the whole toolchain — no broker needed
 pytest tests/unit -q

@@ -30,3 +30,7 @@ parity tests fail loudly if a replay vector diverges from its dataset twin.
 A backtest scores a strategy on history. A replay proves the **same code path**
 that would run live behaves identically on history. Backtest answers "how
 well?"; replay answers "is this actually the same system?".
+
+## See also
+
+- [Replay identity gate](../architecture/mcp-bridge.md#replay-identity-gate) — why a mismatched `dataset_fingerprint` is a 422, not a silent comparison.
