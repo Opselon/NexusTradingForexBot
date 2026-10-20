@@ -89,18 +89,30 @@ def main() -> int:
             else "",
         }
 
-    runs = get(f"/repos/{repo}/actions/runs?branch={branch}&per_page=1")
+    runs = get(f"/repos/{repo}/actions/runs?branch={branch}&per_page=20")
     ci = {}
     workflow_runs = (runs or {}).get("workflow_runs") if isinstance(runs, dict) else None
-    if workflow_runs:
-        r = workflow_runs[0]
-        ci = {
-            "name": r.get("name", ""),
-            "status": r.get("status", ""),
-            "conclusion": r.get("conclusion") or "",
-            "html_url": r.get("html_url", ""),
-            "updated_at": r.get("updated_at", ""),
-        }
+    if isinstance(workflow_runs, list):
+        # A skipped run is not a pass (the repo's own CI rule), and auxiliary
+        # workflows (PR evidence, docs, sockets) would otherwise mask the real
+        # verdict — so pick the latest COMPLETED run that actually ran,
+        # preferring the main "CI" workflow.
+        completed = [
+            r
+            for r in workflow_runs
+            if (r.get("status") or "") == "completed"
+            and (r.get("conclusion") or "") not in ("", "skipped")
+        ]
+        preferred = [r for r in completed if r.get("name") == "CI"]
+        pick = (preferred or completed or [None])[0]
+        if pick:
+            ci = {
+                "name": pick.get("name", ""),
+                "status": pick.get("status", ""),
+                "conclusion": pick.get("conclusion") or "",
+                "html_url": pick.get("html_url", ""),
+                "updated_at": pick.get("updated_at", ""),
+            }
 
     contributors = get(f"/repos/{repo}/contributors?per_page=100&anon=false")
     contributors_count = len(contributors) if isinstance(contributors, list) else None
