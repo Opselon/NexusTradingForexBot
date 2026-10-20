@@ -53,7 +53,10 @@ jobs:
             "httpx>=0.26,<1.0" \
             "pytest>=8" \
             "pytest-asyncio>=0.23" \
-            "numpy>=1.26,<3.0"
+            "numpy>=1.26,<3.0" \
+            "structlog>=24" \
+            "pydantic>=2.7,<3.0" \
+            "pydantic-settings>=2.2,<3.0"
 
       - name: Run benchmarks (bench units exit non-zero on regression)
         id: bench
