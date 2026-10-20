@@ -73,6 +73,12 @@ def log_persistence_enabled(settings_db: Any | None = None) -> bool:
         value = getattr(row, "value", row)
         if value is None or str(value).strip() == "":
             return LOG_PERSISTENCE_DEFAULT_ENABLED
+        # Coerce the SPELLINGS an operator/UI can actually store. ``bool()``
+        # alone reads every non-empty string as True, so a row holding "0" or
+        # "false" (what a settings form or a YAML import writes) silently
+        # could NOT turn the sink off — the switch looked wired and was not.
+        if isinstance(value, str):
+            return value.strip().lower() not in {"0", "false", "no", "off", "disabled"}
         return bool(value)
     except Exception:
         return LOG_PERSISTENCE_DEFAULT_ENABLED

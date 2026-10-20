@@ -148,7 +148,15 @@ class TestSaveConfigTelegramPersistence:
             secret_store=SecureSecretStore(tmp_path),
         )
         self._isolate_live_yaml(tmp_path, monkeypatch)
-        return TestClient(create_app(engine_ref=self._make_engine(svc))), svc
+        # WEB-AUTH-P0: the app enforces a control-plane token (generating and
+        # persisting one when none is configured). Pin it explicitly instead of
+        # relying on a generated value the test could never send, and carry it
+        # on the client like the dashboard does.
+        token = "settings-api-bug072-token"
+        monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", token)
+        client = TestClient(create_app(engine_ref=self._make_engine(svc)))
+        client.headers.update({"Authorization": f"Bearer {token}"})
+        return client, svc
 
     def test_config_save_persists_token_to_secret_store(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch

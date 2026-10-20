@@ -310,8 +310,11 @@ def _resolve_within_import_roots(raw: str) -> Path:
 #: this pattern compiles exactly once.
 _IMPORT_PATH_SHAPE = _re.compile(
     r"(?:[A-Za-z]:[\\/]{1,2})?/?"  # optional Windows drive and/or POSIX root slash
-    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"  # safe nested dirs (spaces permitted)
-    r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (incl. extension dots and spaces)
+    # safe nested dirs; a LEADING dot is admitted because dot-directories are
+    # ordinary ("~/.cache", "/root/.hermes", checkouts under ".local") and the
+    # traversal form ("..") is already refused before this barrier runs.
+    r"(?:\.?[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"
+    r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (dots/spaces admitted)
 )
 
 

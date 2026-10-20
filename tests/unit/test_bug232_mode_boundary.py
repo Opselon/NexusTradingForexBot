@@ -107,8 +107,17 @@ def _build_engine(persisted_mode: str, bound_paper: bool) -> LiveEngine:
     return engine, result  # type: ignore[return-value]
 
 
-def test_align_live_boot_replaces_paper_adapter():
-    """THE BUG-232 regression: LIVE effective mode + paper adapter -> real adapter."""
+def test_align_live_boot_replaces_paper_adapter(monkeypatch):
+    """THE BUG-232 regression: LIVE effective mode + paper adapter -> real adapter.
+
+    The replacement is built as a real ``RemoteMT5GatewayAdapter``, which
+    REFUSES to construct without gateway credentials (audit B2). A LIVE boot
+    without credentials is not a valid deployment, so the test supplies
+    stub credentials — the adapter object is only constructed here (no
+    socket is opened), and the gate itself stays fully enforced.
+    """
+    monkeypatch.setenv("NSE_GATEWAY_API_KEY", "bug232-stub-key")
+    monkeypatch.setenv("NSE_GATEWAY_SECRET", "bug232-stub-secret")
     engine, result = _build_engine("LIVE", bound_paper=True)
     assert not isinstance(result, PaperMT5Adapter), (
         "LIVE boot kept the paper simulation adapter (BUG-232 unfixed)"

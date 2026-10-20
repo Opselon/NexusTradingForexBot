@@ -378,10 +378,10 @@ def compute_mutual_information(
             continue
         x_binned = _discretize(col, bins)
         y_binned = np.searchsorted(classes, y).astype(np.int64)
-        joint = np.bincount(x_binned * len(classes) + y_binned, minlength=bins * len(classes))
-        joint = joint.reshape(bins, len(classes))
-        h_xy = _entropy(joint.ravel(), float(n))
-        h_x = _entropy(joint.sum(axis=1), float(n))
+        flat = np.bincount(x_binned * len(classes) + y_binned, minlength=bins * len(classes))
+        grid = flat.reshape(bins, len(classes))
+        h_xy = _entropy(grid.ravel(), float(n))
+        h_x = _entropy(grid.sum(axis=1), float(n))
         # I(X;Y) = H(X) + H(Y) - H(X,Y); floored at 0 (estimator noise).
         mi[j] = max(h_x + h_y - h_xy, 0.0)
     return mi

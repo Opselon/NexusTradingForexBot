@@ -34,7 +34,9 @@ import ci_ruff_repair  # noqa: E402
 
 
 def _repo_python() -> str:
-    for candidate in (REPO / ".venv" / "Scripts" / "python.exe", sys.executable):
+    candidates = [REPO / ".venv" / "Scripts" / "python.exe", REPO / ".venv" / "bin" / "python"]
+    candidates.append(Path(sys.executable))
+    for candidate in candidates:
         if Path(candidate).exists():
             return str(candidate)
     pytest.skip("no usable python toolchain for subprocess tests")
@@ -59,12 +61,19 @@ def _write_pkg(tmp: Path) -> None:
     (tmp / "pyproject.toml").write_text(
         "[tool.ruff]\nline-length = 100\ntarget-version = 'py311'\n", encoding="utf-8"
     )
-    # ci_ruff_repair looks for the toolchain in <cwd>/.venv first; the venv
-    # shim python.exe must actually BE a working interpreter (a copied exe
-    # loses its venv DLL/home on Windows), so use the hosting interpreter.
-    scripts = tmp / ".venv" / "Scripts"
-    scripts.mkdir(parents=True, exist_ok=True)
-    (scripts / "python.exe").write_bytes(Path(sys.executable).read_bytes())
+    # ci_ruff_repair looks for the toolchain in <cwd>/.venv first; the shim
+    # must actually BE a working, EXECUTABLE interpreter. On Windows a copied
+    # exe loses its venv DLL/home, so the hosting interpreter is copied; on
+    # POSIX write_bytes() would land 0644 (exec bit lost -> PermissionError),
+    # so symlink instead.
+    if sys.platform == "win32":
+        scripts = tmp / ".venv" / "Scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "python.exe").write_bytes(Path(sys.executable).read_bytes())
+    else:
+        bin_dir = tmp / ".venv" / "bin"
+        bin_dir.mkdir(parents=True, exist_ok=True)
+        (bin_dir / "python").symlink_to(sys.executable)
     pkg = tmp / "pkg"
     pkg.mkdir()
     (pkg / "__init__.py").write_text("X = 1\n", encoding="utf-8")

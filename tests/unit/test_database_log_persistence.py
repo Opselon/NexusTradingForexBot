@@ -6,11 +6,35 @@ from nexus_scalp.database import log_store, query_logging
 from nexus_scalp.database.log_store import DatabaseLogEntry
 
 
-def test_persistence_is_opt_in() -> None:
-    settings = SimpleNamespace(get=lambda key: None)
-    assert log_store.log_persistence_enabled(settings) is False
-    settings.get = lambda key: SimpleNamespace(value=True)
-    assert log_store.log_persistence_enabled(settings) is True
+def _settings(value):
+    """A settings seam whose row holds ``value`` (``None`` = no row at all)."""
+    return SimpleNamespace(get=lambda key: None if value is None else SimpleNamespace(value=value))
+
+
+def test_persistence_is_on_by_default_and_explicitly_switchable() -> None:
+    """The sink ships ON; only an explicit operator row turns it off.
+
+    The requirement is "errors and warnings from the WHOLE app, in the DB", so
+    an absent/unreadable row must never read as "off" — that is precisely the
+    failure mode that made the sink look dead. The operator switch itself is
+    still honoured in both directions.
+    """
+    assert log_store.log_persistence_enabled(_settings(None)) is True
+    assert log_store.log_persistence_enabled(_settings(True)) is True
+    assert log_store.log_persistence_enabled(_settings(False)) is False
+
+
+def test_persistence_switch_reads_operator_falsy_spellings() -> None:
+    """An "0"/"false"/"off" row must DISABLE the switch.
+
+    ``bool(value)`` reads every non-empty string as True, so a settings form
+    that stored "0" left the sink running while the operator believed it was
+    off — the switch looked wired and was not.
+    """
+    for falsy in ("0", "false", "False", "no", "off", "disabled"):
+        assert log_store.log_persistence_enabled(_settings(falsy)) is False, falsy
+    for truthy in ("1", "true", "on", "yes", "enabled"):
+        assert log_store.log_persistence_enabled(_settings(truthy)) is True, truthy
 
 
 def test_query_funnels_persist_when_enabled(monkeypatch) -> None:

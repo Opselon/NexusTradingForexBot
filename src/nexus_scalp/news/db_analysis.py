@@ -12,6 +12,7 @@ import contextlib
 import json
 from typing import Any
 
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
 from nexus_scalp.observability.logging import get_logger
 
@@ -55,7 +56,7 @@ class AnalysisMixin(_NewsDbCoreProto):
         return value
 
     def replace_entities(self, article_id: str, entities: list[dict[str, Any]]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute("DELETE FROM news_entities WHERE article_id = ?;", (article_id,))
             for e in entities:
                 conn.execute(
@@ -75,7 +76,7 @@ class AnalysisMixin(_NewsDbCoreProto):
                 )
 
     def replace_topics(self, article_id: str, topics: list[str]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute("DELETE FROM news_topics WHERE article_id = ?;", (article_id,))
             for t in topics:
                 conn.execute(
@@ -84,7 +85,7 @@ class AnalysisMixin(_NewsDbCoreProto):
                 )
 
     def get_entities(self, article_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -94,7 +95,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             ]
 
     def get_topics(self, article_id: str) -> list[str]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 str(r["topic"])
                 for r in conn.execute(
@@ -110,14 +111,14 @@ class AnalysisMixin(_NewsDbCoreProto):
         """Idempotent: by default refuses to re-analyze an already-analyzed article (confusion guard).
         Pass allow_overwrite=True only for explicit user re-analysis (API force flag)."""
         if not allow_overwrite:
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 exists = conn.execute(
                     "SELECT 1 FROM news_analysis WHERE article_id = ? LIMIT 1;",
                     (row.get("article_id", ""),),
                 ).fetchone()
                 if exists is not None:
                     return
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_analysis
@@ -178,7 +179,7 @@ class AnalysisMixin(_NewsDbCoreProto):
         # Tombstone this hash so future re-ingest of same story (even if DB row deleted) stays suppressed
         with contextlib.suppress(Exception):
             ah = None
-            with self._connect() as _c2:
+            with sqlite_session(self._connect()) as _c2:
                 r = _c2.execute(
                     "SELECT article_hash, title FROM news_articles WHERE article_id = ?;",
                     (row.get("article_id", ""),),
@@ -193,7 +194,7 @@ class AnalysisMixin(_NewsDbCoreProto):
                         )
 
     def get_analysis(self, article_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_analysis WHERE article_id = ? "
                 "ORDER BY analyzed_at DESC LIMIT 1;",
@@ -203,7 +204,7 @@ class AnalysisMixin(_NewsDbCoreProto):
 
     def list_analysis(self, limit: int = 50) -> list[dict[str, Any]]:
         bounded = self._bounded_limit(limit)
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -217,7 +218,7 @@ class AnalysisMixin(_NewsDbCoreProto):
         # so a 4h-old article analyzed now appears at 4h-ago on the timeline.
         published_at: str | None = None
         try:
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 row = conn.execute(
                     "SELECT published_at FROM news_articles WHERE article_id = ?;",
                     (article_id,),
@@ -227,7 +228,7 @@ class AnalysisMixin(_NewsDbCoreProto):
         except Exception:
             published_at = None
         anchor = published_at or self._now()
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute("DELETE FROM news_impacts WHERE article_id = ?;", (article_id,))
             for imp in impacts:
                 ts = imp.get("evaluated_at") or imp.get("published_at") or anchor
@@ -253,7 +254,7 @@ class AnalysisMixin(_NewsDbCoreProto):
                 )
 
     def get_impacts(self, article_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -264,7 +265,7 @@ class AnalysisMixin(_NewsDbCoreProto):
 
     def list_recent_impacts(self, asset: str = "XAUUSD", limit: int = 50) -> list[dict[str, Any]]:
         bounded = max(1, min(int(limit), 500))
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -275,7 +276,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             ]
 
     def upsert_consensus(self, row: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_consensus
@@ -307,7 +308,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             )
 
     def get_consensus(self, article_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_consensus WHERE article_id = ?;", (article_id,)
             ).fetchone()
@@ -333,7 +334,7 @@ class AnalysisMixin(_NewsDbCoreProto):
         (entity_type='DETERMINISTIC_EVENT') so no schema migration is needed
         and the info survives with the article.
         """
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_entities
@@ -353,7 +354,7 @@ class AnalysisMixin(_NewsDbCoreProto):
 
     def list_deterministic_high_impact(self, limit: int = 100) -> list[dict[str, Any]]:
         """Recent articles carrying a deterministic high-impact tag."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -371,14 +372,14 @@ class AnalysisMixin(_NewsDbCoreProto):
     def insert_ai_analysis(self, row: dict[str, Any], *, allow_overwrite: bool = False) -> None:
         """Idempotent: skips if article already has a completed AI analysis (prevents duplicate AI noise)."""
         if not allow_overwrite:
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 exists = conn.execute(
                     "SELECT 1 FROM news_ai_analysis WHERE article_id = ? AND analysis_status IN ('completed','completed_insufficient') LIMIT 1;",
                     (row.get("article_id", ""),),
                 ).fetchone()
                 if exists is not None:
                     return
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_ai_analysis
@@ -429,7 +430,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             )
 
     def get_ai_analysis(self, article_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_ai_analysis WHERE article_id = ? "
                 "ORDER BY analyzed_at DESC LIMIT 1;",
@@ -438,7 +439,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             return dict(row) if row else None
 
     def get_ai_analysis_by_id(self, ai_analysis_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_ai_analysis WHERE ai_analysis_id = ?;", (ai_analysis_id,)
             ).fetchone()
@@ -446,7 +447,7 @@ class AnalysisMixin(_NewsDbCoreProto):
 
     def list_ai_analysis(self, limit: int = 50) -> list[dict[str, Any]]:
         bounded = self._bounded_limit(limit)
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -456,7 +457,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             ]
 
     def insert_trade_link(self, row: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO news_trade_links
@@ -476,7 +477,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             )
 
     def list_trade_links(self, trade_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -486,7 +487,7 @@ class AnalysisMixin(_NewsDbCoreProto):
             ]
 
     def list_article_trade_links(self, article_id: str) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(

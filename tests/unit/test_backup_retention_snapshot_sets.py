@@ -264,7 +264,9 @@ def test_prune_keeps_a_fresh_set(backup_dir: str) -> None:
     assert os.path.isdir(os.path.join(backup_dir, "hygiene-20260928"))
 
 
-def test_prune_never_remembers_a_partially_removed_set(backup_dir: str) -> None:
+def test_prune_never_remembers_a_partially_removed_set(
+    backup_dir: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A set that cannot be fully removed is reported, not silently dropped."""
     set_dir = _make_set(
         backup_dir,
@@ -272,14 +274,23 @@ def test_prune_never_remembers_a_partially_removed_set(backup_dir: str) -> None:
         members=("audit.db.snapshot", "news.db.snapshot"),
         age_days=100,
     )
-    # Make the directory non-writable so member deletion raises across all
-    # platforms (POSIX requires write permission on the directory to unlink a
-    # child; Windows handles read-only on the directory similarly).
-    os.chmod(set_dir, 0o500)
-    try:
-        result = prune_backups(backup_dir, max_age_days=30.0)
-    finally:
-        os.chmod(set_dir, 0o700)
+    # Make member deletion fail for exactly ONE member, deterministically and
+    # privilege-independently. The original mechanism (chmod 0o500 on the set
+    # directory) relies on the kernel refusing an unlink for lack of write
+    # permission — a root-owned process (CI containers, this host) bypasses
+    # that with CAP_DAC_OVERRIDE, so the set vanished and the test's own
+    # restoring chmod then raised FileNotFoundError. Refusing at the unlink
+    # call itself keeps the contract under test identical and portable: a
+    # PARTIALLY removed set must be reported, never silently dropped.
+    real_remove = os.remove
+
+    def _refuse_one(path: str) -> None:
+        if os.path.basename(path) == "audit.db.snapshot":
+            raise OSError(13, "Permission denied (simulated partial removal)")
+        real_remove(path)
+
+    monkeypatch.setattr(os, "remove", _refuse_one)
+    result = prune_backups(backup_dir, max_age_days=30.0)
 
     # Either the set was skipped due to the permission error, or it failed
     # during member removal. Either way, it must be reported in failures.

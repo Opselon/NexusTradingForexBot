@@ -14,7 +14,7 @@ import sys
 import tempfile
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager, suppress
+from contextlib import closing, contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -166,7 +166,9 @@ def _assert_replaceable(model: Path) -> None:
     db = Path(cfg.sqlite_path or cfg.database)
     if db.exists():
         try:
-            with sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=3) as con:
+            with closing(
+                sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True, timeout=3)
+            ) as con:
                 rows = con.execute(
                     "SELECT artifact_fingerprint, artifact_path FROM experience_model_registry WHERE lifecycle_status='CHAMPION'"
                 ).fetchall()

@@ -142,8 +142,20 @@ def _session_ranges(decision: datetime) -> tuple[datetime, datetime]:
     return day_start, day_start.replace(hour=23, minute=59) + timedelta(minutes=1)
 
 
-#: Max retained swing pools per side (BUG-106 bounded retention).
-POOL_RETENTION: int = 200
+#: Max retained swing-pool history, in BARS, measured back from the decision
+#: (BUG-106 bounded retention).
+#:
+#: The canonical reference (``compute_liquidity_features``) only ever sees the
+#: causal liquidity window ``all_bars[i+1-LIQUIDITY_HISTORY_LIMIT : i+1]``
+#: (``schema_v2.LIQUIDITY_HISTORY_LIMIT`` == ``HTF_HISTORY_BARS`` == 4000), so
+#: a pool confirmed BEFORE that window cannot appear in the reference's pool
+#: set. Anchoring retention on the decision keeps the work bounded by the same
+#: horizon the reference itself uses. A fixed pool COUNT (the previous
+#: ``sh[-200:]``) was not parity-preserving: it was anchored on the END of the
+#: dataset, so any decision earlier than the last 200 confirmations saw an
+#: EMPTY pool list while the reference saw its full window (eqh/eql,
+#: distances, confluence and sweep all diverged).
+POOL_RETENTION_BARS: int = HTF_HISTORY_BARS
 
 
 class _PoolEvidenceRun:
@@ -201,19 +213,16 @@ class IncrementalLiquidityState:
         # compute_liquidity_features). Do NOT sort: internal_external_distances
         # uses users[-20:] where ORDER matters (BUG-106 parity).
         #
-        # BUG-106 bounded retention: keep only the most recent POOL_RETENTION
-        # confirmed swing pools (by confirmed_at). Older swing levels are
-        # far behind price and contribute nothing to distances (users[-20:]),
-        # sweep (nearest pool), or confluence (far zones cannot win the
-        # diversity-max score). The bound is far above any real decision
-        # horizon; parity is machine-verified on the harness.
-        sh = list(self.sh_pools)
-        sl = list(self.sl_pools)
-        if len(sh) > POOL_RETENTION:
-            sh = sh[-POOL_RETENTION:]
-        if len(sl) > POOL_RETENTION:
-            sl = sl[-POOL_RETENTION:]
-        self.all_pools: list[LiquidityPool] = sh + sl
+        # BUG-106 bounded retention is applied PER DECISION in
+        # ``pools_visible_at`` (POOL_RETENTION_BARS back from the decision), not
+        # once over the full history: the visible pool set must stay identical
+        # to a full-history rescan at EVERY decision point.
+        self.all_pools: list[LiquidityPool] = list(self.sh_pools) + list(self.sl_pools)
+        self._sh_count = len(self.sh_pools)
+        # detect_confirmed_swings returns chronological order, so confirmed_at
+        # is non-decreasing: bisect-able for the decision/window cut.
+        self._sh_confirmed = [p.confirmed_at for p in self.sh_pools]
+        self._sl_confirmed = [p.confirmed_at for p in self.sl_pools]
 
         # --- incremental daily grouping (BUG-106: daily_pools_at was O(n)
         # per row — it rebuilt the full day->bars dict from scratch). We
@@ -308,81 +317,94 @@ class IncrementalLiquidityState:
         safe_atr = max(atr, MIN_ATR)
         tol = safe_atr * TOUCH_PROXIMITY_ATR
         k = self._bar_index_at(decision)
+        # BUG-106 retention is anchored on the DECISION: pools confirmed before
+        # the canonical liquidity window (POOL_RETENTION_BARS bars) are
+        # invisible to compute_liquidity_features for this decision, and pools
+        # confirmed after it do not exist yet. Anchoring on the end of the data
+        # instead made early decisions see an EMPTY pool set.
+        window_start = self.times[max(0, k + 1 - POOL_RETENTION_BARS)] if k >= 0 else decision
         runs = getattr(self, "_pool_runs", None)
         if runs is None:
             runs = {}
             self._pool_runs = runs
         out: list[LiquidityPool] = []
-        for idx, p in enumerate(self.all_pools):
-            if p.confirmed_at > decision:
-                continue  # not confirmed yet at this decision (canonical vis)
-            run = runs.get(idx)
-            if (
-                run is None
-                or run.price != p.price
-                or run.side != p.side
-                or run.confirmed_at != p.confirmed_at
-            ):
-                run = _PoolEvidenceRun(p.price, p.side, p.confirmed_at)
-                runs[idx] = run
-            c = self._first_bar_index_at_or_after(p.confirmed_at)
-            if c > k:
-                out.append(p)
-                continue
-            start = max(run.k_done + 1, c)
-            if start <= k:
-                hi_slice = self.highs[start : k + 1]
-                lo_slice = self.lows[start : k + 1]
-                cl_slice = self.closes[start : k + 1]
-                if p.side == PoolSide.BSL:
-                    run.touches += int((hi_slice >= p.price - tol).sum())
-                    if bool(
-                        (
-                            (hi_slice > p.price)
-                            & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
-                        ).any()
-                    ):
-                        run.swept = True
-                    if bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()):
-                        run.reclaimed = True
-                else:
-                    run.touches += int((lo_slice <= p.price + tol).sum())
-                    if bool(
-                        (
-                            (lo_slice < p.price)
-                            & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
-                        ).any()
-                    ):
-                        run.swept = True
-                    if bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()):
-                        run.reclaimed = True
-                if run.touches and run.last_touched is None:
-                    run.last_touched = self.times[c]
-                run.k_done = k
-            state = PoolState.CONFIRMED
-            last_touched = p.last_touched_at
-            if run.touches:
-                state = PoolState.TOUCHED
-                last_touched = run.last_touched
-            if run.swept and run.touches:
-                state = PoolState.SWEPT
-            if run.swept and run.reclaimed:
-                state = PoolState.RECLAIMED
-            out.append(
-                LiquidityPool(
-                    price=p.price,
-                    side=p.side,
-                    source=p.source,
-                    timeframe_minutes=p.timeframe_minutes,
-                    strength=p.strength,
-                    candidate_at=p.candidate_at,
-                    confirmed_at=p.confirmed_at,
-                    last_touched_at=last_touched,
-                    state=state,
-                    active=state not in (PoolState.INVALIDATED,),
-                    touch_count=run.touches,
+        for base, side_pools, side_confirmed in (
+            (0, self.sh_pools, self._sh_confirmed),
+            (self._sh_count, self.sl_pools, self._sl_confirmed),
+        ):
+            first = bisect.bisect_left(side_confirmed, window_start)
+            last = bisect.bisect_right(side_confirmed, decision)
+            for idx in range(first, last):
+                p = side_pools[idx]
+                # cursor keyed on the pool's ABSOLUTE index, so the sliding
+                # retention slice never re-labels a pool's evidence run.
+                run = runs.get(base + idx)
+                if (
+                    run is None
+                    or run.price != p.price
+                    or run.side != p.side
+                    or run.confirmed_at != p.confirmed_at
+                ):
+                    run = _PoolEvidenceRun(p.price, p.side, p.confirmed_at)
+                    runs[base + idx] = run
+                c = self._first_bar_index_at_or_after(p.confirmed_at)
+                if c > k:
+                    out.append(p)
+                    continue
+                start = max(run.k_done + 1, c)
+                if start <= k:
+                    hi_slice = self.highs[start : k + 1]
+                    lo_slice = self.lows[start : k + 1]
+                    cl_slice = self.closes[start : k + 1]
+                    if p.side == PoolSide.BSL:
+                        run.touches += int((hi_slice >= p.price - tol).sum())
+                        if bool(
+                            (
+                                (hi_slice > p.price)
+                                & (cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR)
+                            ).any()
+                        ):
+                            run.swept = True
+                        if bool((cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR).any()):
+                            run.reclaimed = True
+                    else:
+                        run.touches += int((lo_slice <= p.price + tol).sum())
+                        if bool(
+                            (
+                                (lo_slice < p.price)
+                                & (cl_slice > p.price + safe_atr * RECLAIM_FRACTION_ATR)
+                            ).any()
+                        ):
+                            run.swept = True
+                        if bool((cl_slice < p.price - safe_atr * RECLAIM_FRACTION_ATR).any()):
+                            run.reclaimed = True
+                    if run.touches and run.last_touched is None:
+                        run.last_touched = self.times[c]
+                    run.k_done = k
+                state = PoolState.CONFIRMED
+                last_touched = p.last_touched_at
+                if run.touches:
+                    state = PoolState.TOUCHED
+                    last_touched = run.last_touched
+                if run.swept and run.touches:
+                    state = PoolState.SWEPT
+                if run.swept and run.reclaimed:
+                    state = PoolState.RECLAIMED
+                out.append(
+                    LiquidityPool(
+                        price=p.price,
+                        side=p.side,
+                        source=p.source,
+                        timeframe_minutes=p.timeframe_minutes,
+                        strength=p.strength,
+                        candidate_at=p.candidate_at,
+                        confirmed_at=p.confirmed_at,
+                        last_touched_at=last_touched,
+                        state=state,
+                        active=state not in (PoolState.INVALIDATED,),
+                        touch_count=run.touches,
+                    )
                 )
-            )
         return out
 
     def advance_pools_np(

@@ -46,6 +46,7 @@ if os.path.isdir(os.path.join(_ROOT, "src", "nexus_scalp")):
             del sys.modules[_name]
 
 
+import contextlib  # noqa: E402
 import logging  # noqa: E402
 
 import pytest  # noqa: E402
@@ -214,6 +215,45 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
     baseline = _web_auth_test_state["baseline"]
     if baseline is not None:
         _web_auth_apply(baseline)
+
+
+@pytest.fixture(autouse=True)
+def _reap_constructed_audit_repositories(monkeypatch: pytest.MonkeyPatch):
+    """Close every ``AuditRepository`` a test constructs, at teardown.
+
+    ``with sqlite3.connect(...)`` (and the repository's own per-call handles)
+    only manage the TRANSACTION; the handle lives until the GC reclaims it.
+    Tests build real engines over real repositories and never closed them, so
+    the suite emitted thousands of ``ResourceWarning: unclosed database``
+    lines — one per handle, and on Windows a locked DB file that made the next
+    run fail. Nothing here changes production behaviour: it only makes the
+    test's ownership explicit. Errors are suppressed because a fixture is not
+    the place to fail a test that already passed (the repository's own close()
+    already logs partial flushes).
+    """
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+    from nexus_scalp.settings.service import SettingsDatabase, SettingsService
+
+    created: list[object] = []
+    tracked = (AuditRepository, SettingsDatabase, SettingsService)
+    for cls in tracked:
+        real_init = cls.__init__
+
+        def _tracking_init(self, *args, _real=real_init, **kwargs):
+            _real(self, *args, **kwargs)
+            created.append(self)
+
+        monkeypatch.setattr(cls, "__init__", _tracking_init)
+    try:
+        yield
+    finally:
+        for obj in reversed(created):
+            for closer in ("close", "shutdown"):
+                fn = getattr(obj, closer, None)
+                if callable(fn):
+                    with contextlib.suppress(Exception):
+                        fn()
+                    break
 
 
 @pytest.fixture(autouse=True, scope="session")

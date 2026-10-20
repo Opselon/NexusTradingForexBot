@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
 from nexus_scalp.news.db_schema import _is_pg_conn
 
@@ -124,13 +125,13 @@ class QueriesMixin(_NewsDbCoreProto):
     """QueriesMixin — verbatim method cluster from NewsDatabase."""
 
     def count_articles(self) -> int:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM news_articles;").fetchone()
             return int(row["c"]) if row else 0
 
     def count_pending_analysis(self) -> int:
         """Unbounded pending count (articles with no deterministic analysis row)."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS c FROM news_articles a "
                 "WHERE a.is_duplicate = 0 AND NOT EXISTS "
@@ -166,7 +167,7 @@ class QueriesMixin(_NewsDbCoreProto):
         bucket_sec = max(60, min(int(bucket_sec), 86400))
         hours_back = max(1, min(int(hours_back), 24 * 7))
         cutoff = datetime.now(UTC) - timedelta(hours=hours_back)
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             rows_all = conn.execute(
                 """
                 SELECT COALESCE(a.published_at, i.evaluated_at) AS anchor_ts,
@@ -245,7 +246,7 @@ class QueriesMixin(_NewsDbCoreProto):
         time (analysis-at-insert). Idempotent; safe to call on every
         impact_timeline invocation. Returns rows updated."""
         try:
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 cur = conn.execute(_backfill_impact_anchors_sql(sqlite=self._conn_is_sqlite(conn)))
                 return int(cur.rowcount or 0)
         except Exception:
@@ -265,7 +266,7 @@ class QueriesMixin(_NewsDbCoreProto):
         return _conn_is_sqlite(conn)
 
     def get_article_status(self, article_id: str) -> str:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT article_status FROM news_articles WHERE article_id = ?;", (article_id,)
             ).fetchone()
@@ -286,7 +287,7 @@ class QueriesMixin(_NewsDbCoreProto):
         Returns True when the status actually changed. Idempotent: no-op
         (False) when the article is already in the target state.
         """
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT article_status FROM news_articles WHERE article_id = ?;", (article_id,)
             ).fetchone()
@@ -321,7 +322,7 @@ class QueriesMixin(_NewsDbCoreProto):
             return True
 
     def count_articles_by_status(self) -> dict[str, int]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             rows = conn.execute(
                 "SELECT article_status, COUNT(*) AS c FROM news_articles "
                 "WHERE is_duplicate = 0 GROUP BY article_status;"
@@ -333,14 +334,14 @@ class QueriesMixin(_NewsDbCoreProto):
     # ------------------------------------------------------------------
 
     def start_run(self, run_id: str) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO news_analysis_runs (run_id, started_at, status) VALUES (?, ?, 'QUEUED');",
                 (run_id, self._now()),
             )
 
     def finish_run(self, run_id: str, status: str, article_ids: list[str], error: str = "") -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 "UPDATE news_analysis_runs SET status = ?, finished_at = ?, article_ids = ?, error = ? "
                 "WHERE run_id = ?;",
@@ -348,7 +349,7 @@ class QueriesMixin(_NewsDbCoreProto):
             )
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_analysis_runs WHERE run_id = ?;", (run_id,)
             ).fetchone()
@@ -359,7 +360,7 @@ class QueriesMixin(_NewsDbCoreProto):
     # ------------------------------------------------------------------
 
     def update_health(self, source_id: str, health: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_health
@@ -391,14 +392,14 @@ class QueriesMixin(_NewsDbCoreProto):
             )
 
     def get_health(self, source_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_health WHERE source_id = ?;", (source_id,)
             ).fetchone()
             return dict(row) if row else None
 
     def list_health(self) -> list[dict[str, Any]]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [dict(r) for r in conn.execute("SELECT * FROM news_health;").fetchall()]
 
     # ------------------------------------------------------------------
@@ -406,7 +407,7 @@ class QueriesMixin(_NewsDbCoreProto):
     # ------------------------------------------------------------------
 
     def save_worker_state(self, state: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_worker_state
@@ -428,7 +429,7 @@ class QueriesMixin(_NewsDbCoreProto):
             )
 
     def load_worker_state(self) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute("SELECT * FROM news_worker_state WHERE scope = 'news';").fetchone()
             return dict(row) if row else None
 
@@ -443,7 +444,7 @@ class QueriesMixin(_NewsDbCoreProto):
         Returns counts of rebuilt rows for observability.
         """
         rebuilt = {"analysis": 0, "impacts": 0, "consensus": 0, "entities": 0, "topics": 0}
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             analyses = conn.execute("SELECT * FROM news_analysis;").fetchall()
             for a in analyses:
                 article_id = a["article_id"]
@@ -512,7 +513,7 @@ class QueriesMixin(_NewsDbCoreProto):
     # ------------------------------------------------------------------
 
     def summary(self) -> dict[str, Any]:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             articles = conn.execute("SELECT COUNT(*) AS c FROM news_articles;").fetchone()["c"]
             sources = conn.execute("SELECT COUNT(*) AS c FROM news_sources;").fetchone()["c"]
             analyses = conn.execute("SELECT COUNT(*) AS c FROM news_analysis;").fetchone()["c"]

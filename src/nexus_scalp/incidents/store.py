@@ -23,6 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.incidents.models import (
     BlastRadius,
     EventSource,
@@ -681,7 +682,7 @@ class IncidentStore:
                     ),
                 )
             return incident.incident_id
-        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+        with sqlite_session(sqlite3.connect(self.db_path, timeout=10.0)) as conn:
             conn.execute(sql, values)
             for ev in incident.timeline:
                 conn.execute(
@@ -750,7 +751,7 @@ class IncidentStore:
                 )
             return existed is not None
         deleted = False
-        with sqlite3.connect(self.db_path, timeout=10.0) as conn:
+        with sqlite_session(sqlite3.connect(self.db_path, timeout=10.0)) as conn:
             cur = conn.execute("DELETE FROM incidents WHERE incident_id=?", (incident_id,))
             deleted = cur.rowcount > 0
             conn.execute("DELETE FROM incident_events WHERE incident_id=?", (incident_id,))

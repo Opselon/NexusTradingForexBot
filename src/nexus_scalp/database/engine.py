@@ -85,6 +85,11 @@ class MigrationError(RuntimeError):
         )
 
 
+#: Marker reported in ``migrate()["applied"]`` when the baseline itself had to
+#: be materialised (a domain whose schema IS its baseline, i.e. no migrations).
+_BASELINE_APPLIED = "BASELINE"
+
+
 class DatabaseMigrationEngine:
     """One engine instance per (db_path, domain)."""
 
@@ -926,6 +931,38 @@ class DatabaseMigrationEngine:
     # Migration execution
     # ------------------------------------------------------------------
 
+    def _provision_baseline_if_unversioned(self, cur: int) -> bool:
+        """Materialise the baseline when the database carries no version yet.
+
+        ``marketplace`` / ``models`` / ``strategies`` / ``experiments`` declare
+        a baseline version but NO migrations: their whole schema *is* the
+        baseline. With an empty pending list the executor used to return
+        DB_MIGRATION_NOT_REQUIRED while the file stayed EMPTY and the recorded
+        version stayed 0 — a brand-new platform DB reported "nothing to do",
+        had no tables at all, and the first feature touching it invented its
+        own partial schema. Provisioning here closes that hole (and records the
+        version, so the SECOND run is honestly NOT_REQUIRED).
+
+        Returns True when the baseline was created and committed.
+        """
+        if cur != 0:
+            return False
+        self._backup()  # §29: backup before any change (no-op on a new file)
+        con = self._connect(timeout=15.0)
+        try:
+            self._ensure_meta_tables(con)
+            self._create_baseline_tables(con)
+            self._write_version(con, self.baseline_version())
+            con.commit()
+        finally:
+            con.close()
+        logger.info(
+            "[DB_MIGRATION] event=BASELINE_PROVISIONED",
+            database=self.domain.value,
+            version=self.baseline_version(),
+        )
+        return True
+
     def migrate(self, *, force: bool = False) -> dict[str, Any]:
         """Applies pending migrations deterministically (§6)."""
         started = time.perf_counter()
@@ -988,6 +1025,15 @@ class DatabaseMigrationEngine:
             pending = plan["pending"]
             if not pending:
                 duration_ms = round((time.perf_counter() - started) * 1000.0, 2)
+                if self._provision_baseline_if_unversioned(cur):
+                    return {
+                        "state": MigrationState.DB_MIGRATION_SUCCEEDED.value,
+                        "current_version": self.current_version(),
+                        "expected_version": exp,
+                        "applied": [_BASELINE_APPLIED],
+                        "integrity": self._integrity(),
+                        "duration_ms": round((time.perf_counter() - started) * 1000.0, 2),
+                    }
                 return {
                     "state": MigrationState.DB_MIGRATION_NOT_REQUIRED.value,
                     "current_version": cur,

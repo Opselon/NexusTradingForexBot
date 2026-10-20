@@ -462,16 +462,27 @@ async def test_request_side_also_stops_the_engine_loop():
     assert engine._running is False, "the loop's stop flag must flip on request"
 
 
+#: The supervisor registers SIGBREAK only where the platform defines it
+#: (Windows). SIGINT is registered everywhere, so it is the portable probe.
+_INSTALLED_SIGNAL = getattr(signal, "SIGBREAK", signal.SIGINT)
+
+
 def test_signal_handler_flips_the_engine_flag():
     """The installed signal callable itself ends the loop (not just the API)."""
     engine = _FakeEngine()
     sup = ShutdownSupervisor(engine=engine)
-    sup.install_signal_handlers()
-    handler = signal.getsignal(signal.SIGBREAK)
-    assert engine._running is True
-    if callable(handler):
-        handler(signal.SIGBREAK, None)  # type: ignore[arg-type]
-    assert engine._running is False
+    previous = signal.getsignal(_INSTALLED_SIGNAL)
+    try:
+        sup.install_signal_handlers()
+        handler = signal.getsignal(_INSTALLED_SIGNAL)
+        assert engine._running is True
+        assert callable(handler), "install_signal_handlers must register a callable"
+        handler(_INSTALLED_SIGNAL, None)  # type: ignore[arg-type]
+        assert engine._running is False
+    finally:
+        # The handler is process-global: leaving it installed leaks state into
+        # every later test in the same session.
+        signal.signal(_INSTALLED_SIGNAL, previous)
 
 
 @pytest.mark.asyncio

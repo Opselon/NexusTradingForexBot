@@ -22,6 +22,7 @@ import sqlite3
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.adapters.audit_db")
@@ -287,7 +288,7 @@ class DeadLetterStore:
             return ok
 
         try:
-            with self._conn_factory(self._db_path) as conn:
+            with sqlite_session(self._conn_factory(self._db_path)) as conn:
                 conn.execute(sql, args_tuple)
                 conn.commit()
             self.audit_dead_letter_rows += 1
@@ -361,7 +362,7 @@ class DeadLetterStore:
         construction and can drift after restarts).
         """
         pruned = 0
-        with self._conn_factory(self._db_path) as conn:
+        with sqlite_session(self._conn_factory(self._db_path)) as conn:
             total = conn.execute("SELECT COUNT(*) FROM audit_dead_letter").fetchone()[0]
             if total <= self._max_rows:
                 return 0
@@ -397,7 +398,7 @@ class DeadLetterStore:
         if not self._is_sqlite:
             return []
         try:
-            with self._conn_factory(self._db_path) as conn:
+            with sqlite_session(self._conn_factory(self._db_path)) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     "SELECT * FROM audit_dead_letter ORDER BY id DESC LIMIT ?",

@@ -184,3 +184,12 @@ asyncio_mode = "auto"
 # import ...` resolves identically on CI (GitHub Actions) and locally,
 # independent of pytest's rootdir detection / pip install mode.
 pythonpath = ["."]
+filterwarnings = [
+    # Third-party and not actionable in this repo: fastapi.testclient imports
+    # starlette.testclient, which warns that `httpx` should be replaced by
+    # `httpx2`. Installing httpx2 rewrites TestClient internals and breaks
+    # response semantics across the web suites (503/Content-Type drift), so the
+    # deprecation is acknowledged here — scoped to that single message — until
+    # the pinned fastapi ships the migration itself.
+    "ignore:Using `httpx` with `starlette\\.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]

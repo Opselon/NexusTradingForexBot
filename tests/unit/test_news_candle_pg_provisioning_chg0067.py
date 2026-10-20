@@ -489,6 +489,12 @@ class _FakeFabric:
     def write_backend(self, _domain: str) -> _RecordingBackend:
         return self._backend
 
+    def read_backend(self, _domain: str) -> _RecordingBackend:
+        """``provision_domain`` opens BOTH planes and fails closed when the read
+        plane cannot be opened (a write-only domain is the silent-degradation
+        defect it refuses to create), so the double must publish it too."""
+        return self._backend
+
 
 @pytest.fixture
 def provision_domain(monkeypatch: pytest.MonkeyPatch) -> tuple[object, list[_RecordingBackend]]:

@@ -36,6 +36,7 @@ from nexus_scalp.adapters.database.broker_history import (
     sync_broker_history,
 )
 from nexus_scalp.adapters.database.dead_letter_store import DeadLetterStore
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.domain.models import AccountInfo, TradeOrder, TradeProposal
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.risk.runtime_safety import (
@@ -394,10 +395,40 @@ class AuditRepository:
         # and setup share one schema (2026-08-18 full-suite fix).
         if self._db_path == ":memory:":
             self._db_path = "file::memory:?cache=shared"
+        # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
+        # anchors to the raw process CWD. When frozen, anchor to the canonical
+        # runtime workspace (exe bundle) so every launch — double-click,
+        # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
+        # runs (CWD == repo root) keep identical behavior.
+        # BUG-156: in-memory URIs are NOT filesystem paths — they must be
+        # excluded from workspace anchoring. Anchoring ":memory:" produced
+        # "CWD/:memory:" -> a nonexistent file path, and every
+        # "sqlite:///:memory:" AuditRepository raised OperationalError.
+        # ORDER MATTERS: this runs BEFORE the dead-letter store is composed
+        # below, because that store COPIES _db_path at construction — anchoring
+        # afterwards left the store writing to a CWD-relative path while the
+        # repository used the anchored one (two different databases).
+        if (
+            self._is_sqlite
+            and self._db_path
+            and self._db_path != ":memory:"
+            and not self._db_path.startswith("file:")
+            and not Path(self._db_path).is_absolute()
+        ):
+            try:
+                from nexus_scalp.release.paths import get_runtime_workspace
+
+                self._db_path = str(get_runtime_workspace() / self._db_path)
+            except Exception:
+                pass
+            self._db_url = f"sqlite:///{self._db_path}"
         # Hold ONE persistent connection for the shared in-memory DB; the
         # shared cache is dropped when the last connection closes, so the
         # worker must reuse THIS connection (2026-08-18 full-suite fix).
         self._shared_conn: sqlite3.Connection | None = None
+        # Handles the ExperienceEvaluator caches for its registry reads (see
+        # _registry_conn). Owned here so close() can release them.
+        self._evaluator_conns: set[sqlite3.Connection] = set()
         # A4 dead-letter split: compose the durable dead-letter store over
         # THIS repository's connection accessor (sqlite3.connect on the same
         # _db_path — never a second handle) and delegate the dead-letter
@@ -500,29 +531,8 @@ class AuditRepository:
         # from performance metrics.
         self.current_account_source: str = "LIVE"
 
-        # BUG-149: the legacy relative default ("sqlite:///artifacts/audit.db")
-        # anchors to the raw process CWD. When frozen, anchor to the canonical
-        # runtime workspace (exe bundle) so every launch — double-click,
-        # shortcut, any shell CWD — uses ONE canonical artifact tree. Source
-        # runs (CWD == repo root) keep identical behavior.
-        # BUG-156: in-memory URIs are NOT filesystem paths — they must be
-        # excluded from workspace anchoring. Anchoring ":memory:" produced
-        # "CWD/:memory:" -> a nonexistent file path, and every
-        # "sqlite:///:memory:" AuditRepository raised OperationalError.
-        if (
-            self._is_sqlite
-            and self._db_path
-            and self._db_path != ":memory:"
-            and not self._db_path.startswith("file:")
-            and not Path(self._db_path).is_absolute()
-        ):
-            try:
-                from nexus_scalp.release.paths import get_runtime_workspace
-
-                self._db_path = str(get_runtime_workspace() / self._db_path)
-            except Exception:
-                pass
-            self._db_url = f"sqlite:///{self._db_path}"
+        # (BUG-149 workspace anchoring ran earlier — before the dead-letter
+        # store copied the path; see the ORDER MATTERS note above.)
 
         # Retention policy (BUG-054). TEST env defaults: disposable signal
         # rows 7 days, POSITION_MOVING 3 days, guard telemetry 13 days.
@@ -1258,7 +1268,7 @@ class AuditRepository:
                 return False
             return True
         try:
-            with self._connect_sqlite(10.0) as conn:
+            with sqlite_session(self._connect_sqlite(10.0)) as conn:
                 conn.execute(sql, args)
                 conn.commit()
             return True
@@ -1332,7 +1342,7 @@ class AuditRepository:
                 ]
             )
         try:
-            with self._connect_sqlite(10.0) as conn:
+            with sqlite_session(self._connect_sqlite(10.0)) as conn:
                 # The canonical row must exist (set_runtime_risk_state creates
                 # it at boot); INSERT OR IGNORE guarantees a row for anchor
                 # writes on a fresh store without fabricating a state.
@@ -1385,7 +1395,7 @@ class AuditRepository:
             )
             return self._validate_breaker_anchors(row)
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     """
@@ -1488,7 +1498,7 @@ class AuditRepository:
                 )
             return row
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 if not self._table_exists(conn, "runtime_risk_state"):
                     raise RuntimeRiskStateReadError(
@@ -1598,7 +1608,7 @@ class AuditRepository:
                     note,
                 )
                 return True
-            with self._connect_sqlite(10.0) as conn:
+            with sqlite_session(self._connect_sqlite(10.0)) as conn:
                 conn.execute(
                     sql,
                     (datetime.now(UTC).isoformat(), str(actor), str(note or ""), str(note or "")),
@@ -1688,7 +1698,7 @@ class AuditRepository:
         try:
             from nexus_scalp.risk.runtime_safety import evaluate_consecutive_losses_with_time
 
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 rows = conn.execute(
                     """
                     SELECT status, net_pnl_usd, COALESCE(NULLIF(close_time,''), timestamp) AS close_ts
@@ -1825,7 +1835,7 @@ class AuditRepository:
         sync_to_dt = (
             sync_to.astimezone(_UTC) if isinstance(sync_to, _dt) else normalize_history_dt(sync_to)
         )
-        with self._connect_sqlite(15.0) as conn:
+        with sqlite_session(self._connect_sqlite(15.0)) as conn:
             return sync_broker_history(
                 conn,
                 orders=orders or [],
@@ -1844,7 +1854,7 @@ class AuditRepository:
                 sql="SELECT symbol, last_sync_from, last_sync_to FROM audit_broker_history_meta ORDER BY id DESC LIMIT 1",
                 kind="row",
             )
-        with self._connect_sqlite(5.0) as conn:
+        with sqlite_session(self._connect_sqlite(5.0)) as conn:
             return last_sync_window(conn, symbol or "")
 
     def get_broker_trades(
@@ -1874,7 +1884,7 @@ class AuditRepository:
                 args=args,
                 kind="rows",
             )
-        with self._connect_sqlite(5.0) as conn:
+        with sqlite_session(self._connect_sqlite(5.0)) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -1898,7 +1908,7 @@ class AuditRepository:
                 args=args,
                 kind="rows",
             )
-        with self._connect_sqlite(5.0) as conn:
+        with sqlite_session(self._connect_sqlite(5.0)) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -1925,7 +1935,7 @@ class AuditRepository:
                 args=args,
                 kind="rows",
             )
-        with self._connect_sqlite(5.0) as conn:
+        with sqlite_session(self._connect_sqlite(5.0)) as conn:
             conn.row_factory = sqlite3.Row
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
@@ -4253,6 +4263,20 @@ class AuditRepository:
 
         self._enqueue_financial(query, args)
 
+    def _explicit_account_source(self, account_source: str) -> str:
+        """Resolved ledger provenance (BUG-226).
+
+        The caller's explicit ``account_source`` wins. When it is omitted, the
+        row is written under the repository attribute the engine keeps synced
+        to the bound adapter (``current_account_source``, read AT ENQUEUE time
+        like every BUG-226 provenance read — the worker snapshotting the batch
+        later can attribute rows written before a paper/live hot-swap to the
+        wrong source). Empty stays a valid write only when the repository has
+        no provenance at all: legacy rows were written exactly that way and
+        test doubles without the attribute must keep writing ''.
+        """
+        return str(account_source or getattr(self, "current_account_source", "") or "")
+
     def log_ledger_opened(
         self,
         ticket: int,
@@ -4276,6 +4300,10 @@ class AuditRepository:
         `account_source` records execution provenance (BUG-226): 'LIVE' / 'PAPER' /
         'SHADOW' — '' for legacy rows. AccountingCore excludes PAPER provenance
         from every performance metric; the raw row itself is never rewritten.
+        An omitted source falls back to `current_account_source` (the engine's
+        sync of the bound adapter's provenance), so a caller that does not tag
+        its rows explicitly still gets the correct LIVE/PAPER attribution
+        instead of an untagged (metrics-includable) row.
         """
 
         query = """
@@ -4300,7 +4328,7 @@ class AuditRepository:
             float(ai_confidence_at_open),
             market_regime_at_open,
             float(initial_sl_price),
-            str(account_source or ""),
+            self._explicit_account_source(account_source),
         )
         self._enqueue_financial(query, args)
 
@@ -4319,7 +4347,7 @@ class AuditRepository:
                 kind="exists",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(
                     "SELECT 1 FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
                     (int(ticket),),
@@ -4358,7 +4386,7 @@ class AuditRepository:
                 kind="count",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(
                     "SELECT COUNT(*) FROM audit_ledger WHERE status = 'OPENED' "
                     "AND COALESCE(exit_price, 0) = 0;"
@@ -4449,7 +4477,7 @@ class AuditRepository:
                 ]
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 create_paper_executions_table(conn)
                 conn.execute(
                     """
@@ -4521,7 +4549,7 @@ class AuditRepository:
                 "mean_slippage": row.get("mean_slippage"),
             }
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(
                     """
                     SELECT
@@ -4583,7 +4611,7 @@ class AuditRepository:
                 "net_pnl_total": row.get("net_pnl_total"),
             }
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(
                     """
                     SELECT
@@ -4634,7 +4662,7 @@ class AuditRepository:
                 kind="rows",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 rows = conn.execute(
                     'SELECT ticket, "order", position_id, symbol, type, entry, '
@@ -4689,7 +4717,7 @@ class AuditRepository:
                 kind="row",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 row = conn.execute(
                     "SELECT * FROM audit_ledger WHERE ticket = ? AND status = 'OPENED' LIMIT 1;",
@@ -4838,7 +4866,7 @@ class AuditRepository:
                 exit_evidence=CASE WHEN excluded.exit_evidence != '' THEN excluded.exit_evidence ELSE audit_ledger.exit_evidence END,
                 exit_reason_confidence=excluded.exit_reason_confidence,
                 reversal_events_json=CASE WHEN excluded.reversal_events_json != '[]' THEN excluded.reversal_events_json ELSE audit_ledger.reversal_events_json END,
-                account_source=CASE WHEN excluded.account_source != '' THEN excluded.account_source ELSE audit_ledger.account_source END
+                account_source=CASE WHEN audit_ledger.account_source != '' THEN audit_ledger.account_source WHEN excluded.account_source != '' THEN excluded.account_source ELSE '' END
         """
         args = (
             ticket,
@@ -4881,7 +4909,7 @@ class AuditRepository:
             exit_evidence,
             float(exit_reason_confidence or 0.0),
             reversal_events_json or "[]",
-            str(account_source or ""),
+            self._explicit_account_source(account_source),
         )
         self._enqueue_financial(query, args)
 
@@ -4987,7 +5015,7 @@ class AuditRepository:
                 }
 
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
 
                 # Fetch all closed trades from ledger
@@ -5104,7 +5132,7 @@ class AuditRepository:
                 rows.append(row)
             return rows
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """
@@ -5157,7 +5185,7 @@ class AuditRepository:
             )
 
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 if status_filter:
                     cursor = conn.execute(
@@ -5187,7 +5215,7 @@ class AuditRepository:
             )
 
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT timestamp, balance, equity FROM audit_account_snapshots ORDER BY id ASC"
@@ -5219,7 +5247,7 @@ class AuditRepository:
             )
 
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     """
@@ -5296,7 +5324,7 @@ class AuditRepository:
             )
         else:
             try:
-                with self._connect_sqlite(5.0) as conn:
+                with sqlite_session(self._connect_sqlite(5.0)) as conn:
                     conn.row_factory = sqlite3.Row
                     raw = conn.execute(sql, (bounded, cutoff)).fetchall()
             except Exception as e:
@@ -5382,7 +5410,7 @@ class AuditRepository:
             except Exception:
                 return 0
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(sql, params).fetchone()
                 return int(row[0]) if row else 0
         except Exception as e:
@@ -5423,7 +5451,7 @@ class AuditRepository:
             except Exception:
                 return None
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 row = conn.execute(sql).fetchone()
                 return int(row[0]) if row and row[0] is not None else None
         except Exception as e:
@@ -5441,7 +5469,7 @@ class AuditRepository:
                 kind="row",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute("SELECT * FROM audit_ledger WHERE ticket = ?", (ticket,))
                 row = cursor.fetchone()
@@ -5464,7 +5492,7 @@ class AuditRepository:
             )
 
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT * FROM audit_account_snapshots ORDER BY id DESC LIMIT 1"
@@ -5504,7 +5532,7 @@ class AuditRepository:
                 kind="rows",
             )
         try:
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 conn.row_factory = sqlite3.Row
                 cursor = conn.execute(
                     "SELECT rule_name, is_enabled, category, parameters FROM trading_rules_config"
@@ -5551,7 +5579,7 @@ class AuditRepository:
             return True
         try:
             # Execute synchronously to avoid thread-safety mismatch with web thread toggles
-            with self._connect_sqlite(5.0) as conn:
+            with sqlite_session(self._connect_sqlite(5.0)) as conn:
                 if parameters_json is not None:
                     conn.execute(
                         """
@@ -5805,6 +5833,16 @@ class AuditRepository:
             with contextlib.suppress(Exception):
                 self._shared_conn.close()
             self._shared_conn = None
+        # BUG-297 follow-up: ExperienceEvaluator caches registry handles per
+        # (thread, busy-timeout) for the repository's LIFETIME. Those handles
+        # were only released on the next registry call, so a repository closed
+        # while no further call arrived left them to the GC — one
+        # "unclosed database" per thread, and on Windows a locked file that
+        # blocks the next test run. Closing the repository owns this.
+        for handle in list(self._evaluator_conns):
+            with contextlib.suppress(Exception):
+                handle.close()
+        self._evaluator_conns.clear()
         logger.info("Audit Database safely closed.")
 
     def _join_queue_bounded(self, timeout_sec: float) -> bool:

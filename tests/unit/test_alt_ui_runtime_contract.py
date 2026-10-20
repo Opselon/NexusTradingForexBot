@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -56,6 +58,98 @@ def _get(path: str) -> tuple[int, Any]:
             return e.code, json.loads(body) if body else {}
         except json.JSONDecodeError:
             return e.code, {}
+
+
+# ---------------------------------------------------------------------------
+# Frontend source scanners (see TestUiSourceContract below).
+# ---------------------------------------------------------------------------
+
+
+def _rel(path: pathlib.Path) -> str:
+    """Stable, OS-independent path key ('frontend/src/...') used by the allowlists."""
+    return path.relative_to(REPO_ROOT).as_posix()
+
+
+def _raw_fetch_call(text: str) -> bool:
+    """True when `text` performs a fetch() CALL.
+
+    Deliberately not a substring test: `query.refetch()` and prose identifiers
+    are not network calls, so they must not be flagged.
+    """
+    return re.search(r"\bfetch\s*\(", text) is not None
+
+
+#: Tokens that only appear in code that talks to the engine directly (PySQLite
+#: handles, the MetaTrader5 package, engine database files).
+FORBIDDEN_ENGINE_TOKENS = ("sqlite3", "mt5.", "MetaTrader5", "audit.db", ".db'")
+
+
+def _engine_tokens(text: str) -> list[str]:
+    """Forbidden engine-internal tokens present in `text` (case-insensitive).
+
+    Both sides are case-folded: the original version lowercased the file text
+    but compared mixed-case tokens against it, so its 'MetaTrader5' check could
+    never fire.
+    """
+    lowered = text.lower()
+    return [token for token in FORBIDDEN_ENGINE_TOKENS if token.lower() in lowered]
+
+
+#: `fetch(` outside `src/api`, excused per exact file — never a glob.
+#:
+#: The rule exists so the UI has ONE network entry point that applies auth,
+#: request-ids, timeouts, error normalization and the 401 cookie heal. These
+#: two `core/` files ARE that entry point; they are not feature code reaching
+#: for the network on its own.
+FETCH_OUTSIDE_API_ALLOWLIST: dict[str, str] = {
+    "frontend/src/core/middleware.ts": (
+        "terminal fetch of the ONE REST pipeline (executeRequest). src/api/* and "
+        "src/core/transport.ts reach the network only through it, which is exactly what "
+        "this test defends; moving it into src/api would make the shim circular."
+    ),
+    "frontend/src/core/auth.ts": (
+        "refreshBootstrapCookie() GETs the public cookie-issuing asset to re-derive the "
+        "BUG-267 HttpOnly bootstrap cookie. The pipeline's cookieHeal middleware calls it, so "
+        "routing it back through executeRequest() would recurse. Identity bootstrap, not "
+        "feature traffic."
+    ),
+}
+
+#: (exact path, token) -> why that occurrence is a NAME/COPY mention rather than
+#: engine access. Keying on the token too means a *different* forbidden token
+#: appearing later in an allowlisted file still fails the test.
+ENGINE_TOKEN_ALLOWLIST: dict[tuple[str, str], str] = {
+    ("frontend/src/pages/Dashboard/i18n.ts", "mt5."): (
+        "translation catalog: the 'dash.mt5.*' keys are copy for the MT5 status panel; "
+        "values are user-facing prose, nothing is imported or called."
+    ),
+    ("frontend/src/pages/Dashboard/DashboardPage.tsx", "mt5."): (
+        'only t("dash.mt5.*") copy-key literals. The panel renders '
+        "engineApi.mt5Status() (GET /api/mt5/status) through TanStack Query via the api "
+        "layer — no engine handle, driver or file is touched."
+    ),
+    ("frontend/src/pages/Audit/i18n.ts", "audit.db"): (
+        "translation catalog: the 'audit.db.*' keys name the audit database card in the UI; "
+        "the copy itself states that all access goes through bounded backend endpoints."
+    ),
+    ("frontend/src/pages/Audit/AuditPage.tsx", "audit.db"): (
+        'only t("audit.db.*") copy-key literals; the card\'s data comes from the backend '
+        "audit read plane via the api layer (filename/provider/size already reported by it)."
+    ),
+    ("frontend/src/lib/errors/i18n.ts", "mt5."): (
+        "user-facing error copy: the Arabic sentence ends with 'MT5.' (sentence-final "
+        "period); it is a human-readable string, not an identifier."
+    ),
+    ("frontend/src/features/health/ui/HealthPage.tsx", "mt5."): (
+        "`mt5` is the local react-query result of useMt5() (healthApi.mt5 -> "
+        "GET /api/mt5/status); mt5.data / mt5.isError read a fetched payload, not the "
+        "MetaTrader5 package."
+    ),
+    ("frontend/src/features/decision-trace/ui/TraceInspector.tsx", "mt5."): (
+        "`mt5` is a local useMemo over mt5Reachability(events) — gateway-reach evidence "
+        "extracted from backend trace events, rendered as fields; not the MetaTrader5 package."
+    ),
+}
 
 
 @pytest.mark.skipif(
@@ -153,34 +247,67 @@ class TestUiSourceContract:
     FRONTEND = os.path.join(REPO_ROOT, "frontend")
 
     def test_no_scattered_fetch_outside_api_layer(self) -> None:
-        import pathlib
-
         offenders: list[str] = []
         for p in pathlib.Path(self.FRONTEND, "src").rglob("*.ts*"):
-            if "src\\api" in str(p) or "src/api" in str(p):
+            rel = _rel(p)
+            if "src/api" in rel:
                 continue
             text = p.read_text(encoding="utf-8", errors="replace")
             # Match actual fetch calls, not identifiers containing 'fetch'
             # (e.g. react-query's .refetch()).
-            import re
-
-            if re.search(r"\bfetch\s*\(", text):
-                offenders.append(str(p))
-        assert not offenders, f"raw fetch() outside src/api: {offenders}"
+            if not _raw_fetch_call(text):
+                continue
+            if rel in FETCH_OUTSIDE_API_ALLOWLIST:
+                continue
+            offenders.append(rel)
+        assert not offenders, (
+            "raw fetch() outside src/api — every call must go through the one "
+            f"transport (@/core/transport: getLegacy/getV1/send/drop): {offenders}"
+        )
 
     def test_no_direct_database_or_mt5_access(self) -> None:
-        import pathlib
-
-        forbidden = ("sqlite3", "mt5.", "MetaTrader5", "audit.db", ".db'")
         offenders: list[str] = []
         for p in pathlib.Path(self.FRONTEND, "src").rglob("*"):
             if p.suffix not in {".ts", ".tsx", ".css"}:
                 continue
-            text = p.read_text(encoding="utf-8", errors="replace").lower()
-            for token in forbidden:
-                if token in text:
-                    offenders.append(f"{p.name}:{token}")
+            rel = _rel(p)
+            text = p.read_text(encoding="utf-8", errors="replace")
+            for token in _engine_tokens(text):
+                if (rel, token) in ENGINE_TOKEN_ALLOWLIST:
+                    continue
+                offenders.append(f"{rel}:{token}")
         assert not offenders, f"frontend must never touch engine internals: {offenders}"
+
+    def test_engine_allowlist_entries_are_still_true(self) -> None:
+        """An allowlist entry is only honest while the thing it excuses exists.
+
+        A stale entry (token/fetch gone) must be deleted rather than left to
+        quietly exempt the file from a future, real violation.
+        """
+        for rel, reason in FETCH_OUTSIDE_API_ALLOWLIST.items():
+            path = pathlib.Path(REPO_ROOT, rel)
+            assert path.is_file(), f"fetch allowlist names a missing file: {rel} ({reason})"
+            assert _raw_fetch_call(path.read_text(encoding="utf-8", errors="replace")), (
+                f"stale fetch allowlist entry {rel} — no fetch() call left, delete it ({reason})"
+            )
+        for (rel, token), reason in ENGINE_TOKEN_ALLOWLIST.items():
+            path = pathlib.Path(REPO_ROOT, rel)
+            assert path.is_file(), f"engine-token allowlist names a missing file: {rel} ({reason})"
+            text = path.read_text(encoding="utf-8", errors="replace").lower()
+            assert token.lower() in text, (
+                f"stale engine-token allowlist entry {rel}:{token} — token gone, delete it ({reason})"
+            )
+
+    def test_scanners_still_detect_violations(self) -> None:
+        """Anti-vacuity: the allowlist must not have hollowed out the scanners."""
+        assert _raw_fetch_call('const r = await fetch("/api/status");')
+        assert not _raw_fetch_call("decisionQuery.refetch();")
+        assert "mt5." in _engine_tokens("mt5.order_send(request)")
+        assert "MetaTrader5" in _engine_tokens("import MetaTrader5 as mt5")
+        assert "sqlite3" in _engine_tokens("import sqlite3")
+        assert "audit.db" in _engine_tokens("open('audit.db')")
+        assert ".db'" in _engine_tokens("open('signals.db')")
+        assert _engine_tokens('t("dash.broker.title", "Broker status")') == []
 
     def test_no_fabricated_state_defaults(self) -> None:
         """The UI must never hardcode LIVE/PAPER/running defaults."""

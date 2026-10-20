@@ -128,15 +128,18 @@ class BrokerHistorySyncWorker:
         This probe separates failure from genuine emptiness before the worker
         is allowed to mark the window as covered. It is intentionally
         read-only and cheap (a connected-terminal check, no state mutation).
+
+        Probe resolution: the probe is read from the ADAPTER — the worker's
+        wiring contract. ``MT5Port`` REQUIRES ``is_connected`` (ports/mt5_port.py)
+        and every shipped adapter publishes it, so an adapter that does not is
+        not a broker connection the worker can reason about. For those the
+        verdict stays FAIL-CLOSED: without a reachability signal an empty
+        window cannot be told apart from an outage, and trusting it is exactly
+        the permanent-hole bug this probe exists to prevent. A double that only
+        exercises window arithmetic publishes the probe on itself.
         """
         probe = getattr(self.adapter, "is_connected", None)
         if probe is None:
-            # MT5-PARITY-FIX-2 / F17-3: adapters that do not publish ANY
-            # connectivity signal cannot distinguish "broker down" from "no
-            # history", so an empty window stays unsafe and the watermark is
-            # not advanced (fail closed — a quiet window is the cheap case to
-            # re-fetch; a silent hole is the expensive one to discover). Tests
-            # that only want to assert window arithmetic set the probe.
             return False
         try:
             ok = probe() if callable(probe) else bool(probe)
