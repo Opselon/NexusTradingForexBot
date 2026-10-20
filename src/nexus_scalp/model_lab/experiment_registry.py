@@ -45,8 +45,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from nexus_scalp.database.sqlite_session import session as sqlite_session
-
 # Default root: artifacts/experiments (sibling of model_generation's tree
 # so both producers stay inside the repo's ignored artifacts/ canopy).
 DEFAULT_ROOT = Path("artifacts") / "experiments"
@@ -257,7 +255,7 @@ class ExperimentRegistry:
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / DB_FILENAME
         self._lock = threading.RLock()
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.executescript(_SCHEMA)
@@ -474,7 +472,7 @@ class ExperimentRegistry:
     # queries
     # ------------------------------------------------------------------
     def get_experiment(self, experiment_id: str) -> ExperimentRecord | None:
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT * FROM experiments WHERE experiment_id = ?",
                 (experiment_id,),
@@ -503,7 +501,7 @@ class ExperimentRegistry:
         if limit is not None:
             sql += " LIMIT ?"
             params.append(int(limit))
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             rows = conn.execute(sql, params).fetchall()
         return [ExperimentRecord.from_db_row(r) for r in rows]
 
@@ -541,7 +539,7 @@ class ExperimentRegistry:
              LIMIT 1
         """
         jpath = json_path(metric)
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             row = conn.execute(sql, (jpath, jpath)).fetchone()
         return ExperimentRecord.from_db_row(row) if row is not None else None
 
@@ -575,7 +573,7 @@ class ExperimentRegistry:
           ORDER BY json_extract(metrics, ?) {order}, created_at ASC
              LIMIT ?
         """
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             rows = conn.execute(sql, (jpath, jpath, max(1, int(n)))).fetchall()
         return [ExperimentRecord.from_db_row(r) for r in rows]
 
@@ -615,7 +613,7 @@ class ExperimentRegistry:
         if status is not None:
             sql += " WHERE status = ?"
             params.append(status)
-        with sqlite_session(self._connect()) as conn:
+        with self._connect() as conn:
             return int(conn.execute(sql, params).fetchone()[0])
 
 
