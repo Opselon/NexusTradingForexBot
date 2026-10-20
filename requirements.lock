@@ -88,9 +88,9 @@ ast-serialize==0.13.1 \
     --hash=sha256:f8b17e2921e56621bcb46792bd3e0b82ca3b85de78d5936e7b8174ba1758b0aa \
     --hash=sha256:fb8021f4dc3296de18737e3b8b34994411da725374d74a0b9eb32a738f2a23d0
     # via mypy
-certifi==2026.10.18 \
-    --hash=sha256:73191c47aaa79da394e8fee2dbc2ec827432cab56311122c9e47abf79e390f62 \
-    --hash=sha256:b9995d97b64d0431a5af837d8ca8cd6238104d1f319f04bd93ea43124d6c861e
+certifi==2026.10.19 \
+    --hash=sha256:035c1e85572b141bf1c3a3eff0e33a8eb74917522f2559075ff8d2fea780a1ae \
+    --hash=sha256:42d35340cc5b9ba78e818ddbff0c5b1c2b779de448a340fd1b989f5fa8670e1b
     # via
     #   httpcore
     #   httpx
@@ -384,9 +384,9 @@ feedparser-sgmllib==2.1.0 \
     --hash=sha256:2cab2d43b95a954f920f18aebce7a4dbbb3f539780b127e2aa114f579821e01d \
     --hash=sha256:61facf2918c4389b5b00714f76c5e03431ffcd94cd1f51d657edd6cd7c396579
     # via feedparser
-filelock==4.2.2 \
-    --hash=sha256:1851d2f14ca2901e98069d68333b33ad7409f56904e17b48cc0c32a0db8ed73a \
-    --hash=sha256:b29ff2ae9140bb17b3bc77c648dc4f010d9ac0955eccabff4f2b01dde859f787
+filelock==4.2.4 \
+    --hash=sha256:301241438c57936ef93f4243a94f2559022268bfcf9b375a9a72eb0f8db8358e \
+    --hash=sha256:c6d8663535e1650ee430507b4ffbac7b464dd64b7647ea0112a9f406499d163d
     # via torch
 fsspec==2026.9.0 \
     --hash=sha256:0f08147951c8cb31d844c3547d631053b127863b60be04cf06e121333ee0e2fe \
@@ -1533,9 +1533,9 @@ pydantic-core==2.50.1 \
     --hash=sha256:f77ac30b19221cd9bd3fcfa3d4614eff93140d0572ab730cded17b64adca05f3 \
     --hash=sha256:fe90228920fd8ff2be62622b6bb8a2b11acd65046d50c6b130614b5879605a20
     # via pydantic
-pydantic-settings==2.16.0 \
-    --hash=sha256:5b6c578049ede4db0e2ef3b4eaa4ad4069cfa9211f83fb38df899dfade50a614 \
-    --hash=sha256:7e73acf7f61936a15e5a3b6eedaea29f133357faf7272f2607ba479b049dd7f2
+pydantic-settings==2.16.1 \
+    --hash=sha256:30f5313340da4e8f1b440d1910b92a5bc3ccbb6b4ba70ec2b8395bc921f418f5 \
+    --hash=sha256:aff602a1886338c2df3d1e958e2193a8dc33cec75b91f202e83fd98484b4b0da
     # via nexus-scalp-engine (pyproject.toml)
 pyee==13.0.1 ; python_full_version < '3.12' \
     --hash=sha256:0b931f7c14535667ed4c7e0d531716368715e860b988770fc7eb8578d1f67fc8 \
@@ -1726,9 +1726,9 @@ ruff==0.17.0 \
     --hash=sha256:d66de796b726c4801e05fa99a2a8d7a780e107be222486c304ab61765561e866 \
     --hash=sha256:db4f74c533403ab70fe4007873f6ae0c9f94a8b03158cf48d78788e47cdbe399
     # via nexus-scalp-engine (pyproject.toml)
-setuptools==84.0.0 \
-    --hash=sha256:51a52592b3b99e102b609654876bd65f19f999935166d1352678931132b0c670 \
-    --hash=sha256:f4695c21257f0d9b537ec2692c941d02ee143b7cc1276941349a546573b2ef73
+setuptools==84.2.0 \
+    --hash=sha256:6f445ca2ce864605f81e223f262b4c94ffcb9a4a63473bae0ed7be5aab0291da \
+    --hash=sha256:8cc107ac7a403105dc8d6477664171f36135fab26adf8b5e0edaebc313f39b21
     # via
     #   pyinstaller
     #   torch
