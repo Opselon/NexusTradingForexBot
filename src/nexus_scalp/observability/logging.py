@@ -235,7 +235,8 @@ _CORRELATION_ID_RE = re.compile(
     r"|upd-[0-9]{8}T[0-9]{6}[0-9]{1,6}(?:-[0-9a-f]{8})?"
     r"|fh-[0-9a-f]{16,24}"
     r"|req[_-][0-9a-zA-Z\-]{6,32}"
-    r"|boot_[0-9a-f]{8,16})"
+    r"|boot_[0-9a-f]{8,16}"
+    r")"
     r"(?![0-9a-zA-Z_\-+/=])"
 )
 
@@ -250,7 +251,9 @@ _ID_KEY_RE = re.compile(
     r"|INC-[0-9]{4}-[0-9A-F]{8}"
     r"|upd-[0-9]{8}T[0-9]{6}[0-9]{1,6}(?:-[0-9a-f]{8})?"
     r"|fh-[0-9a-f]{16,24}"
-    r"|req[_-][0-9a-zA-Z\-]{6,32})"
+    r"|req[_-][0-9a-zA-Z\-]{6,32}"
+    r"|boot_[0-9a-f]{8,16}"
+    r"|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})"
     r"(?![0-9a-zA-Z_\-+/=])"
 )
 
@@ -659,6 +662,25 @@ class DatedRotatingFileHandler(logging.Handler):
 # ---------------------------------------------------------------------------
 
 
+def _attach_flood_control(handler: logging.Handler) -> None:
+    """Attach the OBS-013 flood-control filter to ONE handler.
+
+    A logging.Filter (not a structlog processor) because structlog
+    DropEvent is ignored for stdlib records by ProcessorFormatter - verified
+    live. One SHARED filter instance per configure_logging call keeps the
+    signature counters coherent across console + file handlers. Failure to
+    import is non-fatal: logging must never take the process down.
+    """
+    flood = None
+    try:
+        from nexus_scalp.observability.flood_control import FloodControlFilter
+
+        flood = FloodControlFilter()
+    except Exception:  # pragma: no cover - defensive
+        return
+    handler.addFilter(flood)
+
+
 def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | None = None) -> None:
     """Delete severity files older than their retention window.
 
@@ -870,6 +892,7 @@ def configure_logging(
     console_handler = logging.StreamHandler(_console_stream())
     console_handler.setFormatter(console_formatter)
     console_handler.setLevel(numeric_level)
+    _attach_flood_control(console_handler)
     root_logger.addHandler(_mark_own_handler(console_handler))
 
     if log_to_file:
@@ -877,6 +900,7 @@ def configure_logging(
         for levelno in (logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL):
             handler = DatedRotatingFileHandler(base_dir, levelno)
             handler.setFormatter(formatter)
+            _attach_flood_control(handler)
             root_logger.addHandler(_mark_own_handler(handler))
 
     for quiet in _QUIET_LOGGERS:

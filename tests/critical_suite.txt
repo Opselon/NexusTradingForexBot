@@ -304,3 +304,6 @@ tests/unit/test_l4_schema_lifecycle_indexes.py
 tests/unit/test_db_pg_env_overlay_doctor.py
 tests/unit/test_decision_dedup_replay.py
 tests/unit/test_obs_trace_and_correlation.py
+tests/unit/test_evidence_json_and_correlation_redaction.py
+tests/unit/test_flood_control.py
+tests/unit/test_risk_rejection_diagnostics.py
