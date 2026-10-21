@@ -95,6 +95,7 @@ from nexus_scalp.model_lifecycle.store import TrainingRunStore
 from nexus_scalp.model_lifecycle.worker import TrainingWorker
 from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import configure_logging, get_logger
+from nexus_scalp.observability.task_spawner import spawn_named_task
 from nexus_scalp.observability.telegram_notifier import TelegramNotifier
 from nexus_scalp.ports.mt5_port import IMT5Port
 from nexus_scalp.research.dataset import ResearchDatasetBuilder
@@ -2073,7 +2074,17 @@ class LiveEngine:
             if os.name != "nt":
                 for sig in (signal.SIGINT, signal.SIGTERM):
                     try:
-                        loop.add_signal_handler(sig, lambda: asyncio.create_task(self.stop()))
+                        # OBS-011: name the stop task so a SIGTERM whose stop()
+                        # raises is attributable instead of an anonymous
+                        # "Task exception was never retrieved" at shutdown.
+                        loop.add_signal_handler(
+                            sig,
+                            lambda: spawn_named_task(
+                                self.stop(),
+                                name="engine.signal_stop",
+                                component="ENGINE_SIGNAL",
+                            ),
+                        )
                     except NotImplementedError:
                         pass
 

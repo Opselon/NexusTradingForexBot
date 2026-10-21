@@ -12,6 +12,7 @@ from collections.abc import Callable
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.task_spawner import spawn_named_task
 
 logger = get_logger("nexus_scalp.application.live_workers")
 
@@ -111,6 +112,17 @@ class WorkerSupervisor:
             finally:
                 inflight_workers.discard(name)
 
-        task = asyncio.create_task(_run())
+        # OBS-011 (2026-08-31): a bare create_task died as an anonymous
+        # "Task exception was never retrieved" with no component or
+        # correlation, so a dead worker was unattributable. The named spawn
+        # ALSO retrieves the exception, which keeps the interpreter's own
+        # unstructured warning quiet — the operator sees the structured line
+        # below instead. The inner _run() already isolates every worker
+        # exception, so this is a second, attribution-only net.
+        task = spawn_named_task(
+            _run(),
+            name=f"worker.{name.lower()}",
+            component="WORKER_SUPERVISOR",
+        )
         background_tasks.add(task)
         task.add_done_callback(background_tasks.discard)

@@ -14,7 +14,6 @@ owns the BAR-PROCESSING LOGIC only. Failure-isolated per stage.
 
 from __future__ import annotations
 
-import asyncio
 import time
 from collections import deque
 from datetime import UTC, datetime
@@ -23,6 +22,7 @@ from typing import Any
 from nexus_scalp.candle_intelligence import RegimeState
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.task_spawner import spawn_named_task
 
 logger = get_logger("nexus_scalp.application.live.bar_handler")
 
@@ -345,7 +345,13 @@ class BarHandler:
                     )
                 return
             try:
-                loop = asyncio.get_running_loop()
-                self.om._retrain_task = loop.create_task(self.om._trigger_async_online_fine_tune())
+                # OBS-011: online fine-tune is fire-and-forget; a failure in
+                # the old anonymous task surfaced only as "Task exception was
+                # never retrieved" with no indication it was the trainer.
+                self.om._retrain_task = spawn_named_task(
+                    self.om._trigger_async_online_fine_tune(),
+                    name="worker.online_finetune",
+                    component="ONLINE_TRAINING",
+                )
             except RuntimeError:
                 pass
