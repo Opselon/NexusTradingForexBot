@@ -46,6 +46,7 @@ def _include_routers(app: FastAPI) -> None:
         indicators,
         market,
         marketplace,
+        observability,
         positions,
         research,
         risk,
@@ -68,6 +69,7 @@ def _include_routers(app: FastAPI) -> None:
         incidents,
         marketplace,
         indicators,
+        observability,
     ):
         app.include_router(module.router)
 

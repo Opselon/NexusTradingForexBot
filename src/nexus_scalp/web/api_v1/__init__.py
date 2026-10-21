@@ -13,6 +13,7 @@ __all__ = [
     "errors",
     "incidents",
     "market",
+    "observability",
     "positions",
     "research",
     "risk",

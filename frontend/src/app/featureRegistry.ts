@@ -16,6 +16,7 @@ import researchMeta from "@/features/research";
 import aiAnalysisMeta from "@/features/ai-analysis";
 import marketplaceMeta from "@/features/marketplace";
 import newsMeta from "@/features/news";
+import observabilityMeta from "@/features/observability";
 import rulesMeta from "@/features/rules";
 import configMeta from "@/features/config";
 import debugMeta from "@/features/debug";
@@ -74,6 +75,7 @@ function toFeature(mod: FeatureModule): RegisteredFeature {
 
 const FEATURES: RegisteredFeature[] = [
   newsMeta,
+  observabilityMeta,
   aiAnalysisMeta,
   modelStudioMeta,
   researchMeta,

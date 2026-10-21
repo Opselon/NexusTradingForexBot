@@ -27,7 +27,6 @@ type DepEntry struct {
 // DepsTable maps "METHOD /path" to its dependency classification. Routes
 // absent from this table are unclassified and must forward to Python.
 var DepsTable = map[string]DepEntry{
-
 	"DELETE /api/ai-providers/providers/{provider_id}": {Method: "DELETE", Path: "/api/ai-providers/providers/{provider_id}", NeedsPython: true, Why: "write:assumed"},
 	"DELETE /api/db/console/apikey/{name}":             {Method: "DELETE", Path: "/api/db/console/apikey/{name}", NeedsPython: true, Why: "write:assumed"},
 	"DELETE /api/model-studio/models/{model_id}":       {Method: "DELETE", Path: "/api/model-studio/models/{model_id}", NeedsPython: true, Why: "observed:db"},
@@ -306,6 +305,11 @@ var DepsTable = map[string]DepEntry{
 	"GET /api/v1/model/identity":                                {Method: "GET", Path: "/api/v1/model/identity", NeedsPython: true, Why: "non-2xx:503"},
 	"GET /api/v1/model/status":                                  {Method: "GET", Path: "/api/v1/model/status", NeedsPython: true, Why: "non-2xx:503"},
 	"GET /api/v1/observability/events":                          {Method: "GET", Path: "/api/v1/observability/events", NeedsPython: true, Why: "empty-items-in-2xx"},
+	"GET /api/v1/observability/logs":                            {Method: "GET", Path: "/api/v1/observability/logs", NeedsPython: true, Why: "observed:db"},
+	"GET /api/v1/observability/logs/export":                     {Method: "GET", Path: "/api/v1/observability/logs/export", NeedsPython: true, Why: "observed:db"},
+	"GET /api/v1/observability/logs/summary":                    {Method: "GET", Path: "/api/v1/observability/logs/summary", NeedsPython: true, Why: "observed:db"},
+	"GET /api/v1/observability/logs/{event_id}":                 {Method: "GET", Path: "/api/v1/observability/logs/{event_id}", NeedsPython: true, Why: "observed:db"},
+	"GET /api/v1/observability/logs/{event_id}/correlate":       {Method: "GET", Path: "/api/v1/observability/logs/{event_id}/correlate", NeedsPython: true, Why: "observed:db"},
 	"GET /api/v1/observability/metrics":                         {Method: "GET", Path: "/api/v1/observability/metrics", NeedsPython: true, Why: "stub-in-2xx"},
 	"GET /api/v1/positions":                                     {Method: "GET", Path: "/api/v1/positions", NeedsPython: true, Why: "non-2xx:503"},
 	"GET /api/v1/positions/history/{ticket}":                    {Method: "GET", Path: "/api/v1/positions/history/{ticket}", NeedsPython: true, Why: "non-2xx:422"},
@@ -418,8 +422,8 @@ var DepsTable = map[string]DepEntry{
 	"POST /api/db/manage/transition/divergence":                 {Method: "POST", Path: "/api/db/manage/transition/divergence", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/db/manage/transition/migrate":                    {Method: "POST", Path: "/api/db/manage/transition/migrate", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/db/manage/transition/start":                      {Method: "POST", Path: "/api/db/manage/transition/start", NeedsPython: true, Why: "write:assumed"},
-	"POST /api/db/manage/transition/test-connection":            {Method: "POST", Path: "/api/db/manage/transition/test-connection", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/db/manage/transition/test":                       {Method: "POST", Path: "/api/db/manage/transition/test", NeedsPython: true, Why: "write:assumed"},
+	"POST /api/db/manage/transition/test-connection":            {Method: "POST", Path: "/api/db/manage/transition/test-connection", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/db/manage/transition/verify":                     {Method: "POST", Path: "/api/db/manage/transition/verify", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/db/manage/views/ensure":                          {Method: "POST", Path: "/api/db/manage/views/ensure", NeedsPython: true, Why: "write:assumed"},
 	"POST /api/debug/model-test":                                {Method: "POST", Path: "/api/debug/model-test", NeedsPython: true, Why: "write:assumed"},

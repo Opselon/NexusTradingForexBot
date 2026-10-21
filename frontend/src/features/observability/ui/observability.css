@@ -1,0 +1,348 @@
+/* Observability / Log Center — prefix: obs-
+ * Consumes the app's global tokens (var(--*)) so the page inherits the theme;
+ * no hard-coded palette, so light/dark and the RTL locale stay consistent.
+ * Layout goal: a dense operator table that stays readable on a phone (the
+ * table scrolls horizontally rather than squashing columns into unreadable
+ * slivers — the timestamp/level/severity triad must remain legible).
+ */
+
+.obs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 2px 24px;
+}
+
+.obs-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.obs-header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 600;
+}
+
+.obs-subtitle {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  opacity: 0.72;
+}
+
+.obs-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.obs-export {
+  text-decoration: none;
+}
+
+/* ---- severity summary strip ---- */
+
+.obs-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.obs-count {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.28));
+  border-radius: 8px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+}
+
+.obs-count-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* A left accent bar per severity: colour alone is not an accessible signal,
+ * the badge text carries the meaning; the bar is reinforcement only. */
+.obs-count-critical {
+  border-inline-start: 3px solid #d13438;
+}
+.obs-count-error {
+  border-inline-start: 3px solid #e8590c;
+}
+.obs-count-warn {
+  border-inline-start: 3px solid #b8860b;
+}
+.obs-count-info {
+  border-inline-start: 3px solid #2b6cb0;
+}
+.obs-count-debug {
+  border-inline-start: 3px solid #6b7280;
+}
+
+/* ---- filters ---- */
+
+.obs-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.obs-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.78rem;
+  min-width: 0;
+}
+
+.obs-filters input,
+.obs-filters select {
+  padding: 6px 8px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 6px;
+  background: var(--surface-1, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  min-width: 0;
+}
+
+.obs-filter-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ---- table ---- */
+
+.obs-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  /* Keyboard users must be able to scroll the table, so it is focusable. */
+  -webkit-overflow-scrolling: touch;
+}
+
+.obs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+}
+
+.obs-table th {
+  text-align: start;
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.72;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.3));
+  white-space: nowrap;
+}
+
+.obs-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, rgba(127, 127, 127, 0.16));
+  vertical-align: top;
+}
+
+.obs-row {
+  cursor: pointer;
+}
+
+.obs-row:hover td,
+.obs-row:focus-within td {
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+}
+
+.obs-time {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.85;
+}
+
+.obs-mono {
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+.obs-message {
+  /* The message is the one column allowed to wrap; everything else stays
+   * nowrap so a row never becomes three lines tall on mobile. */
+  min-width: 220px;
+  word-break: break-word;
+}
+
+.obs-repeat {
+  font-variant-numeric: tabular-nums;
+  text-align: end;
+  white-space: nowrap;
+}
+
+.obs-more {
+  display: flex;
+  justify-content: center;
+  padding-top: 10px;
+}
+
+/* ---- drawer ---- */
+
+.obs-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 60;
+}
+
+.obs-drawer {
+  width: min(680px, 100%);
+  height: 100%;
+  overflow-y: auto;
+  background: var(--surface-1, #15181d);
+  color: inherit;
+  padding: 14px 16px 40px;
+  box-shadow: -2px 0 18px rgba(0, 0, 0, 0.35);
+}
+
+.obs-drawer header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  position: sticky;
+  top: 0;
+  background: inherit;
+  padding-bottom: 8px;
+  z-index: 1;
+}
+
+.obs-drawer h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.obs-drawer h3 {
+  margin: 16px 0 6px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.72;
+}
+
+.obs-fields {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) 1fr;
+  gap: 6px 12px;
+  margin: 10px 0 0;
+  font-size: 0.85rem;
+}
+
+.obs-fields dt {
+  opacity: 0.7;
+}
+
+.obs-fields dd {
+  margin: 0;
+  word-break: break-word;
+}
+
+.obs-pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.1));
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.78rem;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.obs-trace {
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.obs-muted {
+  margin: 0;
+  opacity: 0.6;
+  font-size: 0.82rem;
+}
+
+.obs-correlated {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.obs-correlated button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: center;
+  text-align: start;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.obs-correlated button:hover,
+.obs-correlated button:focus-visible {
+  border-color: var(--border, rgba(127, 127, 127, 0.5));
+}
+
+.obs-current button {
+  outline: 1px solid var(--accent, #2b6cb0);
+}
+
+/* ---- small screens ---- */
+
+@media (max-width: 640px) {
+  .obs-header-actions {
+    width: 100%;
+  }
+  .obs-header-actions .btn {
+    flex: 1 1 auto;
+  }
+  .obs-filters {
+    grid-template-columns: 1fr;
+  }
+  .obs-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .obs-drawer {
+    width: 100%;
+  }
+  .obs-message {
+    min-width: 160px;
+  }
+}
+
+/* Respect reduced-motion: no transitions are used, but the sticky drawer
+ * header and hover states stay instant for users who ask for that. */
+@media (prefers-reduced-motion: reduce) {
+  .obs-row,
+  .obs-correlated button {
+    transition: none;
+  }
+}

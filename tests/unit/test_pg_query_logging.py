@@ -33,6 +33,7 @@ nothing — INV-001):
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -480,6 +481,37 @@ def test_mask_query_text_bounds_a_pathological_statement() -> None:
     masked = ql.mask_query_text(big)
     assert len(masked) <= ql._MAX_SQL_LOG_CHARS + 80
     assert "truncated" in masked
+
+
+def test_mask_query_text_userinfo_redaction_is_not_polynomial() -> None:
+    """REGRESSION (CodeQL py/polynomial-redos on ``_USERINFO``):
+
+    ``://!:`` repeated is the payload the alert named. The old
+    ``(://[^:/@\\s]+:)([^@\\s]*)(@)`` re-scanned from every position; the
+    bounded matcher must stay linear while masking exactly the same text.
+    """
+    evil = "://!:" + "!".join(["://!:!"] * 4_000)
+
+    start = time.monotonic()
+    ql.mask_query_text(evil)
+    elapsed = time.monotonic() - start
+
+    assert elapsed < 1.0, f"userinfo masking took {elapsed:.2f}s on pathological input"
+    assert len(evil) > 20_000
+
+
+def test_mask_query_text_userinfo_masking_matches_previous_semantics() -> None:
+    """The bounded matcher accepts the same language as the old regex."""
+    cases = {
+        "postgresql://user:s3cret@host:5432/db": "postgresql://user:***@",
+        "a://u:p@h": "a://u:***@",
+        "a://:p@h": "a://:***@",
+        "a://u:@h": "a://u:***@",
+        "no url here": "no url here",
+        "a://u@h": "a://u@h",  # no password separator: untouched
+    }
+    for raw, expected in cases.items():
+        assert expected in ql.mask_query_text(raw), raw
 
 
 def test_arg_count_never_renders_values() -> None:

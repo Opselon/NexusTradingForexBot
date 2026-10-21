@@ -1,5 +1,14 @@
 {
  "routes": {
+  "DELETE /api/ai-providers/providers/{provider_id}": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
   "DELETE /api/db/console/apikey/{name}": {
    "body": "{\"success\":true,\"deleted\":\"default\"}",
    "needs_python": true,
@@ -182,6 +191,15 @@
    "status": 200,
    "why": "stateless-2xx"
   },
+  "GET /api/ai-providers/templates": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/algo/config": {
    "body": "{\"atr_sl_buffer_multiplier\":1.5,\"min_risk_reward_ratio\":1.8,\"ai_zone_confidence_threshold\":0.6,\"fvg_mitigation_sensitivity\":0.5,\"order_block_lookback_bars\":30,\"",
    "needs_python": false,
@@ -284,6 +302,24 @@
    "status": 200,
    "why": "observed:db"
   },
+  "GET /api/db/console/objects": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/db/console/query-stats": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/db/console/quick": {
    "body": "{\"success\":false,\"error\":\"table required\"}",
    "needs_python": true,
@@ -316,6 +352,14 @@
    "status": 200,
    "why": "observed:db"
   },
+  "GET /api/db/manage/dashboard": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/logs": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
   "GET /api/db/manage/options": {
    "body": "{\"success\":true,\"options\":{\"command_timeout_sec\":30,\"connect_timeout_sec\":10,\"migrate_on_startup\":true,\"pooling_enabled\":true,\"domain\":\"audit\",\"database\":\"nexus",
    "needs_python": true,
@@ -331,6 +375,18 @@
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
+  },
+  "GET /api/db/manage/provider-state": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/purge/history": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/purge/policies": {
+   "needs_python": true,
+   "why": "observed:db"
   },
   "GET /api/db/manage/report": {
    "body": "{\"success\":true,\"report\":null}",
@@ -355,6 +411,10 @@
     "db"
    ],
    "status": 200,
+   "why": "observed:db"
+  },
+  "GET /api/db/manage/views": {
+   "needs_python": true,
    "why": "observed:db"
   },
   "GET /api/db/status": {
@@ -805,12 +865,39 @@
    "status": 200,
    "why": "stateless-2xx"
   },
+  "GET /api/model-studio/feature-contract": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/model-studio/fetch-70d": {
    "body": "{\"status\":\"OK\",\"dimension\":70,\"contract_valid\":true,\"contract_error\":null,\"schema_hash\":\"235b8fccc96b7e0e\",\"sources\":{\"base\":\"SYNTHETIC_BASELINE\",\"news\":\"NEUTRA",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/model-builder/configs": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/model-studio/model-builder/options": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
   },
   "GET /api/model-studio/models": {
    "body": "{\"status\":\"OK\",\"count\":60,\"active_champion_id\":null,\"models\":[{\"id\":\"model\",\"name\":\"model.pt\",\"version\":\"1.0.0\",\"dimension\":50,\"architecture\":\"ScalpNet\",\"weight",
@@ -839,6 +926,24 @@
    "status": 200,
    "why": "observed:db"
   },
+  "GET /api/model-studio/models/switch/preview": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/model-studio/models/{model_id}/detail": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/model-studio/models/{model_id}/scaler": {
    "body": "{\"status\":\"NO_SCALER_SIDECAR\",\"model_id\":\"champion\",\"dimension\":50,\"features\":[],\"message\":\"No dedicated scaler sidecar found for this model; standard unit scal",
    "needs_python": true,
@@ -854,6 +959,24 @@
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
+  },
+  "GET /api/model-studio/runtime/state": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/model-studio/tensor/inspect": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
   },
   "GET /api/model-studio/train/progress": {
    "body": "{\"status\":\"OK\",\"progress\":{\"status\":\"IDLE\",\"stage\":\"IDLE\",\"epoch\":0,\"epochs\":0,\"loss\":0.0,\"val_loss\":0.0,\"started_at\":null,\"updated_at\":null,\"run_id\":\"\",\"messag",
@@ -1265,6 +1388,15 @@
    "status": 200,
    "why": "stateless-2xx"
   },
+  "GET /api/position-adviser/decision/current": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/position-adviser/models": {
    "body": "{\"status\":\"OK\",\"count\":0,\"active_adviser_id\":\"\",\"models\":[]}",
    "needs_python": false,
@@ -1272,12 +1404,57 @@
    "status": 200,
    "why": "stateless-2xx"
   },
+  "GET /api/position-adviser/settings": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
   "GET /api/position-adviser/status": {
    "body": "{\"activation\":\"DISABLED\",\"model_id\":\"\",\"weights_path\":\"\",\"scaler_path\":\"\",\"weights_sha256\":\"\",\"manifest_path\":\"\",\"integrity\":\"unverified\",\"source_dataset_hash\":",
    "needs_python": false,
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
+  },
+  "GET /api/position-adviser/tensor/current-input": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/position-ml/ownership/audit": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/position-ml/schema": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
+  },
+  "GET /api/position-ml/status": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
   },
   "GET /api/provisioning/datasets": {
    "body": "{\"success\":true,\"roots\":[{\"root\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\\\\data\\\\imports\",\"exists\":false,\"count\":0,\"files\":[]},{\"root\":\"C:\\",
@@ -1292,6 +1469,15 @@
    "observed": [],
    "status": 200,
    "why": "stateless-2xx"
+  },
+  "GET /api/provisioning/models": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "empty-items-in-2xx"
+   ],
+   "status": 0,
+   "why": "empty-items-in-2xx"
   },
   "GET /api/provisioning/status": {
    "body": "{\"success\":true,\"slot\":{\"state\":\"missing\",\"origin\":\"\",\"detail\":\"artifact missing or empty\",\"path\":\"C:\\\\Users\\\\Capsizer\\\\source\\\\repos\\\\nse-api-golang-migration\\",
@@ -1915,6 +2101,26 @@
    "status": 200,
    "why": "empty-items-in-2xx"
   },
+  "GET /api/v1/observability/logs": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/v1/observability/logs/export": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/v1/observability/logs/summary": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/v1/observability/logs/{event_id}": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
+  "GET /api/v1/observability/logs/{event_id}/correlate": {
+   "needs_python": true,
+   "why": "observed:db"
+  },
   "GET /api/v1/observability/metrics": {
    "body": "{\"data\":{\"thread_count\":44,\"daemon_thread_count\":43,\"generated_at\":\"2026-09-26T04:08:09.257899+00:00\",\"resource_usage\":\"UNAVAILABLE\",\"sse\":{\"connection\":\"UNKNOW",
    "needs_python": true,
@@ -2468,6 +2674,15 @@
    "status": 422,
    "why": "write:assumed"
   },
+  "POST /api/ai-providers/deactivate": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
   "POST /api/ai-providers/decision/compare": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
    "needs_python": true,
@@ -2503,6 +2718,15 @@
     "write:assumed"
    ],
    "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/providers": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
    "why": "write:assumed"
   },
   "POST /api/ai-providers/providers/{provider_id}/configure": {
@@ -2544,6 +2768,15 @@
    "status": 200,
    "why": "observed:db"
   },
+  "POST /api/ai-providers/providers/{provider_id}/test-model": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
   "POST /api/ai-providers/reset": {
    "body": "{\"status\":\"OK\",\"removed_providers\":[],\"note\":\"Provider settings only. Models, datasets, trades and account history untouched.\"}",
    "needs_python": true,
@@ -2551,6 +2784,15 @@
     "write:assumed"
    ],
    "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/ai-providers/rollback": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
    "why": "write:assumed"
   },
   "POST /api/ai-providers/switch": {
@@ -2618,6 +2860,10 @@
    "status": 422,
    "why": "write:assumed"
   },
+  "POST /api/db/manage/maintenance": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
   "POST /api/db/manage/migrate": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
    "needs_python": true,
@@ -2663,6 +2909,22 @@
    "status": 422,
    "why": "write:assumed"
   },
+  "POST /api/db/manage/purge/policy": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/purge/preview": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/purge/run": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/reverse-migrate": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
   "POST /api/db/manage/test-connection": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
    "needs_python": true,
@@ -2670,6 +2932,48 @@
     "write:assumed"
    ],
    "status": 422,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/activate": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/divergence": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/migrate": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/start": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/test": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/test-connection": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/transition/verify": {
+   "needs_python": true,
+   "why": "write:assumed"
+  },
+  "POST /api/db/manage/views/ensure": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
    "why": "write:assumed"
   },
   "POST /api/debug/model-test": {
@@ -2875,6 +3179,33 @@
    "status": 422,
    "why": "write:assumed"
   },
+  "POST /api/model-studio/model-builder/preflight": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/model-builder/save": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
+  "POST /api/model-studio/model-builder/train": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
   "POST /api/model-studio/models/benchmark-live": {
    "body": "{\"detail\":\"No active model hot-loaded to benchmark.\"}",
    "needs_python": true,
@@ -2947,6 +3278,15 @@
    ],
    "status": 400,
    "why": "observed:db"
+  },
+  "POST /api/model-studio/models/switch": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
   },
   "POST /api/model-studio/models/tag": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
@@ -3326,6 +3666,15 @@
    "status": 422,
    "why": "write:assumed"
   },
+  "POST /api/position-adviser/rollback": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
   "POST /api/position-adviser/train": {
    "body": "{\"detail\":[{\"type\":\"missing\",\"loc\":[\"body\"],\"msg\":\"Field required\",\"input\":null}]}",
    "needs_python": true,
@@ -3342,6 +3691,24 @@
     "write:assumed"
    ],
    "status": 200,
+   "why": "write:assumed"
+  },
+  "POST /api/position-ml/activate": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
+   "why": "write:assumed"
+  },
+  "POST /api/position-ml/disable": {
+   "body": "",
+   "needs_python": true,
+   "observed": [
+    "write:assumed"
+   ],
+   "status": 0,
    "why": "write:assumed"
   },
   "POST /api/positions/close": {
@@ -3679,272 +4046,6 @@
    "status": 422,
    "why": "write:assumed"
   },
-  "GET /api/db/manage/dashboard": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "GET /api/db/manage/provider-state": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "POST /api/db/manage/transition/start": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/transition/test-connection": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/transition/migrate": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/transition/verify": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/transition/activate": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/transition/divergence": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/reverse-migrate": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "GET /api/db/manage/purge/policies": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "POST /api/db/manage/purge/preview": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/purge/run": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/maintenance": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "GET /api/db/manage/views": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "GET /api/db/manage/logs": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "GET /api/db/manage/purge/history": {
-   "needs_python": true,
-   "why": "observed:db"
-  },
-  "POST /api/db/manage/purge/policy": {
-   "needs_python": true,
-   "why": "write:assumed"
-  },
-  "GET /api/ai-providers/templates": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/ai-providers/providers": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/ai-providers/rollback": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/ai-providers/deactivate": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/ai-providers/providers/{provider_id}/test-model": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "DELETE /api/ai-providers/providers/{provider_id}": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/db/console/objects": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/db/console/query-stats": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/db/manage/transition/test": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/db/manage/views/ensure": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/model-studio/feature-contract": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/model-studio/runtime/state": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/model-studio/tensor/inspect": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/model-studio/models/switch/preview": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/model-studio/models/{model_id}/detail": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/model-studio/models/switch": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/model-studio/model-builder/configs": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/model-studio/model-builder/options": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/model-studio/model-builder/preflight": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/model-studio/model-builder/save": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/model-studio/model-builder/train": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/position-adviser/settings": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
   "PUT /api/position-adviser/settings": {
    "body": "",
    "needs_python": true,
@@ -3953,87 +4054,6 @@
    ],
    "status": 0,
    "why": "write:assumed"
-  },
-  "GET /api/position-adviser/decision/current": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/position-adviser/tensor/current-input": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/position-adviser/rollback": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/position-ml/schema": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/position-ml/status": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "GET /api/position-ml/ownership/audit": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
-  },
-  "POST /api/position-ml/activate": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "POST /api/position-ml/disable": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "write:assumed"
-   ],
-   "status": 0,
-   "why": "write:assumed"
-  },
-  "GET /api/provisioning/models": {
-   "body": "",
-   "needs_python": true,
-   "observed": [
-    "empty-items-in-2xx"
-   ],
-   "status": 0,
-   "why": "empty-items-in-2xx"
   }
  },
  "skipped": [
