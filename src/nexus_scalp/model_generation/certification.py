@@ -51,6 +51,29 @@ logger = get_logger("nexus_scalp.model_generation.certification")
 _SAFE_MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
+def _confine_component(raw: str, *, label: str) -> str:
+    """Reduce ``raw`` to an UNTAINTED single path component, or raise.
+
+    Returns the sanitizer's own MATCHED OUTPUT, not the input. That distinction
+    is the whole point: a validation helper that answers a bool (``regex.match``
+    is not None) leaves the caller's original string tainted in the data-flow
+    sense, because the value reaching the sink is still the request-supplied
+    one. Rebuilding the value from ``m.group(0)`` ends the taint chain at this
+    function, which is what makes the downstream join provably confined rather
+    than merely checked.
+
+    Rejects: an empty value, a separator (``/`` ``\\``), a parent reference, a
+    drive letter, a NUL, and anything outside ``[A-Za-z0-9._-]``. A leading dot
+    is refused by the pattern's first character class, so ``.``/``..`` cannot
+    pass, and the length is bounded so a written filename stays sane.
+    """
+    s = str(raw or "").strip()
+    m = _SAFE_MODEL_ID.match(s)
+    if m is None:
+        raise CompatibilityError(f"LOAD_REJECTED: unsafe {label} {s!r}")
+    return m.group(0)
+
+
 def _bundle_artifact(bundle_dir: str | Path, model_id: str, suffix: str) -> Path:
     """Resolve ``<bundle_dir>/<model_id><suffix>`` INSIDE the artifact bundle.
 
@@ -60,14 +83,19 @@ def _bundle_artifact(bundle_dir: str | Path, model_id: str, suffix: str) -> Path
     and, for the certificate, the WRITE — outside the artifact root. This gate
     is the trust boundary for model loading, so an id that cannot be confined
     is rejected instead of being normalised into something loadable.
+
+    The join is built from :func:`_confine_component`'s matched output, so the
+    value that reaches the filesystem is the sanitizer's return value and never
+    the caller's string. The post-join containment check stays as
+    defense-in-depth against a symlinked bundle root.
     """
-    if not _SAFE_MODEL_ID.match(model_id):
-        raise CompatibilityError(f"LOAD_REJECTED: unsafe model id {model_id!r}")
+    component = _confine_component(model_id, label="model id")
+    suffix_component = _confine_component(suffix.lstrip("."), label="artifact suffix")
     root = Path(bundle_dir).resolve()
-    candidate = (root / f"{model_id}{suffix}").resolve()
+    candidate = (root / f"{component}.{suffix_component}").resolve()
     if candidate.parent != root:
         raise CompatibilityError(
-            f"LOAD_REJECTED: model id {model_id!r} resolves outside the artifact bundle"
+            f"LOAD_REJECTED: model id {component!r} resolves outside the artifact bundle"
         )
     return candidate
 

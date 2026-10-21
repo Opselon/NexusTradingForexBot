@@ -64,6 +64,13 @@ def test_symlinked_artifact_cannot_escape_the_bundle(tmp_path: Path) -> None:
     outside.mkdir(exist_ok=True)
     bundle = tmp_path / "bundle"
     bundle.mkdir()
-    (bundle / "linked_model.certificate.json").symlink_to(outside / "cert.json")
+    try:
+        (bundle / "linked_model.certificate.json").symlink_to(outside / "cert.json")
+    except OSError:
+        # Windows refuses symlink creation without SeCreateSymbolicLinkPrivilege
+        # (WinError 1314) unless Developer Mode is on. The property under test
+        # still holds on Linux CI and on a privileged host; skipping here keeps
+        # the assertion intact instead of loosening it to fit this host.
+        pytest.skip("symlink creation not permitted on this host")
     with pytest.raises(CompatibilityError):
         load_certificate(bundle, "linked_model")
