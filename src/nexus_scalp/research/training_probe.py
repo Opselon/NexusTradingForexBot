@@ -500,7 +500,9 @@ def compute_metrics(probs: np.ndarray, y: np.ndarray, *, gate: float = EFFECTIVE
         "macro_f1": round(mf1, 6) if mf1 is not None else None,
         "per_class_recall": [round(v, 6) if v is not None else None for v in recs],
         "per_class_f1": [round(v, 6) if v is not None else None for v in f1s],
-        "majority_class_baseline_accuracy": round(float(np.bincount(y, minlength=3).max() / n), 6),
+        "majority_class_baseline_accuracy": round(
+            float(np.max(np.bincount(y, minlength=3)) / n), 6
+        ),
         "mean_max_probability": round(float(maxp.mean()), 6),
         "max_max_probability": round(float(maxp.max()), 6),
         "min_max_probability": round(float(maxp.min()), 6),

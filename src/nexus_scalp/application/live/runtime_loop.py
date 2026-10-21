@@ -97,6 +97,103 @@ class RuntimeLoop:
 
         self._feed_epoch = FeedEpochTracker()
 
+    def _repair_symbol(self, symbol: str) -> str:
+        """Repair a configured symbol the switched broker does not know.
+
+        A broker switch leaves ``execution.symbol`` naming an instrument the
+        new server never heard of, and every ``symbol_info`` read then returns
+        None ("Terminal: Not found", MT5 -4). The adapter resolves the
+        broker-truth spelling; this method applies it in memory, widens the
+        trading whitelist to include it (the configured alias is retained, not
+        evicted, so a later switch back keeps working), persists both settings
+        best-effort, and emits one incident for the operator.
+
+        Fail-safe by construction:
+          * no resolver on the adapter -> the symbol passes through untouched;
+          * unresolved (``None``) -> untouched, so the original fatal
+            ``get_symbol_info`` error still surfaces instead of the engine
+            quietly trading a name nobody confirmed;
+          * a settings-DB fault never blocks boot (in-memory repair stands).
+        """
+        if not symbol:
+            return symbol
+        resolver = getattr(getattr(self.om, "adapter", None), "resolve_symbol", None)
+        if not callable(resolver):
+            return symbol
+        try:
+            resolved = resolver(symbol)
+        except Exception as err:
+            logger.error("BROKER SYMBOL REPAIR: resolver raised", symbol=symbol, error=str(err))
+            return symbol
+        broker_name = str(resolved).strip() if resolved else ""
+        if not broker_name or broker_name.lower() == symbol.lower():
+            return symbol
+
+        cfg = getattr(self.om, "config", None)
+        execution = getattr(cfg, "execution", None)
+        if execution is not None:
+            execution.symbol = broker_name
+            current = list(getattr(execution, "enabled_symbols", None) or [])
+            if not any(str(name).lower() == broker_name.lower() for name in current):
+                execution.enabled_symbols = [broker_name, *current]
+            else:
+                execution.enabled_symbols = current
+
+        policy = getattr(self.om, "signal_policy", None)
+        if policy is not None:
+            current = list(getattr(policy, "enabled_symbols", None) or [])
+            if not any(str(name).lower() == broker_name.lower() for name in current):
+                policy.enabled_symbols = [broker_name, *current]
+
+        logger.warning(
+            "BROKER SYMBOL AUTO-REPAIR: configured symbol not on this server",
+            configured=symbol,
+            broker_symbol=broker_name,
+        )
+
+        try:
+            from nexus_scalp.settings import service as settings_service
+
+            db = settings_service.SettingsDatabase()
+            try:
+                db.set(
+                    "execution.symbol",
+                    broker_name,
+                    source="BROKER_SYMBOL_AUTO_REPAIR",
+                    actor="runtime_loop",
+                )
+                if execution is not None:
+                    db.set(
+                        "execution.enabled_symbols",
+                        list(getattr(execution, "enabled_symbols", None) or []),
+                        source="BROKER_SYMBOL_AUTO_REPAIR",
+                        actor="runtime_loop",
+                    )
+            finally:
+                close = getattr(db, "close", None)
+                if callable(close):
+                    close()
+        except Exception as err:
+            logger.error(
+                "BROKER SYMBOL REPAIR: persistence failed (in-memory repair stands)",
+                broker_symbol=broker_name,
+                error=str(err),
+            )
+
+        emit = getattr(self.om, "emit_incident_telemetry", None)
+        if callable(emit):
+            try:
+                emit(
+                    event_type="BROKER_SYMBOL_AUTO_REPAIR",
+                    severity="WARNING",
+                    detail=f"configured={symbol} broker={broker_name}",
+                    configured_symbol=symbol,
+                    broker_symbol=broker_name,
+                )
+            except Exception:
+                logger.error("BROKER SYMBOL REPAIR: incident telemetry failed")
+        return broker_name
+
     def _refresh_observable_account_state(self) -> None:
         """Populate the OBSERVABLE account state (read-only, no trading effect).
 
@@ -288,7 +385,9 @@ class RuntimeLoop:
         self.om._boot_state = "ARMING"
         self.om._boot_detail = "arming the engine and starting workers"
         self.om._running = True
-        symbol = self.om.config.execution.symbol
+        # Broker-change repair runs before any symbol read: a stale spelling
+        # would make every symbol_info call return None at boot.
+        symbol = self._repair_symbol(self.om.config.execution.symbol)
 
         # MISSION 5: start the Telegram command bus (if constructed) - the
         # operator control surface runs for the engine's whole lifetime.

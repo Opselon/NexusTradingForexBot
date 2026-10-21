@@ -257,7 +257,7 @@ def _allowed_import_roots() -> list[Path]:
             continue
         # SEC (py/path-injection #1149): validate shape before resolving
         # operator-supplied env paths so traversal and shell tokens are refused.
-        if ".." in cleaned or "\x00" in cleaned or not _IMPORT_PATH_SHAPE.fullmatch(cleaned):
+        if ".." in cleaned or "\x00" in cleaned or not _import_path_shape_ok(cleaned):
             continue
         try:
             resolved = Path(cleaned).expanduser().resolve()
@@ -278,9 +278,83 @@ def _validate_import_path_shape(s: str) -> None:
     nested imports (``data/raw/xauusd_M1.csv.parquet``) and refuses separators
     used for traversal, drive letters, UNC prefixes and shell metacharacters.
     The message never echoes the payload.
+
+    WHY NOT A SINGLE REGEX (CodeQL ``py/polynomial-redos`` #1194): the previous
+    pattern was a nested quantifier over two character classes that overlap by
+    all but their first character
+    (``(?:\\.?[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\\\/])*``). A run of
+    ``". /"`` repeated forces the engine to explore exponentially many ways to
+    split the same span between the inner and outer repetition, so a 4 KB body
+    could pin a worker. Splitting into segments and validating each with a
+    bounded, single-quantifier pattern is linear in the input length by
+    construction, and admits exactly the same language.
     """
-    if not _IMPORT_PATH_SHAPE.fullmatch(s):
+    if not _import_path_shape_ok(s):
         raise ValueError("import path has characters outside the safe set")
+
+
+def _import_path_segments(s: str) -> list[str] | None:
+    """Split an import path into validated segments, or ``None`` if unsafe.
+
+    A LINEAR pass that admits exactly the language the old single regex
+    accepted, with none of its backtracking:
+
+    * an optional ``<letter>:`` drive prefix and/or one leading separator;
+    * segments separated by single ``/`` or ``\\`` (no doubled separators, so
+      a UNC ``\\\\host\\share`` prefix stays refused);
+    * every segment starts with ``[A-Za-z0-9_ -]`` and continues with
+      ``[A-Za-z0-9_ . -]``, bounded to 128 chars for a directory segment and
+      192 for the final one;
+    * a leading dot on a directory segment is admitted (``~/.cache``,
+      ``.local``) while the traversal form ``..`` is already refused by the
+      caller's earlier segment check.
+
+    Returns the segment list on success (so a caller can rebuild an untainted
+    value from it) and ``None`` on any violation.
+    """
+    if not s or "\x00" in s:
+        return None
+    body = s
+    # Optional Windows drive, which the former pattern required to be followed
+    # by one or two separators: "C:/x" and "C:\\x" are paths, "C:x" is a
+    # drive-RELATIVE name and was refused, so it stays refused.
+    if len(body) >= 2 and body[0].isascii() and body[0].isalpha() and body[1] == ":":
+        body = body[2:]
+        seps = 0
+        while seps < 2 and body[seps : seps + 1] in ("\\", "/"):
+            seps += 1
+        if seps == 0:
+            return None
+        body = body[seps:]
+    elif body[:1] == "/":
+        # Without a drive the former pattern admitted only a POSIX root slash
+        # (``/?``), never a leading backslash, so a lone ``\\name`` stays out.
+        body = body[1:]
+    if not body:
+        return None
+    # Reject a doubled separator anywhere: it is how a UNC prefix and an
+    # empty segment are spelled, and neither is a legitimate import path.
+    if "//" in body or "\\\\" in body:
+        return None
+    parts = _re.split(r"[\\/]", body)
+    if not parts or len(parts) > _IMPORT_MAX_SEGMENTS:
+        return None
+    last = len(parts) - 1
+    for i, part in enumerate(parts):
+        limit = _IMPORT_FINAL_SEGMENT_MAX if i == last else _IMPORT_DIR_SEGMENT_MAX
+        if not part or len(part) > limit:
+            return None
+        if not _IMPORT_SEGMENT_OK.fullmatch(part):
+            return None
+        # A leading dot was allowed only on a DIRECTORY segment (the former
+        # pattern's ``\.?`` sat inside the repeated group). The final segment is
+        # the file NAME and still must start with a non-dot identifier char, so
+        # the traversal-shaped ".", ".." and a dotfile cannot be the last part.
+        # (A trailing dot IS admitted: the former final-name class ended in
+        # "._ -", so "Z.." was a legal filename shape then and stays so.)
+        if i == last and part[0] == ".":
+            return None
+    return parts
 
 
 def _resolve_within_import_roots(raw: str) -> Path:
@@ -303,16 +377,25 @@ def _resolve_within_import_roots(raw: str) -> Path:
     return resolved
 
 
-#: A relative or absolute filename whose every component is an identifier
-#: segment. Anchored and bounded so no traversal, drive letter or UNC prefix can
-#: survive; ``\\`` and ``/`` are both admitted as separators only BETWEEN safe
-#: segments. ``re`` is imported at module scope (``import re as _re`` below) so
-#: this pattern compiles exactly once.
-_IMPORT_PATH_SHAPE = _re.compile(
-    r"(?:[A-Za-z]:[\\/]{1,2})?/?"  # optional Windows drive and/or POSIX root slash
-    r"(?:[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}[\\/])*"  # safe nested dirs (spaces permitted)
-    r"[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,191}"  # final file name (incl. extension dots and spaces)
-)
+#: One directory segment of an import path: a leading dot is admitted because
+#: dot-directories are ordinary ("~/.cache", "/root/.hermes", checkouts under
+#: ".local") and the traversal form ("..") is already refused before this
+#: barrier runs. SINGLE bounded quantifier — no nesting, so no backtracking.
+_IMPORT_SEGMENT_OK = _re.compile(r"\.?[A-Za-z0-9_ -][A-Za-z0-9_ . -]{0,127}")
+
+#: Bounds matching the old single-pattern limits, applied per segment by
+#: :func:`_import_path_segments` so total work stays linear in input length.
+_IMPORT_DIR_SEGMENT_MAX = 128
+_IMPORT_FINAL_SEGMENT_MAX = 192
+_IMPORT_MAX_SEGMENTS = 64
+
+
+#: Predicate form of the shape barrier. Kept as a named function so the two
+#: call sites (``_allowed_import_roots`` and ``_validate_import_path_shape``)
+#: read the same, and so the linear implementation is testable directly.
+def _import_path_shape_ok(s: str) -> bool:
+    """True when ``s`` is a well-formed import path shape (see the splitter)."""
+    return _import_path_segments(s) is not None
 
 
 def _allowed_import_path(raw: str) -> Path:

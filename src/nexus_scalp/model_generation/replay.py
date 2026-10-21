@@ -155,7 +155,7 @@ def detect_feature_drift(
         "statistic": statistic,
         "drifted": len(drifted_features) > 0,
         "drifted_features": drifted_features,
-        "max_shift": round(float(rel_shift.max()), 4),
+        "max_shift": round(float(np.max(rel_shift)), 4),
         "mean_shift": round(float(rel_shift.mean()), 4),
         "threshold": threshold,
     }

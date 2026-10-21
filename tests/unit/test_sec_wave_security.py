@@ -308,6 +308,68 @@ class TestProvisioningImportPath:
         assert any(legit in r for r in roots), roots
         assert not any("legit dir" not in r and "data" not in r and legit not in r for r in roots)
 
+    def test_path_shape_is_linear_on_pathological_input(self) -> None:
+        """CodeQL #1194 — ``py/polynomial-redos`` on the import-path shape gate.
+
+        The former gate was ONE regex whose outer repetition wrapped an inner
+        ``{0,127}`` over character classes that overlap by all but their first
+        character. ``". /"`` repeated is the worst case for that shape: the
+        engine must explore exponentially many ways to split the same span
+        between the two quantifiers. The shape gate is now a linear segment
+        pass, so 60k characters must stay in the low-millisecond range rather
+        than hanging the worker. The bound is deliberately loose (2s) so a slow
+        shared CI runner cannot flake it; the defect it guards against never
+        returns at all.
+        """
+        import time
+
+        from nexus_scalp.web import provisioning_routes as pr
+
+        payload = ". /" * 20_000  # 60k chars — the classic catastrophic input
+        start = time.perf_counter()
+        assert pr._import_path_segments(payload) is None
+        elapsed = time.perf_counter() - start
+        assert elapsed < 2.0, f"shape gate took {elapsed:.3f}s on 60k chars (superlinear)"
+
+    @pytest.mark.parametrize(
+        "good",
+        [
+            "data/raw/xauusd_M1.csv.parquet",
+            "data/imports/a.csv",
+            "a.csv",
+            "sub/dir/file.csv",
+            "a b/c d.csv",
+            "file-1_v2.csv",
+            ".local/share/f.csv",
+            "Z..",
+        ],
+    )
+    def test_shape_accepts_legitimate_names(self, good: str) -> None:
+        """The linear gate admits the same language the former regex did."""
+        from nexus_scalp.web import provisioning_routes as pr
+
+        assert pr._import_path_segments(good) is not None
+
+    @pytest.mark.parametrize(
+        "bad",
+        [
+            "",
+            "..",
+            "a//b.csv",
+            "\\\\host\\share\\f.csv",  # UNC prefix
+            "C:x.csv",  # drive-relative, not a path
+            "\\name",  # lone leading backslash
+            "x\x00y.csv",
+            "weird<>|value",
+            "./a.csv",  # ".."-adjacent dot dir is admitted, "." is not
+            "x" * 300 + ".csv",  # over the final-segment bound
+        ],
+    )
+    def test_shape_refuses_unsafe_names(self, bad: str) -> None:
+        from nexus_scalp.web import provisioning_routes as pr
+
+        assert pr._import_path_segments(bad) is None
+
 
 # =============================================================================
 # FAMILY D — SQL injection

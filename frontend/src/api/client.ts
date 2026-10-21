@@ -11,7 +11,7 @@
  */
 
 import { logout, resolveToken } from "@/core/auth";
-import { getLegacy, getV1, send } from "@/core/transport";
+import { drop, getLegacy, getV1, send } from "@/core/transport";
 
 /** Kept name for the old options bag (some pages typed against it). */
 export type RequestOptions = import("@/core/middleware").MiddlewareRequestOptions;
@@ -26,7 +26,7 @@ export function clearAuthToken(): void {
   logout();
 }
 
-export { getV1, getLegacy, send };
+export { getV1, getLegacy, send, drop };
 export { ApiError } from "@/types/api";
 export type { V1Envelope } from "@/types/api";
 export { authHeaders, hasAccessToken, login, logout, getAuthState } from "@/core/auth";

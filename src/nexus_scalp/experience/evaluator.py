@@ -226,6 +226,14 @@ class StrategyEvaluator:
             # caller's first statement reads rows by column name.
             conn.row_factory = sqlite3.Row
             conns[timeout] = conn
+            # Lifetime contract: the cache lives as long as the REPOSITORY, so
+            # the repository is what must be able to release it. Registering
+            # here is what lets AuditRepository.close() drop these handles
+            # deterministically instead of leaving them to the GC (one
+            # ResourceWarning per thread, and a locked DB file on Windows).
+            registry = getattr(self.audit_repo, "_evaluator_conns", None)
+            if isinstance(registry, set):
+                registry.add(conn)
         try:
             yield conn
         except BaseException:
@@ -236,6 +244,9 @@ class StrategyEvaluator:
             with contextlib.suppress(Exception):
                 conn.close()
             conns.pop(timeout, None)
+            registry = getattr(self.audit_repo, "_evaluator_conns", None)
+            if isinstance(registry, set):
+                registry.discard(conn)
             raise
 
     def close(self) -> None:

@@ -40,7 +40,10 @@ from nexus_scalp.database.migrate_engine import (  # noqa: E402
     MigrationOptions,
     SqliteToPostgresMigrator,
 )
-from nexus_scalp.database.provider import DatabaseProvider  # noqa: E402
+from nexus_scalp.database.provider import (  # noqa: E402
+    DatabaseProvider,
+    ProviderConfigurationError,
+)
 
 PG_URL = os.environ.get("NSE_PG_TEST_URL", "")
 needs_pg = pytest.mark.skipif(not PG_URL, reason="NSE_PG_TEST_URL not set (PostgreSQL CI test arm)")
@@ -91,9 +94,19 @@ class TestProviderSelection:
         assert DatabaseProvider.parse("PostgreSQL") is DatabaseProvider.POSTGRESQL
         assert DatabaseProvider.parse("sqlite3") is DatabaseProvider.SQLITE
 
-    def test_parse_empty_defaults_to_sqlite(self):
-        assert DatabaseProvider.parse("") is DatabaseProvider.SQLITE
-        assert DatabaseProvider.parse(None) is DatabaseProvider.SQLITE
+    def test_parse_empty_is_a_configuration_error(self):
+        """Empty/unknown values are REFUSED, never silently routed to SQLite.
+
+        Fail-closed is the contract: a deployment that lost its persisted
+        provider value must stop at the boundary instead of quietly writing
+        production-scale data into a local SQLite file (the exact silent
+        downgrade this registry exists to prevent). Zero-configuration boots
+        never reach here — the bootstrap supplies "sqlite" explicitly.
+        """
+        with pytest.raises(ProviderConfigurationError):
+            DatabaseProvider.parse("")
+        with pytest.raises(ProviderConfigurationError):
+            DatabaseProvider.parse(None)
 
     def test_from_url(self):
         assert DatabaseProvider.from_url("sqlite:///x.db") is DatabaseProvider.SQLITE

@@ -8,12 +8,14 @@ circuit. Both fixed here — fail-closed, thresholds unchanged.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
-from nexus_scalp.domain.enums import OrderType
+from nexus_scalp.domain.enums import ActionType, OrderType
 from nexus_scalp.domain.models import TradeOrder
-from nexus_scalp.execution.order_manager import OrderLifecycleManager
+from nexus_scalp.execution.order_manager import AI_REVERSAL_REASON, OrderLifecycleManager
 
 
 @pytest.fixture()
@@ -68,8 +70,51 @@ class TestBug247HedgeHardCap:
         assert om.execute_order(order) is False
         assert not adapter.get_positions()
 
-    def test_source_gate_present(self, paper_om):
-        om, _ = paper_om
-        import inspect
+    def test_failed_close_never_stacks_a_followup(self, paper_om):
+        """BUG-247 gate, stated behaviorally: the AI-reversal protocol may
+        never stack an opposing order on a position the broker refused to
+        close. Earlier audits checked this via a source-string probe
+        ("AI REVERSAL follow-up blocked"); that message was superseded by a
+        structured self-audit path, so the contract is asserted on real
+        behavior instead — the follow-up dispatch is unreachable when the
+        protective close fails, and unreachable while the flip is suspended."""
+        om, adapter = paper_om
 
-        assert "AI REVERSAL follow-up blocked" in inspect.getsource(om._run_protection_chain)
+        class _Spy:
+            def __init__(self) -> None:
+                self.calls: list[float] = []
+
+        dispatch_calls = _Spy()
+
+        class _Pos:
+            ticket = 42
+            symbol = "XAUUSD"
+            type = OrderType.BUY
+            volume = 0.10
+            profit = -5.0
+
+        def _collect(_decision: object, volume: float) -> bool:
+            dispatch_calls.calls.append(volume)
+            return True
+
+        adapter.get_positions = lambda symbol=None: [_Pos()]  # type: ignore[method-assign]
+        adapter.close_position = lambda ticket, volume=None, **kw: False  # type: ignore[method-assign]
+        om.dispatch_order = _collect  # type: ignore[method-assign]
+
+        decision = SimpleNamespace(
+            ticket=42,
+            symbol="XAUUSD",
+            action=ActionType.CLOSE_POSITION,
+            reversal_action=ActionType.BUY_STOP,
+            reason_code=AI_REVERSAL_REASON,
+        )
+
+        # 1. Suspension gate (operator flag defaults to False): no follow-up.
+        om.algo_config = SimpleNamespace(ai_flip_exit_enabled=False)
+        assert om.execute_ai_reversal(decision=decision, volume=0.5) is False
+        assert dispatch_calls.calls == []
+
+        # 2. Even with the operator flag on, a failed close refuses the flip.
+        om.algo_config = SimpleNamespace(ai_flip_exit_enabled=True)
+        assert om.execute_ai_reversal(decision=decision, volume=0.5) is False
+        assert dispatch_calls.calls == []

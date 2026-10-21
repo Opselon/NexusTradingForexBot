@@ -46,6 +46,13 @@ class _FakeAudit:
 
 
 class _FakeAdapter:
+    #: F17-3 window-arithmetic double: it publishes the port's connectivity
+    #: contract (ports/mt5_port.py requires ``is_connected``) so the worker can
+    #: tell "genuinely empty" from "broker unreachable". Without it the worker
+    #: is right to fail closed and these anchoring assertions never run.
+    def is_connected(self) -> bool:
+        return True
+
     def get_history_orders(self, from_dt, to_dt, symbol=None):
         return []
 

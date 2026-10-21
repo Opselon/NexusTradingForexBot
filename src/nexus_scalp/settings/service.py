@@ -28,6 +28,7 @@ import sqlite3
 import threading
 import time
 import uuid
+import weakref
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -183,6 +184,12 @@ class SettingsState:
     db_path: str = ""
 
 
+def _close_quietly(conn: sqlite3.Connection) -> None:
+    """Release a settings handle from a finalizer: never raise into GC."""
+    with contextlib.suppress(Exception):
+        conn.close()
+
+
 class SettingsDatabase:
     """Thin, thread-safe persistence for the isolated settings DB."""
 
@@ -191,6 +198,12 @@ class SettingsDatabase:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._conn = self._connect()
+        # Ownership: the handle lives exactly as long as THIS object. Without
+        # the finalizer a dropped SettingsDatabase (every short-lived
+        # SettingsService, e.g. one per engine rebuild in tests) left its
+        # connection to the GC: "ResourceWarning: unclosed database" and, on
+        # Windows, a leaked lock on app_settings.db.
+        self._finalizer = weakref.finalize(self, _close_quietly, self._conn)
         self._init_schema()
 
     def _connect(self) -> sqlite3.Connection:
@@ -373,6 +386,11 @@ class SettingsDatabase:
                 self._conn.close()
             except sqlite3.Error:
                 pass
+        # The finalizer would close the same handle again; detach it so the
+        # close is exactly once and the callback does not fire at GC time.
+        finalizer = getattr(self, "_finalizer", None)
+        if finalizer is not None:
+            finalizer.detach()
 
 
 def _infer_type(value: Any) -> str:

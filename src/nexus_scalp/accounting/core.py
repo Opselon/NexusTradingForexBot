@@ -57,6 +57,7 @@ from nexus_scalp.accounting.periods import (
     utc_now,
 )
 from nexus_scalp.bounded_map import BoundedLRUMap
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.accounting.core")
@@ -175,7 +176,7 @@ class AccountingCore:
         backend.
         """
         if bool(getattr(self.audit_repo, "_is_sqlite", False)):
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 return [dict(r) for r in conn.execute(sql, tuple(args)).fetchall()]
         plane = self._read_plane
         if plane is None:
@@ -185,7 +186,7 @@ class AccountingCore:
     def _query_one(self, sql: str, args: tuple[Any, ...] = ()) -> dict[str, Any] | None:
         """Runs one parameterized SELECT expecting at most a single row."""
         if bool(getattr(self.audit_repo, "_is_sqlite", False)):
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 row = conn.execute(sql, tuple(args)).fetchone()
                 return dict(row) if row is not None else None
         plane = self._read_plane

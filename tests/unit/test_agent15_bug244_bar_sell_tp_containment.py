@@ -12,6 +12,9 @@ determinism. Related fix commit: 3f5bef2d (streaming_replay.py:900).
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
 
 from nexus_scalp.domain.enums import ActionType
 from nexus_scalp.domain.models import TradeProposal
@@ -23,6 +26,29 @@ from nexus_scalp.research.streaming_replay import (
 )
 
 MODEL = "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point the session config at a deterministic checkpoint in tmp.
+
+    The live 70d_liquidity champion is a RELEASE ASSET and is absent from a
+    fresh checkout, so the session config used to die with FileNotFoundError
+    before any assertion ran. These suites inject their own decision policy —
+    the artifact is loaded, never consulted for a trade — so a hermetic
+    checkpoint exercises exactly the same mechanics. It is minted in the
+    test's tmp dir on purpose: a synthetic model.pt written into
+    ``artifacts/`` would install a fake champion in the tree the runtime
+    loads, which is far worse than a red test.
+    """
+    import sys
+
+    from tests.helpers.synthetic_checkpoint import write_trained_checkpoint
+
+    artifact = write_trained_checkpoint(tmp_path / "model.pt", num_features=70)
+    monkeypatch.setattr(sys.modules[__name__], "MODEL", str(artifact))
+
+
 T0 = datetime(2026, 6, 1, 8, 0, tzinfo=UTC)
 
 

@@ -42,14 +42,31 @@ def test_the_perf_middleware_can_be_switched_off(app_factory, monkeypatch):
 
 
 def test_health_response_carries_an_etag_and_revalidates(app_factory):
+    """A 200 through the REAL middleware stack is cached and revalidated.
+
+    The probe route is mounted on the production app after ``create_app``, so
+    the response still travels through the installed middleware stack — the
+    wiring under test. It deliberately does NOT assert ``/health`` == 200: that
+    endpoint reports the MACHINE's verdict (missing market data, no Telegram
+    token, unversioned local DB) and a 503 is not a cacheable status, so using
+    it made this etag contract fail for environmental reasons instead of a
+    middleware regression.
+    """
     from fastapi.testclient import TestClient
 
-    client = TestClient(app_factory(None))
-    first = client.get("/health")
+    app = app_factory(None)
+
+    @app.get("/__perf_probe")
+    def _probe() -> dict[str, bool]:  # pragma: no cover - trivially true
+        return {"ok": True}
+
+    client = TestClient(app)
+    client.headers.update({"Authorization": "Bearer test-token-not-a-secret"})
+    first = client.get("/__perf_probe")
     assert first.status_code == 200
     etag = first.headers.get("etag")
     assert etag and etag.startswith('"')
 
-    second = client.get("/health", headers={"If-None-Match": etag})
+    second = client.get("/__perf_probe", headers={"If-None-Match": etag})
     assert second.status_code == 304
     assert second.content == b""

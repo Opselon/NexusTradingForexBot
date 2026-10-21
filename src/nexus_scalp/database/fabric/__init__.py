@@ -507,10 +507,17 @@ def register_domain_backend(domain: str, backend: Any) -> None:
     """
     with _DOMAIN_BACKEND_LOCK:
         existing = _DOMAIN_BACKENDS.get(domain)
+        displaced = existing.write if existing is not None else None
         _DOMAIN_BACKENDS[domain] = _DomainBackends(
             write=backend,
             read=existing.read if existing is not None else None,
         )
+    # The replaced pool is closed OUTSIDE the registry lock, and only when a
+    # different object took the slot: an idempotent re-registration of the same
+    # backend must not close the live pool it just re-installed. An orphaned
+    # pool is what makes a later DROP DATABASE fail with ObjectInUse.
+    if displaced is not None and displaced is not backend:
+        _close_backend(displaced)
 
 
 def register_domain_read_backend(domain: str, backend: Any) -> None:
@@ -522,10 +529,13 @@ def register_domain_read_backend(domain: str, backend: Any) -> None:
     """
     with _DOMAIN_BACKEND_LOCK:
         existing = _DOMAIN_BACKENDS.get(domain)
+        displaced = existing.read if existing is not None else None
         _DOMAIN_BACKENDS[domain] = _DomainBackends(
             write=existing.write if existing is not None else None,
             read=backend,
         )
+    if displaced is not None and displaced is not backend:
+        _close_backend(displaced)
 
 
 def unregister_domain_backend(domain: str, *, close: bool = True) -> None:
@@ -727,7 +737,14 @@ def provision_domain(domain: str, dsn: str, **pool_kwargs: Any) -> Any:
                 migration["error_count"],
             )
     except NotImplementedError:
-        pass  # domain has no authored DDL yet — loud, not silent
+        # A domain with no authored DDL cannot be provisioned: the pools are up
+        # but its schema will never converge, so every later read degrades. That
+        # silent path is how news/candle_intel shipped with zero PostgreSQL
+        # tables through Wave 2 — an operator must see it, not discover it.
+        logger.error(
+            "[DB-FABRIC] domain=%s schema NOT provisioned: no authored DDL for this domain",
+            domain,
+        )
     # Replace both planes atomically so a provision that returns never leaves
     # a domain with a write backend and no read plane.
     with _DOMAIN_BACKEND_LOCK:

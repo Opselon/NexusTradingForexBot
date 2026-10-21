@@ -421,10 +421,16 @@ def test_sqlite_repository_never_resolves_a_read_plane(
 
 
 def test_undeclared_reads_still_degrade_observably(fake_fabric: Any) -> None:
-    """The fix routes only the reads the gates DECLARED.  A read Wave 2 did
-    not declare (no sql/args/kind — it has no provider query yet) still
-    degrades observably rather than inventing a query: the guard's contract
-    is unchanged."""
+    """The fix routes only the reads the gates DECLARED.  A read that declares
+    no query (no sql/args/kind — it has no provider query yet) still degrades
+    observably rather than inventing one: the guard's contract is unchanged.
+
+    NOTE: the original subject here was ``get_trading_rules``, which has since
+    been given a declared query (Wave 2), so it now routes instead of
+    degrading.  The SAME contract is asserted on the guard directly — a probe
+    operation with no declaration — and the declared read is pinned to the
+    routing behaviour it now owns, so neither half can silently regress.
+    """
     from nexus_scalp.database.fabric import provision_domain
 
     provision_domain("audit", "postgresql://user@host/db")
@@ -438,11 +444,16 @@ def test_undeclared_reads_still_degrade_observably(fake_fabric: Any) -> None:
     repo.provider_read_degraded_ops = {}
     repo._provider_read_guard_state = {}
 
-    # get_trading_rules declares no query today
-    assert repo.get_trading_rules() == []
+    # Undeclared: no sql/args/kind -> nothing to route -> observable degrade.
+    assert repo._provider_read_guard("undeclared_probe", lambda: []) == []
     assert repo.provider_reads_routed == 0
     assert repo.provider_read_degraded_total == 1
-    assert repo.provider_read_degraded_ops == {"get_trading_rules": 1}
+    assert repo.provider_read_degraded_ops == {"undeclared_probe": 1}
+
+    # Declared: get_trading_rules now carries SQL and routes through the plane.
+    assert repo.get_trading_rules() == []
+    assert repo.provider_reads_routed == 1
+    assert repo.provider_read_degraded_total == 1
 
 
 def test_guard_declared_sql_is_not_lost_in_translation() -> None:

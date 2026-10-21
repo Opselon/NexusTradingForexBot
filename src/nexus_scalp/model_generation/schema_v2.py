@@ -934,8 +934,8 @@ def _news_coverage_gate(frame: pl.DataFrame, manifest: dict[str, Any] | None) ->
             {
                 "column": col,
                 "index": _NEWS_FAMILY_INDICES[idx],
-                "min": float(colvals.min()),
-                "max": float(colvals.max()),
+                "min": float(np.min(colvals)),
+                "max": float(np.max(colvals)),
                 "mean": float(colvals.mean()),
                 "std": float(colvals.std()),
                 "nonzero": int((np.abs(colvals) > 0.0).sum()),

@@ -330,8 +330,15 @@ def hanging_gateway_url() -> Any:
 def test_remote_gateway_write_timeout_is_unknown(hanging_gateway_url: str) -> None:
     from nexus_scalp.adapters.mt5.remote_gateway import RemoteMT5GatewayAdapter
 
+    # Credentials are passed EXPLICITLY: the adapter refuses client-side
+    # defaults without the NSE_GATEWAY_ALLOW_DEFAULTS demo opt-in (audit B2),
+    # and this test is about the socket timeout, not secret resolution. A real
+    # deployment always supplies them, so the fixture models reality instead of
+    # weakening the gate.
     gw = RemoteMT5GatewayAdapter(
         gateway_url=hanging_gateway_url,
+        api_key="timeout-probe-key",
+        secret_token="timeout-probe-secret",
         timeout_seconds=0.3,  # force a real socket timeout
     )
     res = gw.write_market_order(

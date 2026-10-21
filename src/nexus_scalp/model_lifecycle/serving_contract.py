@@ -170,7 +170,13 @@ def validate_serving_contract(
     # value agreeing with the checkpoint tensor, not about the key spelling.
     meta_dim = meta.get(
         "feature_schema_dimension",
-        meta.get("feature_dimension", meta.get("num_features")),
+        meta.get(
+            "feature_dimension",
+            # the provisioning manifest spells the width "input_dim" (the
+            # generator's own vocabulary); a value that agrees with the
+            # checkpoint tensor is a honored contract, whatever its key.
+            meta.get("num_features", meta.get("input_dim")),
+        ),
     )
     if meta_dim is None and registry_row is not None:
         # The governed registry row carries the same declared dimension under
@@ -186,6 +192,9 @@ def validate_serving_contract(
 
     # --- class / head count -------------------------------------------------
     meta_head = meta.get("model_head_classes", meta.get("num_classes"))
+    if meta_head is None:
+        # provisioning manifest spelling (same contract, different key).
+        meta_head = meta.get("class_count")
     diag["meta_head"] = meta_head
     checks["class_head_ok"] = meta_head is not None and int(meta_head) == artifact_head
     if not checks["class_head_ok"]:

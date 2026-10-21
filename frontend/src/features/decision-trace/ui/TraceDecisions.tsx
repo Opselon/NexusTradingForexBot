@@ -24,7 +24,7 @@ interface Props {
   onSelect: (row: DecisionRow) => void;
   selectedId: string | null;
   onComparePair?: (pair: [DecisionRow, DecisionRow] | null) => void;
-  /** Backend's own words for a failed /decisions fetch (never "no decisions"). */
+  /** Backend's own words for a failed /decisions request (never "no decisions"). */
   error?: string | null;
   /** request_id the backend attached to that failure — audit trail. */
   requestId?: string | null;

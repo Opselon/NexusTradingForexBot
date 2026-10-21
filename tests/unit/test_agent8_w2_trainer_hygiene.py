@@ -25,8 +25,16 @@ _WT_ROOT = Path(__file__).resolve().parents[2]
 _WT_SRC = _WT_ROOT / "src"
 if _WT_SRC.is_dir() and (_WT_SRC / "nexus_scalp").is_dir():
     sys.path.insert(0, str(_WT_SRC))
-    for _name in [m for m in list(sys.modules) if m.startswith("nexus_scalp")]:
-        del sys.modules[_name]
+    # NO PURGE. This suite used to evict every nexus_scalp.* module here, at
+    # COLLECTION time — pytest imports all test modules before running the
+    # first test, so every module collected earlier kept references to the OLD
+    # class objects while the repository re-imported fresh ones. Pydantic
+    # models compiled against the old identity then reject instances of the new
+    # one ("Input should be ... instance of OutcomeDecomposition" for an
+    # OutcomeDecomposition), which is exactly how this suite poisoned
+    # unrelated files in the same process. tests/conftest.py already binds
+    # sys.path to THIS tree before anything imports nexus_scalp (BUG-231), so
+    # the eviction is redundant here as well as harmful.
 
 import numpy as np  # noqa: E402
 import polars as pl  # noqa: E402

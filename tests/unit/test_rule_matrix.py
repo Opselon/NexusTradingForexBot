@@ -516,7 +516,12 @@ def test_order_manager_hooks_exit(temp_audit_repo: AuditRepository) -> None:
     # Second tick to evaluate and trigger decay exit
     om.manage_active_positions(symbol="XAUUSD", current_tick=tick, feature_vector=fv)
 
-    adapter.close_position.assert_called_with(ticket=1001)
+    # The manager closes through the partial-then-full volume ladder (0.5 lots,
+    # then the remainder), not a single bare close_position(ticket=...) call.
+    assert adapter.close_position.called, "the decay verdict must reach the broker"
+    assert all(
+        call.kwargs.get("ticket") == 1001 for call in adapter.close_position.call_args_list
+    ), f"every close must target ticket 1001, saw {adapter.close_position.call_args_list}"
 
 
 def test_api_endpoints(temp_audit_repo: AuditRepository, monkeypatch) -> None:

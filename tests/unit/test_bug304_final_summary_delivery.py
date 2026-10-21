@@ -8,6 +8,21 @@ import threading
 from nexus_scalp.observability import ci_ai_triage as triage
 
 
+class _FakeCtx:
+    """Minimal stand-in that still satisfies the renderer's context contract
+    (``context_lines`` is what ``format_ai_triage`` draws the header block
+    from; a context without it was never a realistic one)."""
+
+    repository = "r"
+    workflow = "w"
+    run_id = "1"
+    job = ""
+    correlation_id = "test-correlation"
+
+    def context_lines(self, *, include_job: bool = True) -> list[str]:
+        return ["Repository: `r`", "Workflow: `w`"]
+
+
 def test_notify_triage_marks_delivery_false_when_telegram_fails(tmp_path, monkeypatch):
     results = tmp_path / "ci-results"
     (results / "run-info").mkdir(parents=True)
@@ -27,11 +42,7 @@ def test_notify_triage_marks_delivery_false_when_telegram_fails(tmp_path, monkey
             pass
 
         def context(self):
-            return type(
-                "Ctx",
-                (),
-                {"repository": "r", "workflow": "w", "run_id": "1"},
-            )()
+            return _FakeCtx()
 
         def _send_text(self, *args, **kwargs):
             return {"ok": False, "category": "SEND_FAILED"}
@@ -72,11 +83,7 @@ def test_notify_triage_marks_delivery_true_only_after_success(tmp_path, monkeypa
             pass
 
         def context(self):
-            return type(
-                "Ctx",
-                (),
-                {"repository": "r", "workflow": "w", "run_id": "1"},
-            )()
+            return _FakeCtx()
 
         def _send_text(self, *args, **kwargs):
             return {"ok": True, "category": "DELIVERED", "message_ids": [1]}

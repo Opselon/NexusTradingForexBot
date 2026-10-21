@@ -23,25 +23,7 @@
  * Feature-local surface over the stable `@/api/client` transport.
  */
 
-import { getAuthToken, getLegacy, send } from "@/api/client";
-
-/** DELETE is not exposed by the stable client surface (transport belongs to
- *  lane 1). This feature needs exactly one DELETE (/api/db/console/apikey/*),
- *  implemented here with the SAME auth headers the transport attaches
- *  (getAuthToken from @/api/client — no secrets invented, cookie rides via
- *  credentials:same-origin). Not used for anything else. */
-async function del<T>(path: string): Promise<T> {
-  const headers: Record<string, string> = { "X-Request-ID": `altui_del_${Date.now().toString(36)}` };
-  const token = getAuthToken();
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-    headers["X-NSE-Token"] = token;
-  }
-  const res = await fetch(path, { method: "DELETE", headers, credentials: "same-origin" });
-  const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error((body as { error?: { message?: string } } | null)?.error?.message ?? `DELETE ${path} failed (HTTP ${res.status}).`);
-  return body as T;
-}
+import { drop, getLegacy, send } from "@/api/client";
 
 /* ------------------------------ status ------------------------------ */
 
@@ -371,5 +353,5 @@ export const dbApi = {
     getLegacy("/api/db/console/apikeys", signal),
   apiKeySet: (name: string, value: string): Promise<DbActionEnvelope> =>
     send<DbActionEnvelope>("/api/db/console/apikey", { name, value }),
-  apiKeyDelete: (name: string): Promise<DbActionEnvelope> => del<DbActionEnvelope>(`/api/db/console/apikey/${encodeURIComponent(name)}`),
+  apiKeyDelete: (name: string): Promise<DbActionEnvelope> => drop<DbActionEnvelope>(`/api/db/console/apikey/${encodeURIComponent(name)}`),
 };

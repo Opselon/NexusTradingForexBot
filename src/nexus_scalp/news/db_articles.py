@@ -12,6 +12,7 @@ import contextlib
 import json
 from typing import Any
 
+from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
 from nexus_scalp.observability.logging import get_logger
 
@@ -52,7 +53,7 @@ class ArticlesMixin(_NewsDbCoreProto):
 
     def is_junk_hash(self, article_hash: str) -> bool:
         """True if this article_hash was tombstoned as junk (never re-ingest)."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT 1 FROM news_junk_hashes WHERE article_hash = ?;", (article_hash,)
             ).fetchone()
@@ -61,7 +62,7 @@ class ArticlesMixin(_NewsDbCoreProto):
     def remember_junk_hash(
         self, article_hash: str, title: str = "", reason: str = "junk", analysis_id: str = ""
     ) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO news_junk_hashes (article_hash, title, reason, pruned_at, analysis_id) VALUES (?, ?, ?, ?, ?);",
                 (article_hash, title, reason, self._now(), analysis_id),
@@ -70,7 +71,7 @@ class ArticlesMixin(_NewsDbCoreProto):
     def remember_junk_hashes(self, hashes: list[dict[str, str]]) -> int:
         if not hashes:
             return 0
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             n = 0
             for h in hashes:
                 with contextlib.suppress(Exception):
@@ -88,13 +89,13 @@ class ArticlesMixin(_NewsDbCoreProto):
             return n
 
     def count_junk_hashes(self) -> int:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM news_junk_hashes;").fetchone()
             return int(row["c"]) if row else 0
 
     def is_analyzed_hash(self, article_hash: str) -> bool:
         """True if this article_hash was already analyzed (idempotent guard)."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT 1 FROM news_analyzed_hashes WHERE article_hash = ?;", (article_hash,)
             ).fetchone()
@@ -104,19 +105,19 @@ class ArticlesMixin(_NewsDbCoreProto):
         self, article_hash: str, title: str = "", analysis_id: str = ""
     ) -> None:
         """Remember that article_hash has been analyzed — suppresses re-ingest + re-analysis."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 "INSERT OR IGNORE INTO news_analyzed_hashes (article_hash, title, analysis_id, analyzed_at) VALUES (?, ?, ?, ?);",
                 (article_hash, title, analysis_id, self._now()),
             )
 
     def count_analyzed_hashes(self) -> int:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute("SELECT COUNT(*) AS c FROM news_analyzed_hashes;").fetchone()
             return int(row["c"]) if row else 0
 
     def upsert_source(self, row: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_sources
@@ -152,18 +153,18 @@ class ArticlesMixin(_NewsDbCoreProto):
         if enabled_only:
             sql += " WHERE enabled = 1"
         sql += " ORDER BY priority DESC, source_id;"
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [dict(r) for r in conn.execute(sql).fetchall()]
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_sources WHERE source_id = ?;", (source_id,)
             ).fetchone()
             return dict(row) if row else None
 
     def set_source_enabled(self, source_id: str, enabled: bool) -> bool:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             cur = conn.execute(
                 "UPDATE news_sources SET enabled = ? WHERE source_id = ?;",
                 (int(enabled), source_id),
@@ -175,14 +176,14 @@ class ArticlesMixin(_NewsDbCoreProto):
     # ------------------------------------------------------------------
 
     def article_exists(self, article_hash: str) -> bool:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT 1 FROM news_articles WHERE article_hash = ?;", (article_hash,)
             ).fetchone()
             return row is not None
 
     def get_article_by_hash(self, article_hash: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_articles WHERE article_hash = ?;", (article_hash,)
             ).fetchone()
@@ -200,7 +201,7 @@ class ArticlesMixin(_NewsDbCoreProto):
         production). ``(source_id, canonical_url)`` is stable across polls, so
         this is the cheapest reliable guard against re-poll duplicates.
         """
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_articles WHERE source_id = ? AND canonical_url = ?;",
                 (source_id, canonical_url),
@@ -208,14 +209,14 @@ class ArticlesMixin(_NewsDbCoreProto):
             return dict(row) if row else None
 
     def get_article(self, article_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_articles WHERE article_id = ?;", (article_id,)
             ).fetchone()
             return dict(row) if row else None
 
     def insert_article(self, row: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO news_articles
@@ -255,14 +256,14 @@ class ArticlesMixin(_NewsDbCoreProto):
             )
 
     def mark_duplicate(self, article_hash: str, duplicate_of: str) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 "UPDATE news_articles SET is_duplicate = 1, duplicate_of = ? WHERE article_hash = ?;",
                 (duplicate_of, article_hash),
             )
 
     def add_evidence_source(self, article_id: str, source_id: str) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT evidence_sources FROM news_articles WHERE article_id = ?;",
                 (article_id,),
@@ -313,13 +314,13 @@ class ArticlesMixin(_NewsDbCoreProto):
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY published_at DESC LIMIT ?;"
         args.append(bounded)
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [dict(r) for r in conn.execute(sql, args).fetchall()]
 
     def list_related(self, article_id: str, limit: int = 20) -> list[dict[str, Any]]:
         """Duplicate / related articles of one canonical article."""
         bounded = max(1, min(int(limit), 50))
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             return [
                 dict(r)
                 for r in conn.execute(
@@ -330,7 +331,7 @@ class ArticlesMixin(_NewsDbCoreProto):
             ]
 
     def insert_version(self, row: dict[str, Any]) -> None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             conn.execute(
                 """
                 INSERT INTO news_article_versions
@@ -352,7 +353,7 @@ class ArticlesMixin(_NewsDbCoreProto):
             )
 
     def latest_version(self, article_id: str) -> dict[str, Any] | None:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT * FROM news_article_versions WHERE article_id = ? "
                 "ORDER BY revision DESC LIMIT 1;",
@@ -361,7 +362,7 @@ class ArticlesMixin(_NewsDbCoreProto):
             return dict(row) if row else None
 
     def count_versions(self, article_id: str) -> int:
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS c FROM news_article_versions WHERE article_id = ?;",
                 (article_id,),
@@ -466,7 +467,7 @@ class ArticlesMixin(_NewsDbCoreProto):
             # The last partial round fetches only what the cap still allows, so
             # a bounded call never processes one row more than max_rows.
             fetch = bsize if remaining is None else min(bsize, remaining)
-            with self._connect() as conn:
+            with sqlite_session(self._connect()) as conn:
                 rows = conn.execute(sql, (last_id, fetch)).fetchall()
                 if not rows:
                     break
@@ -499,7 +500,7 @@ class ArticlesMixin(_NewsDbCoreProto):
 
     def count_payload_archived(self) -> int:
         """Rows whose duplicate body has been archived out of the table."""
-        with self._connect() as conn:
+        with sqlite_session(self._connect()) as conn:
             row = conn.execute(
                 "SELECT COUNT(*) AS c FROM news_articles WHERE payload_archived = 1;",
             ).fetchone()

@@ -44,6 +44,17 @@ class IMT5Port(ABC):
     #: is metadata, not a broker operation.
     current_account_source: str = "LIVE"
 
+    def resolve_symbol(self, symbol: str) -> str | None:
+        """Map a configured symbol to the broker's own spelling.
+
+        Concrete adapters that can ask the terminal override this (see
+        ``DirectMT5Adapter.resolve_symbol``). The base implementation fails
+        CLOSED with ``None``: a port with no symbol catalogue must never
+        fabricate a name, because the boot repair treats ``None`` as
+        "leave the configured symbol untouched".
+        """
+        return None
+
     @abstractmethod
     def connect(self) -> bool:
         """Establishes connection with terminal or remote gateway."""

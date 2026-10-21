@@ -55,9 +55,11 @@ from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.domain.models import AccountInfo
 from nexus_scalp.experience.ledger import ExperienceLedger
 from nexus_scalp.experience.models import (
+    BehavioralFlag,
     ExperienceOutcome,
     ExperienceRecord,
     FeatureSnapshot,
+    OutcomeDecomposition,
     StrategyContext,
 )
 from nexus_scalp.experience.quality import compute_behavior_metrics
@@ -1727,11 +1729,6 @@ class TestForensicQualityJoin:
     """
 
     def test_trace_surfaces_outcome_decomposition_and_flags(self, audit, core) -> None:
-        from nexus_scalp.experience.models import (
-            BehavioralFlag,
-            OutcomeDecomposition,
-        )
-
         ledger = ExperienceLedger(audit_repo=audit)
         core.experience_ledger = ledger
         base = datetime(2026, 8, 15, 10, 0, tzinfo=UTC)

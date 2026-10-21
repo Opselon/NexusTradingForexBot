@@ -413,7 +413,11 @@ def load_context(path: str | Path) -> dict[str, Any]:
 _RULES: list[tuple[str, str, str]] = [
     # (regex over serialized evidence, verdict clause, cheapest first check)
     (
-        r"requirements\.lock|Dependency drift|pyproject",
+        # Evidence carries the check as a machine key ("dependency_drift"),
+        # while prose uses a space — the rules fallback must match both, or a
+        # real lock-drift failure produces NO text and is never delivered
+        # when the AI endpoint is unavailable.
+        r"requirements\.lock|dependency[ _]drift|pyproject",
         "dependency lock drift (lock vs pyproject mismatch)",
         "python scripts/ci/check_dependency_drift.py",
     ),
