@@ -42,6 +42,7 @@ from nexus_scalp.accounting.market_calendar import (
 from nexus_scalp.accounting.worker import format_worker_status
 from nexus_scalp.features.scalp_features import FEATURE_NAMES
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.web.audit_read import AuditReadError as _AuditReadError
 from nexus_scalp.web.errors import log_web_error, new_request_id
 
 logger = get_logger("nexus_scalp.web.debug_research_routes")
@@ -943,48 +944,54 @@ def register_debug_research_routes(
             "signal": None,
             "orders": [],
         }
-        db_path = None
         try:
-            import sqlite3 as _sqlite3
+            # OBS-001: resolve the audit domain through the SAME seams the rest
+            # of the audit reads honour (NEXUS_AUDIT_DB isolation seam, then the
+            # persisted provider — PostgreSQL reads go through the fabric's
+            # pooled READ plane). The old body opened a hardcoded
+            # `<cwd>/artifacts/audit.db`, so a probe or a PostgreSQL box read a
+            # database nobody else was using and the flagship join silently
+            # returned unavailable while /health reported READY.
+            from nexus_scalp.web.audit_read import (
+                audit_database_label,
+                audit_table_columns,
+                query_audit_rows,
+            )
 
-            from nexus_scalp.database.engine import db_path_for_domain
+            db_label = audit_database_label()
 
-            db_path = str(db_path_for_domain("audit"))
-            con = _sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-            con.row_factory = _sqlite3.Row
-            try:
-                sig = None
-                rows = con.execute(  # noqa: F841 - forensic probe kept for row shape
-                    "SELECT * FROM audit_signals ORDER BY generated_at DESC LIMIT 1"
-                ).fetchall()
-                # find by execution_id in payload (stamped historically via
-                # reason/request_id join) — primary column is reason_code; for
-                # pre-instrumentation rows join by request_id is not possible,
-                # so the endpoint returns signal rows whose payload contains
-                # the id and all dispatch rows whose reason embeds it.
-                sig_cols = [d[0] for d in con.execute("PRAGMA table_info(audit_signals)")]
-                if "execution_id" in sig_cols:
-                    # ci: schema-guarded — executes only when execution_id exists in live schema.
-                    sig = con.execute(
-                        "SELECT * FROM audit_signals WHERE execution_id = ? ORDER BY generated_at DESC LIMIT 5",
-                        (execution_id,),
-                    ).fetchall()
-                orders = con.execute(
-                    "SELECT * FROM audit_orders WHERE reason LIKE ? ORDER BY timestamp DESC LIMIT 5",
-                    (f"%{execution_id}%",),
-                ).fetchall()
-                result.update(
-                    {
-                        "available": True,
-                        "signal": [dict(r) for r in (sig or [])],
-                        "orders": [dict(r) for r in orders],
-                        "db_path": str(db_path),
-                    }
+            # audit_signals.execution_id only exists after the trace-chain
+            # instrumentation (TASK-OBS-TRACE-CHAIN); schema-guard it so a
+            # database whose schema predates it still answers the order half.
+            sig_rows: list[dict[str, Any]] = []
+            if "execution_id" in audit_table_columns("audit_signals"):
+                sig_rows = query_audit_rows(
+                    "SELECT * FROM audit_signals WHERE execution_id = ? ORDER BY generated_at DESC",
+                    (execution_id,),
                 )
-            finally:
-                con.close()
-        except Exception as e:  # never fail the API for a trace lookup
+
+            # audit_orders carries the id inside `reason`; bound parameter, so
+            # the trace id can never alter the statement.
+            order_rows = query_audit_rows(
+                "SELECT * FROM audit_orders WHERE reason LIKE ? ORDER BY timestamp DESC",
+                (f"%{execution_id}%",),
+            )
+
+            result.update(
+                {
+                    "available": True,
+                    "signal": sig_rows,
+                    "orders": order_rows,
+                    "db_path": db_label,
+                    "signal_execution_id_indexed": bool(sig_rows),
+                }
+            )
+        except _AuditReadError as e:
+            # Public-safe reason (no DSN, no secret, no traceback).
             result["reason"] = f"TRACE_LOOKUP_ERROR: {e}"
+        except Exception as e:  # never fail the API for a trace lookup
+            # Type only: the message can embed a DSN or filesystem path.
+            result["reason"] = f"TRACE_LOOKUP_ERROR: {type(e).__name__}"
         return serialize_enums(result)
 
     @app.get("/api/debug/compare")
