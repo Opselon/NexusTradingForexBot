@@ -36,6 +36,7 @@ from pydantic import BaseModel
 
 from nexus_scalp.database.maintenance_gate import engine_start_guard, migration_guard
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.task_spawner import spawn_named_task
 from nexus_scalp.web.errors import log_web_error, new_request_id
 
 logger = get_logger("nexus_scalp.web.diagnostics_state_routes")
@@ -1444,7 +1445,17 @@ def register_diagnostics_state_routes(
                 with engine_start_guard(app):
                     if not engine._running:
                         logger.info("Web Dashboard triggered system start command.")
-                        task = asyncio.create_task(engine.run_loop())
+                        # OBS-011: the engine run loop is the highest-stakes
+                        # fire-and-forget task in the service — if it dies, the
+                        # whole trading surface is silent. A bare create_task
+                        # surfaced that only as "Task exception was never
+                        # retrieved". Named + retrieved here, so the death is
+                        # attributable to the dashboard start that caused it.
+                        task = spawn_named_task(
+                            engine.run_loop(),
+                            name="engine.run_loop",
+                            component="WEB_START",
+                        )
                         if not hasattr(app.state, "background_tasks"):
                             app.state.background_tasks = set()
                         app.state.background_tasks.add(task)

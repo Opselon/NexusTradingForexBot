@@ -52,6 +52,10 @@ from nexus_scalp.cli.styling import (
 # top-level import here is paid by every help listing on the planet.
 from nexus_scalp.domain.enums import ExecutionMode
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.observability.task_spawner import (
+    install_named_task_exception_handler,
+    spawn_named_task,
+)
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release.metadata import get_version_info
@@ -1545,15 +1549,29 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
     async def run_concurrently() -> None:
         # The supervisor's request side is signal-safe; the drain runs here,
         # on the loop, when the engine's own loop has exited.
+        # OBS-011 (2026-08-31): route every unhandled loop exception through
+        # structlog. asyncio's default handler prints free text to stderr,
+        # which never reaches the log store, is never redacted, and cannot be
+        # sampled or alerted on — so "task died silently" was invisible by
+        # construction. Installed on the RUNNING loop, first statement, so a
+        # failure anywhere below it is captured.
+        try:
+            install_named_task_exception_handler(asyncio.get_running_loop())
+        except Exception:  # observability must never block a boot
+            pass
         # CONTRACT #6/#10: probe the readiness gate in the background on this
         # loop and open the Control Center at the ACTUAL bound port once
         # /health and / (HTML) are live. ``uvicorn_config.port`` (not the
         # remembered 8080/8081 default) is the port uvicorn really binds.
-        launch_task = asyncio.create_task(
+        # OBS-011: named so a probe failure is attributable to the launch
+        # probe rather than surfacing as an anonymous never-retrieved task.
+        launch_task = spawn_named_task(
             _open_control_center_when_ready(
                 _effective_launch_host(go_origin),
                 _effective_launch_port(go_origin, int(uvicorn_config.port)),
-            )
+            ),
+            name="cli.control_center_launch_probe",
+            component="CLI_BOOT",
         )
         try:
             await asyncio.gather(server.serve(), engine.run_loop(), return_exceptions=False)
