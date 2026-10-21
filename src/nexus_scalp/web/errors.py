@@ -205,6 +205,11 @@ async def attach_request_id_middleware(request: Request, call_next: Callable):
     a displayed error with the server log. Unhandled exceptions (which FastAPI
     would otherwise convert into a bare 500 with no body) become the standard
     safe error envelope - the traceback goes to ``logging`` only.
+
+    OBS-003 / OBS-015: the id is ALSO bound to the logging context for the
+    duration of the request and cleared in a ``finally``. Before this, the
+    header survived header -> response but never reached a log line, so a
+    client-reported id could not be joined to the record that explains it.
     """
     rid = request_id_from_request(request)
     request.state.request_id = rid
@@ -222,6 +227,32 @@ async def attach_request_id_middleware(request: Request, call_next: Callable):
                 content=safe_error_payload("SSE_STREAM_ERROR", request_id=rid),
             )
 
-    response = await call_next(request)
+    # Bind BEFORE the route runs so every record it emits carries the id, and
+    # clear in `finally` so a reused worker thread never inherits a stale one.
+    from nexus_scalp.observability.correlation import clear_request_scope
+
+    _request_binding(request, rid)
+    try:
+        response = await call_next(request)
+    finally:
+        clear_request_scope()
     response.headers["X-Request-ID"] = rid
     return response
+
+
+def _request_binding(request: Request, rid: str) -> None:
+    """Bind the request id (plus method/path) to the logging context.
+
+    Split out so a binding failure can never break request handling: logging
+    correlation is observability, not a functional requirement.
+    """
+    try:
+        from nexus_scalp.observability.correlation import bind_request_scope
+
+        bind_request_scope(
+            rid,
+            http_method=request.method,
+            http_path=request.url.path,
+        )
+    except Exception:  # pragma: no cover - observability must never break a request
+        pass

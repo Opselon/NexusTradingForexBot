@@ -167,6 +167,10 @@ _NON_SECRET_KEY_FRAGMENTS = (
     "incident_id",
     "trace_id",
     "update_correlation",
+    # OBS-003 (2026-10-21): the process boot id is the same class of
+    # observability id — binding it is pointless if the entropy catcher
+    # eats it. A boot_ id is a correlation key, never a credential.
+    "boot_id",
 )
 
 #: Secret-shaped assignment catch-all for trusted string values (event/message/
@@ -230,7 +234,8 @@ _CORRELATION_ID_RE = re.compile(
     r"|INC-[0-9]{4}-[0-9A-F]{8}"
     r"|upd-[0-9]{8}T[0-9]{6}[0-9]{1,6}(?:-[0-9a-f]{8})?"
     r"|fh-[0-9a-f]{16,24}"
-    r"|req[_-][0-9a-zA-Z\-]{6,32})"
+    r"|req[_-][0-9a-zA-Z\-]{6,32}"
+    r"|boot_[0-9a-f]{8,16})"
     r"(?![0-9a-zA-Z_\-+/=])"
 )
 

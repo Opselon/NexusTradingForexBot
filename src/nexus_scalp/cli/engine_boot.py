@@ -1418,6 +1418,18 @@ def _start_web_and_engine(engine: Any, cfg: AppConfig, port: int) -> None:
         json_format=False,
         log_to_file=True,
     )
+    # Bind a boot id to the logging context for the whole process lifetime.
+    # OBS-003: a day of info/error logs held ZERO correlation ids and no boot
+    # id existed at all, so two boots interleaved in one log file were
+    # indistinguishable and "which process emitted this?" was unanswerable.
+    # Bound once here (not per record), so it rides on every following line
+    # for as long as this process lives; `nexus status --json` reports it too.
+    try:
+        from nexus_scalp.observability.correlation import bind_boot_id
+
+        bind_boot_id(pid=os.getpid())
+    except Exception:  # observability must never block a boot
+        pass
     # 2026-09-09 storage-hygiene pass: sweep crash leftovers + stale residue
     # BEFORE the engine writes anything new (update staging, .part residue,
     # .previous-* keep-1). Failure-isolated: a sweep fault must never block
