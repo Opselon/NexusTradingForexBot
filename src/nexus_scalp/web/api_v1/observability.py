@@ -207,8 +207,15 @@ def logs_search(
 
     try:
         levels = _normalize_levels(severity)
-    except ValueError as exc:
-        return fail(request, "VALIDATION_ERROR", message=str(exc))
+    except ValueError:
+        # Never interpolate the exception: its message is derived from a
+        # caller-supplied filter, and CodeQL py/stack-trace-exposure flags that
+        # flow into the response envelope. The closed vocabulary is the reply.
+        return fail(
+            request,
+            "VALIDATION_ERROR",
+            message="severity must be one of: " + ", ".join(sorted(_SEVERITIES)),
+        )
 
     filters: dict[str, Any] = {
         "levels": levels,
@@ -303,8 +310,15 @@ def logs_export(
     start, end = window
     try:
         levels = _normalize_levels(severity)
-    except ValueError as exc:
-        return fail(request, "VALIDATION_ERROR", message=str(exc))
+    except ValueError:
+        # Never interpolate the exception: its message is derived from a
+        # caller-supplied filter, and CodeQL py/stack-trace-exposure flags that
+        # flow into the response envelope. The closed vocabulary is the reply.
+        return fail(
+            request,
+            "VALIDATION_ERROR",
+            message="severity must be one of: " + ", ".join(sorted(_SEVERITIES)),
+        )
     try:
         store = _log_store(request)
         rows = _redact_rows(

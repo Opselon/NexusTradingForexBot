@@ -151,43 +151,68 @@ _SECRET_KV = re.compile(
     r"(?i)\b(password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|"
     r"private[_-]?key|auth)\s*([:=])\s*(?:'([^']*)'|\"([^\"]*)\"|[^\s;)]*)"
 )
-#: URL userinfo (``scheme://user:pw@host``) — the value is masked in place so
-#: the host survives for tracing.
-_USERINFO = re.compile(r"(://[^:/@\s]+:)([^@\s]*)(@)")
-#: Upper bound on the userinfo scan after ``://``. The regex this replaced
-#: (``(://[^:/@\s]+:)([^@\s]*)(@)``) was O(n^2) on input like
-#: ``://!:://!:://!:`` because both ``[^...]+`` runs restart at every position;
-#: CodeQL flagged it as polynomial. Each match attempt is now capped, so the
-#: total work is linear in the statement length while the accepted language is
-#: unchanged (differential-tested against the old regex).
-_USERINFO_SCAN_MAX: int = 512
+#: Characters that terminate the userinfo user/password runs. Mirrors the
+#: ``[^:/@\\s]`` / ``[^@\\s]`` classes of the regex this replaced.
+_USERINFO_BREAK: frozenset[str] = frozenset(":/@ \t\n\r\f\v")
+_USERINFO_MASK_BREAK: frozenset[str] = frozenset("@ \t\n\r\f\v")
 
 
 def _mask_userinfo(text: str) -> str:
-    """Mask ``scheme://user:pw@host`` userinfo without catastrophic backtracking.
+    """Mask ``scheme://user:pw@host`` userinfo in a single linear pass.
 
-    Same accepted language and same output as ``_USERINFO.sub(r"\\1***\\3", ...)``,
-    but every attempt is bounded, so a hostile statement cannot force a
-    quadratic scan on the logging path.
+    Replaces ``_USERINFO.sub(r"\\1***\\3", text)``. That regex restarted both
+    ``[^:/@\\s]+`` and ``[^@\\s]*`` at every position, so input such as
+    ``://!:`` repeated was quadratic on the logging path (CodeQL
+    py/polynomial-redos). This scan accepts exactly the same language — a
+    userinfo block is ``://`` + user + ``:`` + password + ``@``, where the user
+    run excludes ``:/@`` and whitespace and the password run excludes ``@`` and
+    whitespace.
+
+    The password run is the only unbounded scan, so its result is cached as the
+    interval ``[lo, hi] -> hi``: every position inside that interval has the
+    same next ``@``/whitespace terminator. A later occurrence that starts
+    inside the cached interval answers in O(1) instead of rescanning, which
+    keeps a hostile statement linear; a start past it resumes from there, so
+    cache intervals never overlap and total scan work stays O(len(text)).
     """
     out: list[str] = []
     i = 0
     n = len(text)
+    #: Cached password-run terminator: for every x in [lo, hi], the first
+    #: char at/after x that ends the run is at ``hi`` (``n`` = none found).
+    lo = hi = -1
     while True:
         j = text.find("://", i)
         if j < 0:
             out.append(text[i:])
             break
         out.append(text[i:j])
-        m = _USERINFO.match(text, j, min(n, j + 3 + _USERINFO_SCAN_MAX))
-        if m is not None:
-            out.append(m.group(1))
+        # user run: stops at ':', '/', '@' or whitespace, so it can never
+        # contain another "://" — scanned regions are disjoint across matches.
+        p = j + 3
+        while p < n and text[p] not in _USERINFO_BREAK:
+            p += 1
+        q = -1
+        if p < n and text[p] == ":":
+            s = p + 1
+            if lo <= s <= hi:
+                q = hi  # cached terminator for this position
+            else:
+                q = s
+                while q < n and text[q] not in _USERINFO_MASK_BREAK:
+                    q += 1
+                lo, hi = s, q
+        if p > j + 3 and p < n and text[p] == ":" and q > 0 and q < n and text[q] == "@":
+            out.append(text[j : p + 1])
             out.append("***")
             out.append("@")
-            i = m.end()
+            i = q + 1
         else:
-            out.append(text[j : j + 3])
-            i = j + 3
+            # Not a userinfo block: everything scanned so far is ordinary text
+            # and must survive verbatim. Resume at the end of the user run, so a
+            # failed attempt never rescans the characters it just walked.
+            out.append(text[j:p] if p > j + 3 else text[j : j + 3])
+            i = p if p > j + 3 else j + 3
     return "".join(out)
 
 
