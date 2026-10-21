@@ -154,6 +154,43 @@ _SECRET_KV = re.compile(
 #: URL userinfo (``scheme://user:pw@host``) — the value is masked in place so
 #: the host survives for tracing.
 _USERINFO = re.compile(r"(://[^:/@\s]+:)([^@\s]*)(@)")
+#: Upper bound on the userinfo scan after ``://``. The regex this replaced
+#: (``(://[^:/@\s]+:)([^@\s]*)(@)``) was O(n^2) on input like
+#: ``://!:://!:://!:`` because both ``[^...]+`` runs restart at every position;
+#: CodeQL flagged it as polynomial. Each match attempt is now capped, so the
+#: total work is linear in the statement length while the accepted language is
+#: unchanged (differential-tested against the old regex).
+_USERINFO_SCAN_MAX: int = 512
+
+
+def _mask_userinfo(text: str) -> str:
+    """Mask ``scheme://user:pw@host`` userinfo without catastrophic backtracking.
+
+    Same accepted language and same output as ``_USERINFO.sub(r"\\1***\\3", ...)``,
+    but every attempt is bounded, so a hostile statement cannot force a
+    quadratic scan on the logging path.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    while True:
+        j = text.find("://", i)
+        if j < 0:
+            out.append(text[i:])
+            break
+        out.append(text[i:j])
+        m = _USERINFO.match(text, j, min(n, j + 3 + _USERINFO_SCAN_MAX))
+        if m is not None:
+            out.append(m.group(1))
+            out.append("***")
+            out.append("@")
+            i = m.end()
+        else:
+            out.append(text[j : j + 3])
+            i = j + 3
+    return "".join(out)
+
+
 #: A bare high-entropy token (a key with no key name). The value is masked
 #: ONLY when it matches this whole-token validator: mixed case + digits +
 #: length is the same discipline the observability layer's own redactor uses
@@ -193,7 +230,7 @@ def mask_query_text(sql: Any) -> str:
         if "://" in masked:
             masked = mask_url_password(masked)
         masked = _SECRET_KV.sub(lambda m: f"{m.group(1)}{m.group(2)}***", masked)
-        masked = _USERINFO.sub(r"\1***\3", masked)
+        masked = _mask_userinfo(masked)
         # Bare high-entropy tokens: validate the WHOLE token before masking so
         # an ordinary long identifier or a lowercase UUID is never collapsed
         # (over-redaction is its own traceability bug), and everything around

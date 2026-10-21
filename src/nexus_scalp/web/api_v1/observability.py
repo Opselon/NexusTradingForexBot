@@ -130,7 +130,12 @@ def _normalize_levels(value: str | None) -> tuple[str, ...] | None:
         return None
     unknown = [p for p in parts if p.upper() not in _SEVERITIES]
     if unknown:
-        raise ValueError(f"unknown severity: {', '.join(unknown)}")
+        # The rejected value is caller-controlled: it is NEVER interpolated
+        # into the message that reaches the response envelope (CodeQL
+        # py/stack-trace-exposure: user data flowing into an error body).
+        # The reply names the closed vocabulary instead; the caller can see
+        # which filter it sent without the server echoing arbitrary input.
+        raise ValueError(f"severity must be one of: {', '.join(sorted(_SEVERITIES))}")
     return tuple(p.upper() for p in parts)
 
 

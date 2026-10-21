@@ -106,6 +106,20 @@ def test_unknown_severity_is_rejected(client) -> None:
     assert r.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+def test_validation_error_never_echoes_the_caller_value(client) -> None:
+    """REGRESSION (CodeQL py/stack-trace-exposure): the rejected filter must
+    not be interpolated into the response body. The reply names the closed
+    vocabulary instead, so no caller-controlled text reaches the envelope."""
+    c, _s, _cfg = client
+    probe = "<script>alert(1)</script>"
+    r = c.get("/api/v1/observability/logs", params={"severity": probe})
+    assert r.status_code == 422
+    body = r.text
+    assert probe not in body
+    assert "script" not in body.lower()
+    assert "severity must be one of" in body
+
+
 def test_component_and_text_filters(client) -> None:
     c, s, cfg = client
     _seed(s, cfg)
