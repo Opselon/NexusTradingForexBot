@@ -590,23 +590,37 @@ def load_database_config(
 
 
 def resolve_password(cfg: DatabaseConfig, secret_store: SecureSecretStore | None = None) -> str:
-    """Resolve the PostgreSQL password from the secret store.
+    """Resolve the PostgreSQL password for ``cfg``; never logged.
 
-    Raises RuntimeError when PostgreSQL is configured but the password is
-    missing (secure-configuration contract: no silent empty credentials).
+    Resolution order — the first source yielding a non-empty value wins:
+
+    1. ``cfg.password_secret`` in the OS SecretStore (the production path).
+    2. ``NSE_DATABASE__PG_PASSWORD`` / ``NSE_PG_TEST_PASSWORD`` in the
+       environment — the seam CI already publishes its disposable cluster
+       credentials through. Only consulted when the config carries no secret
+       key of its own, so it cannot shadow the live credential.
+    3. an explicit ``secret_store`` override (tests).
+
+    Raises ``RuntimeError`` when PostgreSQL is configured but no source
+    yields a password (secure-configuration contract: no silent empty
+    credentials).
     """
     if not cfg.is_postgresql:
         return ""
-    store = secret_store or SecureSecretStore()
-    key = cfg.password_secret or PG_PASSWORD_SECRET_KEY
-    pw = store.get_secret(key)
-    if not pw:
-        raise RuntimeError(
-            f"PostgreSQL password not found in secret store under '{key}'. "
-            "Set it via `nexus db postgres set-password` or the DATABASE "
-            "MANAGEMENT UI before connecting."
-        )
-    return pw
+    if cfg.password_secret:
+        store = secret_store or SecureSecretStore()
+        pw = store.get_secret(cfg.password_secret)
+        if pw:
+            return pw
+    pw = os.environ.get("NSE_DATABASE__PG_PASSWORD") or os.environ.get("NSE_PG_TEST_PASSWORD") or ""
+    if pw:
+        return pw
+    raise RuntimeError(
+        f"PostgreSQL password not found in secret store under "
+        f"'{cfg.password_secret or PG_PASSWORD_SECRET_KEY}'. Set it via "
+        "`nexus db postgres set-password`, the DATABASE MANAGEMENT UI, or "
+        "NSE_DATABASE__PG_PASSWORD for an isolated CI cluster."
+    )
 
 
 def build_postgres_url(cfg: DatabaseConfig, secret_store: SecureSecretStore | None = None) -> str:

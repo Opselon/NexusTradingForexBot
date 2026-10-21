@@ -50,6 +50,24 @@ LOG_MAX_TRACE_CHARS = 4096
 #: minus secrets). Bounded so a logging storm cannot bloat the table.
 LOG_MAX_CONTEXT_CHARS = 4096
 
+#: Settings key controlling whether INFO records reach the persistent sink.
+#: Off by default (the original size contract); turning it on is an explicit
+#: operator choice. WARN/ERROR/CRITICAL are NOT governed by this key — they
+#: are always persisted when the sink itself is on.
+LOG_INFO_PERSISTENCE_KEY = "database.log_persistence.include_info"
+
+#: Operator spellings accepted as "yes" for the INFO switch. Mirrors the
+#: truthy-spelling discipline ``log_persistence_enabled`` already applies to
+#: the master switch, so ``"0"``/``"false"``/``"no"`` cannot be misread.
+_TRUTHY = frozenset({"1", "true", "yes", "on"})
+
+#: Server-side caps for the observability read path. The API layer enforces
+#: the same bound on its own inputs; these are the last line of defence for
+#: any direct store caller, so a misbehaving client cannot ask for a
+#: million-row window or an unbounded full-text scan.
+LOG_QUERY_MAX_LIMIT = 500
+LOG_QUERY_MAX_TEXT_CHARS = 256
+
 
 def log_persistence_enabled(settings_db: Any | None = None) -> bool:
     """Return whether the persistent log sink is active.
@@ -154,13 +172,23 @@ def _first(row: Any, key: str = "column_name") -> Any:
 class DatabaseLogStore:
     """Manages persistent logging of database warnings and errors."""
 
+    #: Levels always persisted when the sink is on (contract: WARN/ERROR/
+    #: CRITICAL never disappear because of INFO retention or sampling policy).
+    _ALWAYS_PERSISTED = frozenset({"WARNING", "ERROR", "CRITICAL"})
+
     def __init__(
         self,
         config: DatabaseConfig | None = None,
         retention_days: int = 30,
+        persist_info: bool | None = None,
     ) -> None:
         self.cfg = config or load_database_config("audit")
         self.retention_days = retention_days
+        # Three-state: None = resolve from the operator setting on first use
+        # (mirrors DatabaseLogHandler), True/False = explicit per-store override
+        # used by the API/tests to force INFO capture without touching global
+        # settings.
+        self._persist_info = persist_info
 
     #: Additive columns introduced after the table first shipped. Each is
     #: applied with ADD COLUMN IF NOT EXISTS so an existing (pre-1-column-set)
@@ -329,8 +357,42 @@ class DatabaseLogStore:
             if close_needed:
                 driver.close()
 
+    def _info_persistence_enabled(self) -> bool:
+        """Whether INFO records are persisted by THIS store instance.
+
+        Resolution order (first wins, never raises):
+          1. an explicit ``persist_info`` argument (API/tests can force it
+             without touching the operator's global setting);
+          2. the operator setting ``database.log_persistence.include_info``;
+          3. off by default — INFO is high-volume and the original contract
+             deliberately excluded it to keep the table small. Enabling it is
+             an explicit operator choice, never a silent behaviour change.
+
+        WARN/ERROR/CRITICAL are unaffected by this switch: they are always
+        persisted when the sink is on (:data:`_ALWAYS_PERSISTED`).
+        """
+        if self._persist_info is not None:
+            return bool(self._persist_info)
+        try:
+            from nexus_scalp.settings.service import SettingsDatabase
+
+            row = SettingsDatabase().get(LOG_INFO_PERSISTENCE_KEY)
+            if row is None:
+                return False
+            value = getattr(row, "value", row)
+            if value is None or str(value).strip() == "":
+                return False
+            return str(value).strip().lower() in _TRUTHY
+        except Exception:
+            return False
+
     def record(self, entry: DatabaseLogEntry, driver: Any | None = None) -> bool:
-        """Persist a warning, error, or critical event (deduplicated).
+        """Persist a log event (deduplicated, severity-aware).
+
+        WARNING/ERROR/CRITICAL are always persisted when the sink is on.
+        INFO is persisted only when the operator (or an explicit store
+        argument) enabled it — the default stays off so a default deployment
+        does not grow the table with high-volume informational records.
 
         Two records with the same :attr:`DatabaseLogEntry.fingerprint` within
         :data:`LOG_DEDUP_WINDOW_SEC` are ONE row: the first inserts, repeats
@@ -339,11 +401,16 @@ class DatabaseLogStore:
         without one) always insert — their de-duplication is the event
         aggregator's job upstream, and changing that would double-log.
         """
-        # Only retain WARNING, ERROR, CRITICAL
-        if entry.level.upper() not in {"WARNING", "ERROR", "CRITICAL"}:
-            _note_dropped()
-            return False
-        entry.level = entry.level.upper()
+        # Severity policy: WARN+ always; INFO only when explicitly enabled.
+        level = entry.level.upper()
+        if level not in self._ALWAYS_PERSISTED:
+            if level != "INFO":
+                _note_dropped()
+                return False
+            if not self._info_persistence_enabled():
+                _note_dropped()
+                return False
+        entry.level = level
         entry.masked_sql = mask_query_text(entry.masked_sql)
         entry.error_message = mask_query_text(entry.error_message)[:2000]
         entry.provider = mask_query_text(entry.provider)
@@ -496,6 +563,205 @@ class DatabaseLogStore:
                 driver.close()
 
     get_recent_logs = query_recent
+
+    def query_events(
+        self,
+        *,
+        levels: tuple[str, ...] | list[str] | None = None,
+        components: tuple[str, ...] | list[str] | None = None,
+        event_names: tuple[str, ...] | list[str] | None = None,
+        correlation_id: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        text: str | None = None,
+        limit: int = 100,
+        before_id: int | None = None,
+        driver: Any | None = None,
+    ) -> list[dict[str, Any]]:
+        """Bounded, filtered read of persisted events (newest first).
+
+        All filters are optional and composable; the result is always ordered
+        ``id DESC`` so a caller pages backwards with ``before_id`` (keyset
+        pagination — no OFFSET, so deep pages cost the same as the first).
+
+        Bounds are enforced here as well as at the API layer:
+        * ``limit`` is clamped to :data:`LOG_QUERY_MAX_LIMIT`;
+        * ``text`` is clamped to :data:`LOG_QUERY_MAX_TEXT_CHARS` and matched
+          with a prefix-bounded ``LIKE`` (a leading wildcard would forbid any
+          index use and turn the search into a full scan);
+        * every value is masked through the same redaction the write path
+          uses, so a filter cannot be used to probe for raw secrets and a
+          stored secret cannot be returned.
+
+        Returns ``[]`` on any read failure rather than raising: an empty list
+        is an honest "no events", and the API layer distinguishes that from a
+        source failure through :meth:`health`.
+        """
+        close_needed = False
+        if driver is None:
+            driver = get_driver(self.cfg)
+            close_needed = True
+        try:
+            self.ensure_table(driver)
+            ph = "%s" if self.cfg.is_postgresql else "?"
+            where: list[str] = []
+            args: list[Any] = []
+
+            def _in_clause(column: str, values: list[str]) -> str:
+                return f"{column} IN ({', '.join(ph for _ in values)})"
+
+            if levels:
+                lv = [str(v).upper() for v in levels if str(v).strip()]
+                if lv:
+                    where.append(_in_clause("level", lv))
+                    args.extend(lv)
+            if components:
+                comps = [mask_query_text(str(v)) for v in components if str(v).strip()]
+                if comps:
+                    where.append(_in_clause("logger_name", comps))
+                    args.extend(comps)
+            if event_names:
+                evs = [mask_query_text(str(v)) for v in event_names if str(v).strip()]
+                if evs:
+                    where.append(_in_clause("event_name", evs))
+                    args.extend(evs)
+            if correlation_id:
+                cid = mask_query_text(str(correlation_id))[:LOG_QUERY_MAX_TEXT_CHARS]
+                if cid:
+                    where.append("correlation_id = " + ph)
+                    args.append(cid)
+            if since:
+                where.append("timestamp >= " + ph)
+                args.append(str(since)[:64])
+            if until:
+                where.append("timestamp <= " + ph)
+                args.append(str(until)[:64])
+            if before_id is not None:
+                where.append("id < " + ph)
+                args.append(int(before_id))
+            if text:
+                needle = mask_query_text(str(text))[:LOG_QUERY_MAX_TEXT_CHARS].strip()
+                if needle:
+                    where.append("error_message LIKE " + ph)
+                    args.append(f"{needle}%")
+
+            limit_i = max(1, min(int(limit), LOG_QUERY_MAX_LIMIT))
+            clause = ("WHERE " + " AND ".join(where)) if where else ""
+            sql = f"SELECT * FROM {LOG_TABLE} {clause} ORDER BY id DESC LIMIT {limit_i}"
+            return driver.query(sql, tuple(args))
+        except Exception as exc:
+            logger.debug("Failed to query database log entries: %s", exc)
+            return []
+        finally:
+            if close_needed:
+                driver.close()
+
+    def count_events(
+        self,
+        *,
+        levels: tuple[str, ...] | list[str] | None = None,
+        since: str | None = None,
+        until: str | None = None,
+        driver: Any | None = None,
+    ) -> int:
+        """Count persisted events under the same filters as :meth:`query_events`.
+
+        Bounded by the same caps; used for summary counts without fetching
+        rows. Returns ``-1`` when the count itself cannot be read, so a caller
+        can tell "zero events" from "count unavailable".
+        """
+        close_needed = False
+        if driver is None:
+            driver = get_driver(self.cfg)
+            close_needed = True
+        try:
+            self.ensure_table(driver)
+            ph = "%s" if self.cfg.is_postgresql else "?"
+            where: list[str] = []
+            args: list[Any] = []
+            if levels:
+                lv = [str(v).upper() for v in levels if str(v).strip()]
+                if lv:
+                    where.append(f"level IN ({', '.join(ph for _ in lv)})")
+                    args.extend(lv)
+            if since:
+                where.append("timestamp >= " + ph)
+                args.append(str(since)[:64])
+            if until:
+                where.append("timestamp <= " + ph)
+                args.append(str(until)[:64])
+            clause = ("WHERE " + " AND ".join(where)) if where else ""
+            sql = f"SELECT COUNT(*) AS c FROM {LOG_TABLE} {clause}"
+            row = driver.query_one(sql, tuple(args))
+            if row is None:
+                return -1
+            val = row.get("c") if isinstance(row, dict) else row[0]
+            return int(val)
+        except Exception as exc:
+            logger.debug("Failed to count database log entries: %s", exc)
+            return -1
+        finally:
+            if close_needed:
+                driver.close()
+
+    def get_event(self, event_id: int, driver: Any | None = None) -> dict[str, Any] | None:
+        """Fetch one event by primary key, or ``None`` when it does not exist.
+
+        A single-row primary-key lookup; the detail view uses this instead of
+        a filtered page so a trace is never truncated by a page cap. Raises
+        are swallowed on purpose: the API layer treats a missing row and an
+        unreadable source as different outcomes and calls :meth:`health`
+        separately.
+        """
+        close_needed = False
+        if driver is None:
+            driver = get_driver(self.cfg)
+            close_needed = True
+        try:
+            self.ensure_table(driver)
+            ph = "%s" if self.cfg.is_postgresql else "?"
+            rows = driver.query(
+                f"SELECT * FROM {LOG_TABLE} WHERE id = {ph} LIMIT 1", (int(event_id),)
+            )
+            return rows[0] if rows else None
+        except Exception as exc:
+            logger.debug("Failed to fetch log event %s: %s", event_id, exc)
+            return None
+        finally:
+            if close_needed:
+                driver.close()
+
+    def health(self, driver: Any | None = None) -> dict[str, Any]:
+        """Probe the log sink: is the table there and readable?
+
+        Distinguishes "no events" from "source unavailable", which the UI must
+        render differently (an empty result is a fact, an unreadable sink is a
+        failure). Never raises.
+        """
+        close_needed = False
+        if driver is None:
+            driver = get_driver(self.cfg)
+            close_needed = True
+        try:
+            self.ensure_table(driver)
+            row = driver.query_one(f"SELECT COUNT(*) AS c FROM {LOG_TABLE}")
+            val = row.get("c") if isinstance(row, dict) else row[0]
+            return {
+                "ok": True,
+                "table": LOG_TABLE,
+                "provider": "postgresql" if self.cfg.is_postgresql else "sqlite",
+                "rows": int(val),
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "table": LOG_TABLE,
+                "provider": "postgresql" if self.cfg.is_postgresql else "sqlite",
+                "error": f"{type(exc).__name__}: {exc}"[:200],
+            }
+        finally:
+            if close_needed:
+                driver.close()
 
     def purge_expired(self) -> int:
         """Purge log records exceeding the retention period."""
@@ -705,6 +971,7 @@ class DatabaseLogHandler(logging.Handler):
         *,
         min_level: int = logging.WARNING,
         enabled: bool | None = None,
+        persist_info: bool | None = None,
     ) -> None:
         super().__init__(level=min_level)
         self._cfg = config
@@ -715,6 +982,7 @@ class DatabaseLogHandler(logging.Handler):
         # before logging is configured can recurse into logging itself.
         self._resolved = False
         self._enabled = enabled
+        self._persist_info = persist_info
 
     # -- activation ------------------------------------------------------
 
@@ -726,7 +994,7 @@ class DatabaseLogHandler(logging.Handler):
         try:
             cfg = self._cfg or load_database_config("audit")
             self._cfg = cfg
-            self._store = DatabaseLogStore(config=cfg)
+            self._store = DatabaseLogStore(config=cfg, persist_info=self._persist_info)
             provider = getattr(cfg, "provider", None)
             self._provider_name = str(getattr(provider, "value", provider) or "unknown")
             self._domain = str(getattr(cfg, "domain", "") or "audit")
@@ -770,7 +1038,10 @@ class DatabaseLogHandler(logging.Handler):
     def _persist(self, store: DatabaseLogStore, record: logging.LogRecord) -> None:
         level = record.levelname or logging.getLevelName(record.levelno)
         if level not in ("WARNING", "ERROR", "CRITICAL"):
-            return
+            # INFO reaches the sink only when the operator (or an explicit
+            # handler override) enabled it; see DatabaseLogStore.record.
+            if level != "INFO" or not store._info_persistence_enabled():
+                return
         logger_name = record.name or ""
         # structlog's ``event`` is the message; the rendered text is what a
         # plain stdlib caller passed. Prefer the bound event name.
@@ -833,6 +1104,7 @@ def install_database_log_handler(
     config: DatabaseConfig | None = None,
     *,
     enabled: bool | None = None,
+    persist_info: bool | None = None,
 ) -> DatabaseLogHandler | None:
     """Install the app-wide DB sink on the root logger; idempotent.
 
@@ -850,7 +1122,7 @@ def install_database_log_handler(
     """
     try:
         uninstall_database_log_handler()
-        handler = DatabaseLogHandler(config=config, enabled=enabled)
+        handler = DatabaseLogHandler(config=config, enabled=enabled, persist_info=persist_info)
         _mark_sink_handler(handler)
         root = logging.getLogger()
         root.addHandler(handler)
