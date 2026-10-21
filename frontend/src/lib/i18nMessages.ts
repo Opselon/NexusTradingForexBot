@@ -37,6 +37,7 @@ import { MESSAGES as liquidity } from "@/features/liquidity/i18n";
 import { MESSAGES as marketplace } from "@/features/marketplace/i18n";
 import { MESSAGES as modelStudio } from "@/features/model-studio/i18n";
 import { MESSAGES as news } from "@/features/news/i18n";
+import { MESSAGES as observability } from "@/features/observability/i18n";
 import { MESSAGES as positionAdviser } from "@/features/position-adviser/i18n";
 import { MESSAGES as provisioning } from "@/features/provisioning/i18n";
 import { MESSAGES as research } from "@/features/research/i18n";
@@ -74,6 +75,7 @@ for (const scope of [
   marketplace,
   modelStudio,
   news,
+  observability,
   positionAdviser,
   provisioning,
   research,

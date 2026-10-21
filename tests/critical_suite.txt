@@ -41,6 +41,7 @@ tests/unit/test_agent17_oos_hard_gate.py
 tests/unit/test_agent5_bug249_251_252.py
 tests/unit/test_agent6_execution_contract.py
 tests/unit/test_ai_reversal_deadlock.py
+tests/unit/test_api_v1_observability_logs.py
 tests/unit/test_audit_flush_contract.py
 tests/unit/test_audit_legacy4_surface.py
 tests/unit/test_audit_pg_read_plane.py
@@ -162,6 +163,7 @@ tests/unit/test_news_bridge_contract_phase13b.py
 tests/unit/test_news_bridge_finalize_phase13b.py
 tests/unit/test_nse_lifecycle_regression_matrix.py
 tests/unit/test_obs_trace_chain.py
+tests/unit/test_observability_log_store.py
 tests/unit/test_optimizers_schedulers.py
 tests/unit/test_order_lifecycle.py
 tests/unit/test_order_manager_exit_bugs.py
