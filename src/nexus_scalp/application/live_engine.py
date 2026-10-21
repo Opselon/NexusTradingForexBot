@@ -2335,6 +2335,37 @@ class LiveEngine:
             lambda v: setattr(self, "_history_sync_started", v),
         )
 
+    async def _shutdown_phase(self, name: str, awaitable_factory) -> None:
+        """Run ONE teardown phase, recording its outcome (OBS-007).
+
+        Semantics are deliberately identical to the
+        ``with contextlib.suppress(Exception):`` blocks this replaces: a
+        failing phase MUST NOT abort teardown, because a partial close is
+        always better than a hung process holding a broker connection. What
+        changes is observability — before this, a phase that raised left no
+        trace at all, so "the engine stopped but X was never closed" was
+        undiagnosable from logs.
+        """
+        started = time.monotonic()
+        try:
+            await awaitable_factory()
+        except Exception as exc:
+            logger.warning(
+                "[SHUTDOWN_PHASE_FAILED] a teardown step raised; teardown continues",
+                phase="SHUTDOWN",
+                step=name,
+                error_type=type(exc).__name__,
+                error=str(exc)[:300],
+                duration_sec=round(time.monotonic() - started, 3),
+            )
+        else:
+            logger.info(
+                "[SHUTDOWN_PHASE_OK]",
+                phase="SHUTDOWN",
+                step=name,
+                duration_sec=round(time.monotonic() - started, 3),
+            )
+
     async def _shutdown_async(self) -> None:
         # BUG-304: idempotent teardown with truthful completion state.
         # RuntimeLoop calls this on normal loop exit, while ShutdownSupervisor
@@ -2354,70 +2385,91 @@ class LiveEngine:
                 await asyncio.sleep(0.05)
             return
         self._shutdown_in_progress = True
+        # OBS-007 (2026-08-31): the teardown wrapped every phase in
+        # contextlib.suppress(Exception), so a phase that failed left NO
+        # evidence at all - two observed boots produced zero STOPPING->
+        # STOPPED traces and a predecessor could die silently. Each phase
+        # now records its own outcome. Suppression semantics are unchanged
+        # (one bad phase must not abort teardown), but a swallowed failure
+        # is no longer invisible.
+        _t_shutdown = time.monotonic()
+        logger.info(
+            "[STOPPING] engine shutdown beginning",
+            phase="SHUTDOWN",
+            step="begin",
+        )
         try:
             # Stop the accounting worker first (derived refresh, not financial truth).
-            with contextlib.suppress(Exception):
-                await self._stop_accounting_worker()
+            await self._shutdown_phase("accounting_worker", self._stop_accounting_worker)
 
             # ACCOUNT HISTORY: stop the broker-history sync worker.
-            with contextlib.suppress(Exception):
-                await self._stop_history_sync_worker()
+            await self._shutdown_phase("history_sync_worker", self._stop_history_sync_worker)
 
             # PHASE 09: stop the intelligence worker (derived intelligence, isolated).
-            with contextlib.suppress(Exception):
-                await self._stop_intelligence_worker()
+            await self._shutdown_phase("intelligence_worker", self._stop_intelligence_worker)
 
             # PHASE 09B: stop the strategy research worker (isolated).
-            with contextlib.suppress(Exception):
-                await self._stop_research_worker()
+            await self._shutdown_phase("research_worker", self._stop_research_worker)
 
             # STRATEGY FACTORY: stop the autonomous loop worker (kill switch).
-            with contextlib.suppress(Exception):
-                await self._stop_factory_worker()
+            await self._shutdown_phase("factory_worker", self._stop_factory_worker)
 
             # PHASE 10: stop the controlled training worker (isolated).
-            with contextlib.suppress(Exception):
-                await self._stop_training_worker()
+            await self._shutdown_phase("training_worker", self._stop_training_worker)
 
             # PHASE 11: stop the shadow-aggregation worker (isolated).
-            with contextlib.suppress(Exception):
-                await self._stop_shadow_worker()
+            await self._shutdown_phase("shadow_worker", self._stop_shadow_worker)
 
             # PHASE 12: stop the news intelligence worker (isolated, optional).
-            with contextlib.suppress(Exception):
-                await self._stop_news_worker()
+            await self._shutdown_phase("news_worker", self._stop_news_worker)
 
             # TASK-13: stop the incident response worker (isolated).
-            with contextlib.suppress(Exception):
-                await self._stop_incident_worker()
+            await self._shutdown_phase("incident_worker", self._stop_incident_worker)
 
             # Cancel retrain task safely
-            with contextlib.suppress(Exception):
+            async def _phase_retrain_task_cancel():
                 if self._retrain_task and not self._retrain_task.done():
                     self._retrain_task.cancel()
                     with contextlib.suppress(Exception):
                         await self._retrain_task
 
-            with contextlib.suppress(Exception):
+            await self._shutdown_phase("retrain_task_cancel", _phase_retrain_task_cancel)
+
+            async def _phase_adapter():
                 self.adapter.disconnect()
+
+            await self._shutdown_phase("adapter", _phase_adapter)
 
             # BUG-297: release the evaluator's reused SQLite handles before the
             # repository closes, so no registry-reader handle outlives shutdown.
-            with contextlib.suppress(Exception):
+            async def _phase_experience_evaluator():
                 self.experience_evaluator.close()
 
-            with contextlib.suppress(Exception):
+            await self._shutdown_phase("experience_evaluator", _phase_experience_evaluator)
+
+            async def _phase_audit():
                 self.audit.close()
 
-            with contextlib.suppress(Exception):
+            await self._shutdown_phase("audit", _phase_audit)
+
+            async def _phase_candle_intel_store():
                 ci = getattr(self, "candle_intel", None)
                 if ci is not None:
                     ci.store.close()
 
-            with contextlib.suppress(Exception):
+            await self._shutdown_phase("candle_intel_store", _phase_candle_intel_store)
+
+            async def _phase_notifier():
                 self.notifier.notify_shutdown(reason="Engine Stopped")
 
-            logger.info("Engine shutdown complete.")
+            await self._shutdown_phase("notifier", _phase_notifier)
+
+            logger.info(
+                "[STOPPED] engine shutdown complete",
+                phase="SHUTDOWN",
+                step="complete",
+                duration_sec=round(time.monotonic() - _t_shutdown, 3),
+            )
         finally:
             self._shutdown_in_progress = False
             self._shutdown_completed = True

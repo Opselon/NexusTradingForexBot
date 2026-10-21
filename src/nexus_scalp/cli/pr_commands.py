@@ -14,6 +14,7 @@ from ``nexus_scalp.cli.app_factory`` (see ``api_commands.py`` / ``risk_commands.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -148,7 +149,17 @@ def report(
     ),
 ) -> None:
     """Publish ONE file-level evidence report for a pull request."""
-    _emit(_banner_text(), json_mode)
+    # In --json mode stdout is a MACHINE CONTRACT: exactly one JSON document,
+    # nothing else. The banner used to be emitted through the same channel with
+    # json_mode, so `--json > pr-evidence.json` produced
+    # `"NSE PR Evidence Reporter"` followed by the real payload and every
+    # consumer (the job summary, telegram_notify.py) failed with
+    # "Extra data: line 2 column 1 (char 27)". A banner is presentation: it
+    # belongs on stderr in json mode, or nowhere.
+    if json_mode:
+        print(_banner_text(), file=sys.stderr)
+    else:
+        console.print(f"[bold]{_banner_text()}[/bold]")
     transport = build_transport(use_gh=_prefer_gh())
     client = make_client(repo, transport=transport, cwd=_repo_dir())
     reporter = Reporter(

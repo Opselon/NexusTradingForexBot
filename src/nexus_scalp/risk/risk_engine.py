@@ -492,8 +492,26 @@ class RiskEngine:
                 entry_market_dist = current_tick.bid - proposal.proposed_entry
 
             if entry_market_dist < min_dist_price - 1e-6:
+                # Every field an operator needs to decide whether this is a
+                # broker-rule artefact or a stale-price bug. Before this the
+                # line carried NO context at all: 60+ identical warnings in a
+                # 2-minute soak were undiagnosable (which symbol? how far off?
+                # by how much?). The structured kwargs also make the flood
+                # groupable/dedupable by fingerprint downstream.
                 logger.warning(
-                    "Proposal rejected: Pending entry price is too close to market (Stops Level violation)"
+                    "Proposal rejected: Pending entry price is too close to market "
+                    "(Stops Level violation)",
+                    symbol=proposal.symbol,
+                    order_type=proposed_order_type.value,
+                    proposed_entry=round(float(proposal.proposed_entry), 5),
+                    market_bid=round(float(current_tick.bid), 5),
+                    market_ask=round(float(current_tick.ask), 5),
+                    entry_market_dist=round(float(entry_market_dist), 5),
+                    min_dist_price=round(float(min_dist_price), 5),
+                    shortfall=round(float(min_dist_price - entry_market_dist), 5),
+                    stops_level_points=symbol_info.stops_level,
+                    point=symbol_info.point,
+                    reason_code="STOPS_LEVEL_ENTRY_TOO_CLOSE",
                 )
                 return None
 
@@ -501,7 +519,19 @@ class RiskEngine:
         tp_dist_price = abs(proposal.proposed_entry - proposal.take_profit)
 
         if sl_dist_price < min_dist_price - 1e-6 or tp_dist_price < min_dist_price - 1e-6:
-            logger.warning("Proposal rejected: SL/TP distance smaller than broker stops level")
+            # Structured for the same reason as the entry-distance gate above:
+            # naked warnings cannot be diagnosed or grouped in a soak report.
+            logger.warning(
+                "Proposal rejected: SL/TP distance smaller than broker stops level",
+                symbol=proposal.symbol,
+                order_type=proposed_order_type.value,
+                sl_dist_price=round(float(sl_dist_price), 5),
+                tp_dist_price=round(float(tp_dist_price), 5),
+                min_dist_price=round(float(min_dist_price), 5),
+                stops_level_points=symbol_info.stops_level,
+                point=symbol_info.point,
+                reason_code="SLTP_BELOW_STOPS_LEVEL",
+            )
             return None
 
         # ----------------------------------------------------------------------
