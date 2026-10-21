@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.position_adviser.paths import resolve_under_root
 
 logger = get_logger("nexus_scalp.model_generation.certification")
 
@@ -84,15 +85,35 @@ def _bundle_artifact(bundle_dir: str | Path, model_id: str, suffix: str) -> Path
     is the trust boundary for model loading, so an id that cannot be confined
     is rejected instead of being normalised into something loadable.
 
-    The join is built from :func:`_confine_component`'s matched output, so the
-    value that reaches the filesystem is the sanitizer's return value and never
-    the caller's string. The post-join containment check stays as
-    defense-in-depth against a symlinked bundle root.
+    The join goes through :func:`~nexus_scalp.position_adviser.paths.resolve_under_root`,
+    the repo's established path sanitizer: it rebuilds the value from its own
+    whitelist match (so the taint chain ends at the sanitizer rather than at
+    the caller's string) and canonicalizes it inside the root. That is the same
+    barrier that closed the adviser's equivalent sinks, and using one sanitizer
+    keeps a single reviewed implementation instead of a second hand-rolled one.
+
+    The explicit containment re-check afterwards is deliberate: ``resolve``
+    follows symlinks, so a LINK planted inside the bundle could still land
+    outside it, and that must be refused rather than opened.
     """
     component = _confine_component(model_id, label="model id")
-    suffix_component = _confine_component(suffix.lstrip("."), label="artifact suffix")
+    # The suffix is a fixed literal at every call site (".pt", ".meta.json",
+    # ".scaler.npz", ".certificate.json"). It is still validated rather than
+    # trusted: an extension starting with exactly one dot, then a component.
+    # Anything else — a bare extension, a doubled dot, a separator — is refused
+    # instead of being normalised, so a malformed call cannot silently produce
+    # a different filename than the one the caller meant.
+    if not suffix.startswith(".") or suffix.startswith(".."):
+        raise CompatibilityError(f"LOAD_REJECTED: unsafe artifact suffix {suffix!r}")
+    suffix_component = _confine_component(suffix[1:], label="artifact suffix")
     root = Path(bundle_dir).resolve()
-    candidate = (root / f"{component}.{suffix_component}").resolve()
+    # ``resolve_under_root`` is the canonicalization barrier CodeQL models as a
+    # sanitizer. Its own whitelist match builds the joined value, so no tainted
+    # string reaches the filesystem; a non-existent bundle simply resolves to a
+    # path that is not there yet, and the caller's ``is_file()`` decides.
+    candidate = resolve_under_root(
+        f"{component}.{suffix_component}", root=root, label="model artifact"
+    )
     if candidate.parent != root:
         raise CompatibilityError(
             f"LOAD_REJECTED: model id {component!r} resolves outside the artifact bundle"
