@@ -306,6 +306,14 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         self._sent_count = 0
         self._failed_count = 0
         self._retry_count = 0
+        #: Coalesced duplicates (DEDUPLICATED terminal state). Counted
+        #: SEPARATELY from failures: a duplicate is the dedup filter doing
+        #: its job, not a delivery failure. The old code folded it into
+        #: _failed_count, so a day of repeated GENERIC alerts read
+        #: "sent=22 failed=1291" while the only real deliveries failed
+        #: zero times — health_state() reported WORKER_DEGRADED on a
+        #: healthy worker and every heartbeat carried the false alarm.
+        self._dedup_count: int = 0
         self._last_success: float | None = None
         self._last_failure: float | None = None
         self._last_failure_category: str = ""
@@ -418,10 +426,11 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         try:
             logger.info(
                 "[TELEGRAM_WORKER] event=HEARTBEAT queue_size=%d sent=%d failed=%d "
-                "last_success=%s last_failure=%s failure_category=%s",
+                "deduped=%d last_success=%s last_failure=%s failure_category=%s",
                 self._queue.qsize(),
                 self._sent_count,
                 self._failed_count,
+                self._dedup_count,
                 _fmt_ts(self._last_success),
                 _fmt_ts(self._last_failure),
                 self._last_failure_category or "-",
@@ -455,6 +464,7 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
             "queue_size": self._queue.qsize(),
             "sent_count": self._sent_count,
             "failed_count": self._failed_count,
+            "dedup_count": self._dedup_count,
             "retry_count": self._retry_count,
             "last_success": _fmt_ts(self._last_success),
             "last_failure": _fmt_ts(self._last_failure),
@@ -774,9 +784,17 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
                 backoff *= 2
 
         record.status = "FAILED_FINAL"
-        self._failed_count += 1
-        self._last_failure = time.time()
-        self._last_failure_category = record.category
+        # DEDUPLICATED is expected coalescing, not a failure (see the comment
+        # below): count it on _dedup_count and do NOT touch the failure
+        # telemetry. The old path set _last_failure here too, so a healthy
+        # day of repeated alerts kept the heartbeat's last_failure fresh and
+        # the degraded verdict alive forever.
+        if record.category == "DEDUPLICATED":
+            self._dedup_count += 1
+        else:
+            self._failed_count += 1
+            self._last_failure = time.time()
+            self._last_failure_category = record.category
         # DEDUPLICATED is expected coalescing, not a failure — debug only.
         # The previous spam was ~10 FAILED_FINAL/1s at the same timestamp.
         if record.category == "DEDUPLICATED":

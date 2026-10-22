@@ -56,18 +56,22 @@ LOG_PERSISTENCE_ENABLED_SETTING_KEY = "database.log_persistence.enabled"
 
 
 def _persistence_enabled() -> bool:
-    """Return the explicit opt-in flag; settings failures fail closed."""
-    try:
-        from nexus_scalp.settings.service import SettingsDatabase
+    """Return whether the direct persist sink is active; default ON.
 
-        settings = SettingsDatabase()
-        try:
-            row = settings.get(LOG_PERSISTENCE_ENABLED_SETTING_KEY)
-            return bool(row and row.value)
-        finally:
-            settings.close()
+    Same semantics as :func:`nexus_scalp.database.log_store.
+    log_persistence_enabled` — a missing or unreadable row means ON (the
+    operator ask is "errors and warnings from the WHOLE app, in the DB"),
+    a stored ``0``/``false``/``no``/``off``/``disabled`` means OFF. The old
+    ``bool(row and row.value)`` read every non-set state as False, which
+    silently disabled the sink for every default deployment — exactly the
+    "sink looked dead" failure mode the docstring warned about.
+    """
+    try:
+        from nexus_scalp.database.log_store import log_persistence_enabled
+
+        return log_persistence_enabled()
     except Exception:
-        return False
+        return True
 
 
 def _persist_event(level: str, context: dict[str, Any]) -> None:
