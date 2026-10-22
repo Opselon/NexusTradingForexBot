@@ -39,14 +39,19 @@ class UndefinedTable(Exception):  # noqa: N818 - mirrors psycopg.errors.Undefine
     """
 
 
-class _FreshPgDriver(SQLiteDriver):
-    """SQLite-shaped driver that reports a fresh database's PG behavior.
+class _RecordingDriver(SQLiteDriver):
+    """A connected driver that records every statement it is asked to run.
 
-    ``ping()`` succeeds (the connection is fine); ``scalar`` raises the
-    UndefinedTable the real psycopg driver raises against an empty cluster.
-    Subclassing SQLiteDriver keeps the driver contract without requiring a
-    live psycopg connection in a unit test.
+    ``relation_present`` models the target database: a fresh PostgreSQL has no
+    ``schema_migrations`` yet. ``scalar`` distinguishes the catalog question
+    from the version read so the test can assert which one was issued.
     """
+
+    def __init__(self, config: Any, *, relation_present: bool, version_error: Any = None):
+        super().__init__(config)
+        self.relation_present = relation_present
+        self.version_error = version_error
+        self.statements: list[str] = []
 
     def ping(self) -> bool:
         return True
@@ -57,18 +62,24 @@ class _FreshPgDriver(SQLiteDriver):
     def table_count(self) -> int:
         return 3
 
-    def scalar(self, *args: Any, **kwargs: Any) -> Any:
-        raise UndefinedTable('relation "schema_migrations" does not exist\nLINE 1: ...')
+    def scalar(self, sql: str = "", args: Any = None, **kwargs: Any) -> Any:
+        self.statements.append(sql)
+        if "to_regclass" in sql:
+            return self.relation_present
+        if self.version_error is not None:
+            raise self.version_error
+        return 7
+
+    def version_statements(self) -> list[str]:
+        """The statements that would FAIL against a missing relation."""
+        return [
+            s
+            for s in self.statements
+            if "FROM schema_migrations" in s or "FROM schema_meta" in s
+        ]
 
 
-class _OtherFailureDriver(_FreshPgDriver):
-    """scalar raises an UNRELATED failure: must stay UNKNOWN, not NOT_PROV."""
-
-    def scalar(self, *args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError("column schema_migrations.version does not exist")
-
-
-def _load_pg(monkeypatch: Any, driver_cls: type) -> None:
+def _load_pg(monkeypatch: Any, driver_factory: Any) -> None:
     cfg = DatabaseConfig(
         provider=DatabaseProvider.POSTGRESQL,
         domain="audit",
@@ -83,7 +94,9 @@ def _load_pg(monkeypatch: Any, driver_cls: type) -> None:
         lambda domain, env=None, **kwargs: cfg,
         raising=True,
     )
-    monkeypatch.setattr("nexus_scalp.database.health.get_driver", driver_cls, raising=True)
+    monkeypatch.setattr(
+        "nexus_scalp.database.health.get_driver", driver_factory, raising=True
+    )
 
 
 def _capture_warnings(monkeypatch: Any) -> list[str]:
@@ -103,8 +116,15 @@ def _capture_warnings(monkeypatch: Any) -> list[str]:
 
 
 def test_fresh_pg_reports_not_provisioned(monkeypatch: Any) -> None:
-    """UndefinedTable on a connected driver => NOT_PROVISIONED, no error text."""
-    _load_pg(monkeypatch, _FreshPgDriver)
+    """Absent relation => NOT_PROVISIONED, and NO version SELECT is issued."""
+    captured: list[_RecordingDriver] = []
+
+    def factory(config: Any) -> _RecordingDriver:
+        driver = _RecordingDriver(config, relation_present=False)
+        captured.append(driver)
+        return driver
+
+    _load_pg(monkeypatch, factory)
     records = _capture_warnings(monkeypatch)
     svc = DatabaseHealthService()
     snap = svc.check_domain("audit")
@@ -112,14 +132,44 @@ def test_fresh_pg_reports_not_provisioned(monkeypatch: Any) -> None:
     assert snap["migration_state"] == "NOT_PROVISIONED"
     assert snap["schema_version"] == 0
     assert snap.get("error") in (None, "")
+    # The [PG-QUERY] error came from SELECTing the missing relation. The probe
+    # must not issue that statement at all on a not-yet-provisioned database.
+    assert captured[0].version_statements() == [], captured[0].statements
     assert any("DB_HEALTH_SCHEMA_NOT_PROVISIONED" in r for r in records), (
         f"warning record missing: {records}"
     )
 
 
+def test_provisioned_pg_reads_version(monkeypatch: Any) -> None:
+    """The normal path still reads MAX(version) once the relation exists."""
+    captured: list[_RecordingDriver] = []
+
+    def factory(config: Any) -> _RecordingDriver:
+        driver = _RecordingDriver(config, relation_present=True)
+        captured.append(driver)
+        return driver
+
+    _load_pg(monkeypatch, factory)
+    records = _capture_warnings(monkeypatch)
+    svc = DatabaseHealthService()
+    snap = svc.check_domain("audit")
+    assert snap["migration_state"] == "CURRENT"
+    assert snap["schema_version"] == 7
+    assert captured[0].version_statements(), "expected a version read"
+    assert not any("DB_HEALTH_SCHEMA_NOT_PROVISIONED" in r for r in records), records
+
+
 def test_other_scalar_failures_stay_unknown(monkeypatch: Any) -> None:
     """A failure that is NOT a missing relation degrades exactly as before."""
-    _load_pg(monkeypatch, _OtherFailureDriver)
+
+    def factory(config: Any) -> _RecordingDriver:
+        return _RecordingDriver(
+            config,
+            relation_present=True,
+            version_error=RuntimeError("column schema_migrations.version missing"),
+        )
+
+    _load_pg(monkeypatch, factory)
     records = _capture_warnings(monkeypatch)
     svc = DatabaseHealthService()
     snap = svc.check_domain("audit")

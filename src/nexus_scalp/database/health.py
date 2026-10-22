@@ -245,30 +245,27 @@ class DatabaseHealthService:
             # SQLite uses the migration engine. PostgreSQL reads its own metadata.
             try:
                 if cfg.is_postgresql:
-                    try:
+                    # Ask the catalog whether the relation exists instead of
+                    # SELECTing from it and catching the failure: the driver's
+                    # query-logging wrapper records a raised statement as a
+                    # [PG-QUERY] ERROR before the exception ever reaches this
+                    # frame, so a try/except here cannot keep a healthy
+                    # first boot out of the error stream. to_regclass() returns
+                    # NULL for a missing relation and never raises.
+                    if not _pg_relation_exists(driver, "schema_migrations"):
+                        out["schema_version"] = 0
+                        out["migration_state"] = "NOT_PROVISIONED"
+                        logger.warning(
+                            "[DB-HEALTH] event=DB_HEALTH_SCHEMA_NOT_PROVISIONED "
+                            "domain=%s detail=schema_migrations absent; database "
+                            "has not been provisioned yet (expected on first boot "
+                            "before the domain migration runs)",
+                            domain,
+                        )
+                    else:
                         version = driver.scalar(
                             "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
                         )
-                    except Exception as probe_exc:
-                        # A database that has not been provisioned yet has no
-                        # schema_migrations relation. That is a legitimate first-boot
-                        # state, not a query failure: report NOT_PROVISIONED (and
-                        # name it once at warning) instead of leaking a raw
-                        # [PG-QUERY] error that makes a healthy boot look broken.
-                        if _is_missing_relation(probe_exc):
-                            out["schema_version"] = 0
-                            out["migration_state"] = "NOT_PROVISIONED"
-                            logger.warning(
-                                "[DB-HEALTH] event=DB_HEALTH_SCHEMA_NOT_PROVISIONED "
-                                "domain=%s detail=schema_migrations absent; database "
-                                "has not been provisioned yet (expected on first boot "
-                                "before the domain migration runs)",
-                                domain,
-                            )
-                            version = None
-                        else:
-                            raise
-                    if version is not None:
                         out["schema_version"] = int(version or 0)
                         out["migration_state"] = "CURRENT"
                 else:
@@ -454,21 +451,24 @@ class DatabaseHealthService:
         }
 
 
-def _is_missing_relation(exc: BaseException) -> bool:
-    """True when the failure is PostgreSQL's ``UndefinedTable`` for a probe.
+def _pg_relation_exists(driver: Any, relation: str) -> bool:
+    """True when ``relation`` exists, asked safely via PG's catalog function.
 
-    A brand-new database legitimately has no ``schema_migrations`` relation
-    until the domain migration runs. Callers use this to distinguish "not
-    provisioned yet" from a real query failure, so a healthy first boot does
-    not emit an error record. Database-agnostic by design: it matches the
-    exception type name rather than importing a psycopg class (the health probe
-    must not hard-depend on a driver package).
+    ``to_regclass('schema_migrations')`` returns NULL for a missing relation
+    and never raises, so a first boot on an empty database is a normal FALSE
+    rather than a failed query. Using it also keeps the driver's query-logging
+    wrapper from classifying a healthy pre-provisioning probe as a
+    ``[PG-QUERY]`` error — a raised statement is logged at ERROR before any
+    caller's try/except can see it.
+
+    Defensive by design: any failure to answer the catalog question returns
+    True, so the caller falls through to the original SELECT and reports the
+    real error through the documented UNKNOWN path instead of guessing.
     """
-    if type(exc).__name__ in {"UndefinedTable", "ProgrammingError"}:
-        message = str(exc).lower()
-        if "does not exist" in message or "undefinedtable" in message:
-            return True
-    return False
+    try:
+        return bool(driver.scalar(f"SELECT to_regclass('{relation}') IS NOT NULL"))
+    except Exception:
+        return True
 
 
 def _engine_path_for(cfg: DatabaseConfig) -> str:
