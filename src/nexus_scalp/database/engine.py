@@ -295,8 +295,20 @@ class DatabaseMigrationEngine:
                 if self.acquired:
                     try:
                         self.path.unlink(missing_ok=True)
-                    except OSError:
-                        pass
+                    except OSError as unlink_exc:
+                        # Teardown of the migration lock. A failure here
+                        # leaves a STALE lock file behind: the NEXT migration
+                        # run then believes the engine is still running
+                        # (operator-facing, misleading, and the file survives
+                        # any number of restarts). Debug — same cadence as
+                        # the lock operations it accompanies.
+                        logger.debug(
+                            "[DB-MIGRATION] event=DB_MIGRATION_LOCK_RELEASE_FAILED "
+                            "error_type=%s (the migration lock file could "
+                            "not be removed; the next run will report the "
+                            "engine as busy until it is cleared)",
+                            type(unlink_exc).__name__,
+                        )
 
         return _Lock(self._lock_path)
 
@@ -431,8 +443,20 @@ class DatabaseMigrationEngine:
                     )
             finally:
                 con.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            # An empty drift list is indistinguishable from a CLEAN schema,
+            # so swallowing here makes any actual drift (including an
+            # out-of-band tamper) invisible to the operator. Emit the
+            # failure so an empty/unknown drift set is never read as
+            # "verified no drift".
+            logger.error(
+                "[DB_MIGRATION] event=DB_MIGRATION_DRIFT_PROBE_FAILED "
+                "database=%s error=%s (drift unverified: an empty drift "
+                "list below is NOT proof the schema matches the manifest; "
+                "tamper detection is invisible for this call)",
+                self.domain.value,
+                type(exc).__name__,
+            )
         return drift
 
     def _create_baseline_tables(self, con: sqlite3.Connection) -> None:
@@ -852,8 +876,19 @@ class DatabaseMigrationEngine:
                 applied_ids = self._applied_ids(con)
             finally:
                 con.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            # Silence here is actively wrong: with applied_ids left EMPTY the
+            # pending-list rebuild below re-lists already-applied migrations
+            # (or, worse, reports DB_MIGRATION_NOT_REQUIRED for a database
+            # whose history was never read). Emit the failure so an operator
+            # knows this plan was computed against an unknown applied set.
+            logger.error(
+                "[DB_MIGRATION] event=DB_MIGRATION_PLAN_PROBE_FAILED "
+                "database=%s error=%s (applied-migration set unknown; plan "
+                "reported as not required / pending anyway)",
+                self.domain.value,
+                type(exc).__name__,
+            )
         for mig in self.migrations:
             if mig.migration_id in applied_ids:
                 continue
@@ -913,8 +948,18 @@ class DatabaseMigrationEngine:
                 history_count = con.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
             finally:
                 con.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            # The probe never ran: history_count stayed 0 and
+            # last_migration stayed {}. Emit the failure so the
+            # operator does not read those sentinels as "this database
+            # has never been migrated".
+            logger.error(
+                "[DB_MIGRATION] event=DB_MIGRATION_STATUS_PROBE_FAILED "
+                "database=%s error=%s (history_count reported as 0 / "
+                "last_migration empty, drift unverified)",
+                self.domain.value,
+                type(exc).__name__,
+            )
         pending_ids = {p["migration_id"] for p in plan["pending"]}
         drift = self._detect_drift(pending_ids)
         integrity = self._integrity()

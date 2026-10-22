@@ -296,7 +296,19 @@ class DatabaseHealthService:
         for domain in self.domains:
             try:
                 configured.add(self.resolve_config(domain).provider.value)
-            except Exception:
+            except Exception as exc:
+                # Skipping the domain here shrinks the configured set: a
+                # snapshot over 2 domains where one config fails to resolve
+                # reports active_provider as if only 1 was configured (or
+                # "UNKNOWN" when it is the only one). Name the domain so the
+                # shrunken summary is attributable.
+                logger.warning(
+                    "[DB-HEALTH] event=DB_HEALTH_RESOLVE_CONFIG_SKIPPED domain=%s "
+                    "error_type=%s (domain EXCLUDED from the configured "
+                    "provider set; active_provider may be under-reported)",
+                    domain,
+                    type(exc).__name__,
+                )
                 continue
         active = (
             configured.pop()
@@ -474,6 +486,16 @@ def load_ui_config(workspace: str | None = None) -> dict[str, Any]:
             except (TypeError, ValueError):
                 out["postgres"] = None
         db.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        # The settings DB could not be read at all. out stays provider=
+        # "sqlite" + postgres=None — when the ACTUAL configuration was
+        # PostgreSQL, this payload reports the wrong provider with no
+        # trace of why. Error, with the unverified-payload caveat named.
+        logger.error(
+            "[DB-HEALTH] event=DB_HEALTH_SETTINGS_READ_FAILED error_type=%s "
+            "(settings DB unreadable: provider/postgres section reported as "
+            "unknown-default rather than the true configured values; treat "
+            "this payload as unverified, not as 'configured for sqlite')",
+            type(exc).__name__,
+        )
     return out

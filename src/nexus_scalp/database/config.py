@@ -22,7 +22,10 @@ from pathlib import Path
 from typing import Any
 
 from nexus_scalp.database.provider import DatabaseProvider
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.secret_store import SecureSecretStore
+
+_logger = get_logger("nexus_scalp.database.config")
 
 
 class DatabaseConfigError(RuntimeError):
@@ -547,14 +550,38 @@ def load_database_config(
                     cfg = pg
         except DatabaseConfigError:
             raise
-        except Exception:
-            pass
+        except Exception as exc:
+            # The persisted-DB-config overlay read/apply failed (settings DB
+            # unreadable, or a row shape DatabaseConfigError does not cover).
+            # Silence here means cfg keeps its YAML-fallback value and the
+            # operator's PERSISTED provider/config was silently ignored —
+            # a sibling failure mode of the DatabaseConfigError contract
+            # above. Warn with the resolve-from-fallback note.
+            _logger.warning(
+                "[DB-CONFIG] event=DB_CONFIG_PERSISTED_ROW_UNPARSABLE domain=%s "
+                "error_type=%s (persisted database config overlay skipped; "
+                "continuing with the YAML-fallback config for this category)",
+                domain,
+                type(exc).__name__,
+            )
         finally:
             if db is not None:
                 try:
                     db.close()
-                except Exception:
-                    pass
+                except Exception as close_exc:
+                    # The handle may already be poisoned by the same failure
+                    # that broke the overlay read. The record is DEBUG — the
+                    # overlay warning above already names the primary failure
+                    # and this is its teardown echo — but a totally silent
+                    # closed-handle leak (no overlay warning because the read
+                    # succeeded and only close failed) is not.
+                    _logger.debug(
+                        "[DB-CONFIG] event=DB_CONFIG_SETTINGS_DB_CLOSE_FAILED "
+                        "domain=%s error_type=%s (settings DB handle close "
+                        "failed; handle released by GC)",
+                        domain,
+                        type(close_exc).__name__,
+                    )
 
     # --- environment overrides (containers / CI / one-off runs) ------------
     # BUG-PGENV / doctor-credential-mismatch: an operator who exports ONLY
