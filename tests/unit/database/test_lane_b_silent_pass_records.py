@@ -260,6 +260,9 @@ def test_load_database_config_close_failure_logs(monkeypatch) -> None:
 def test_load_database_config_healthy_path_silent(monkeypatch) -> None:
     probe = LogProbe()
     monkeypatch.setattr(config_mod, "_logger", probe)
+    # seam opt-out as in the failure-path tests above: the autouse
+    # NEXUS_AUDIT_DB fixture must not skip the persisted-settings block.
+    monkeypatch.delenv("NEXUS_AUDIT_DB", raising=False)
 
     class QuietDB:
         def get(self, key: str):
@@ -268,9 +271,7 @@ def test_load_database_config_healthy_path_silent(monkeypatch) -> None:
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(
-        settings_service_mod, "SettingsDatabase", lambda *a, **k: QuietDB(), raising=False
-    )
+    monkeypatch.setattr(config_mod, "SettingsDatabase", lambda *a, **k: QuietDB(), raising=False)
     config_mod.load_database_config("audit")
     assert probe.emitted == []
 
