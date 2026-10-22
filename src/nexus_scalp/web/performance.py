@@ -79,6 +79,14 @@ def _header(scope: Scope, name: bytes) -> str:
     return ""
 
 
+def _header_from(message: Message, name: bytes) -> str:
+    """First value of ``name`` in a ``http.response.start`` headers list."""
+    for key, value in message.get("headers", []):
+        if key.lower() == name:
+            return value.decode("latin-1") if isinstance(value, bytes) else str(value)
+    return ""
+
+
 def _accepts_gzip(scope: Scope) -> bool:
     header = _header(scope, b"accept-encoding")
     if not header:
@@ -93,11 +101,16 @@ def _accepts_gzip(scope: Scope) -> bool:
     return False
 
 
+def _is_streaming(content_type: str) -> bool:
+    """True for content types that must reach the client frame-by-frame."""
+    lowered = content_type.lower()
+    return any(lowered.startswith(prefix) for prefix in _STREAMING_TYPES)
+
+
 def _is_cacheable(method: str, content_type: str) -> bool:
     if method not in {"GET", "HEAD"}:
         return False
-    lowered = content_type.lower()
-    return not any(lowered.startswith(prefix) for prefix in _STREAMING_TYPES)
+    return not _is_streaming(content_type)
 
 
 def _is_compressible(content_type: str) -> bool:
@@ -140,9 +153,26 @@ class PerfMiddleware:
         messages: list[Message] = []
         buffered = 0
         oversize = False
+        passthrough = False
 
         async def _capture(message: Message) -> None:
-            nonlocal buffered, oversize
+            nonlocal buffered, oversize, passthrough
+            # STREAMING CONTRACT: an event stream has no end — buffering it
+            # withholds every frame until the generator finishes, which for
+            # SSE is never. The response start carries the content type, so
+            # the decision is made there and every later message is forwarded
+            # in-order as it arrives (headers already sent, nothing to hash).
+            if passthrough:
+                await send(message)
+                return
+            if message["type"] == "http.response.start" and _is_streaming(
+                _header_from(message, b"content-type")
+            ):
+                passthrough = True
+                for pending in messages:
+                    await send(pending)
+                await send(message)
+                return
             if message["type"] == "http.response.body" and not oversize:
                 buffered += len(message.get("body", b"") or b"")
                 if buffered > self.config.max_buffer_bytes:
@@ -155,6 +185,9 @@ class PerfMiddleware:
             return
 
         await self.app(scope, receive, _capture)
+
+        if passthrough:
+            return
 
         if oversize:
             for message in messages:

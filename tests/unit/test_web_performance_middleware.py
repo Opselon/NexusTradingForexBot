@@ -112,6 +112,61 @@ async def test_sse_streams_are_never_buffered_or_gzipped():
 
 
 @pytest.mark.asyncio
+async def test_sse_frames_flow_incrementally_not_after_the_generator_ends():
+    """SSE is streamed frame-by-frame, never withheld until the app returns.
+
+    Regression for TestSSESanitization::test_07_sse_payload_has_no_traceback
+    (real uvicorn + raw socket — the SSE generator never ends, so buffering
+    that awaited generator completion starved the client until TimeoutError).
+    A single generating app yields frame1, sleeps, then frame2; the middleware
+    must forward frame1 BEFORE frame2 is produced.
+    """
+    import asyncio
+
+    produced: list[str] = []
+    #: (frame body, how many frames the APP had produced when it arrived).
+    observed: list[tuple[str, int]] = []
+
+    async def sse_app(scope, receive, send):
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream")],
+            }
+        )
+        await send({"type": "http.response.body", "body": b"event: state\ndata: {}\n\n"})
+        produced.append("frame1-sent")
+        await asyncio.sleep(0.05)
+        await send({"type": "http.response.body", "body": b"event: tick\ndata: {}\n\n"})
+        produced.append("frame2-sent")
+
+    async def capture(message):
+        if message["type"] == "http.response.body" and message.get("body"):
+            observed.append((message["body"].decode(), len(produced)))
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/ticks/stream",
+        "headers": [],
+        "query_string": b"",
+    }
+    await PerfMiddleware(sse_app, config())(scope, receive, capture)
+    # Both frames reached the client, in order and unmodified...
+    assert [body for body, _ in observed] == [
+        "event: state\ndata: {}\n\n",
+        "event: tick\ndata: {}\n\n",
+    ]
+    # ...and frame1 arrived BEFORE the app produced frame2 — i.e. the
+    # middleware forwarded it instead of holding it for generator completion.
+    assert observed[0][1] == 0, f"first frame was buffered: {observed}"
+
+
+@pytest.mark.asyncio
 async def test_the_second_poll_is_a_bodyless_304():
     app = PerfMiddleware(make_app(), config())
     _status, headers, body = await run(app, headers=[(b"accept-encoding", b"gzip")])
