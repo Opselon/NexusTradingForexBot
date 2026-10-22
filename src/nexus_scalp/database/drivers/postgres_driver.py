@@ -75,6 +75,7 @@ def _pg_rate_limited_probe_warning(event_name: str, table: str, kind: str) -> No
         emissions + 1,
     )
 
+
 #: Case-insensitive map: SQLite/logical type -> PostgreSQL DDL type.
 PG_TYPE_MAP: dict[str, str] = {
     "INTEGER": "INTEGER",
@@ -309,6 +310,7 @@ class _DriverQueryTimer:
                     "query report did not reach the log store)",
                     self.op,
                     type(log_exc).__name__,
+                    type(log_exc.__cause__).__name__,
                 )
             return None
 
@@ -592,9 +594,7 @@ def _resolve_conflict_target(table: str, conn: Any) -> tuple[list[str], list[str
         # dedup on re-insert, no REPLACE rewrite). Rate-limited warning so
         # the degradation is operator-visible (resist-the-flood on the hot
         # path; every occurrence still skips its dedup).
-        _pg_rate_limited_probe_warning(
-            "PG_CONFLICT_TARGET_LOOKUP_FAILED", table, "primary_keys"
-        )
+        _pg_rate_limited_probe_warning("PG_CONFLICT_TARGET_LOOKUP_FAILED", table, "primary_keys")
     try:
         rows = conn.execute(
             "SELECT kcu.column_name FROM information_schema.table_constraints tc "

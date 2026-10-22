@@ -78,6 +78,7 @@ def _rate_limited_resolver_warning(resolver: str, error: BaseException) -> None:
         "in force; the runtime swap is NOT effective for this plane)"
     )
 
+
 _WriteItem = tuple[str, tuple]
 
 
