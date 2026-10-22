@@ -240,8 +240,19 @@ def resolve_audit_db_url(db_url: str = _DEFAULT_AUDIT_DB_URL, config: Any = None
                 from nexus_scalp.database.config import build_postgres_url
 
                 return build_postgres_url(persisted)
-        except Exception:  # pragma: no cover - settings DB unavailable
-            pass
+        except Exception as exc:  # pragma: no cover - settings DB unavailable
+            # The persisted-provider probe is optional (the URL from the
+            # callers' explicit argument or NEXUS_AUDIT_DB stays authoritative
+            # on failure), but a settings DB that READS as sqlite while
+            # actually being broken here flips every default-constructed
+            # AuditRepository to SQLite. Debug: resolve_audit_db_url runs for
+            # every repository construction, so anything hotter floods.
+            logger.debug(
+                "[AUDIT-DB] event=AUDIT_DB_PERSISTED_PROVIDER_PROBE_SKIPPED "
+                "error_type=%s (persisted provider lookup failed; the audit "
+                "DB stays on the explicit-url/sqlite default)",
+                type(exc).__name__,
+            )
     return db_url
 
 
@@ -419,8 +430,25 @@ class AuditRepository:
                 from nexus_scalp.release.paths import get_runtime_workspace
 
                 self._db_path = str(get_runtime_workspace() / self._db_path)
-            except Exception:
-                pass
+            except Exception as exc:
+                # BUG-149 anchoring failed (the release-paths module itself is
+                # unavailable or raised): the repo stays anchored to the raw
+                # process CWD. The NEXT launch may then resolve a DIFFERENT
+                # audit.db than this one (one tree per CWD) — the exact
+                # split-brain the anchoring exists to prevent. Debug record:
+                # this constructor runs for every repository instance (incl.
+                # tests, which construct dozens with no workspace), so a
+                # WARNING here would flood; the CWD itself stays the fact an
+                # operator needs to reconstruct which tree was used.
+                logger.debug(
+                    "[AUDIT-DB] event=AUDIT_DB_WORKSPACE_ANCHOR_SKIPPED "
+                    "error_type=%s db_path_stays_relative=%s (audit.db "
+                    "anchored to the process CWD, not the runtime workspace; "
+                    "frozen launches may read a different artifact tree "
+                    "than this instance)",
+                    type(exc).__name__,
+                    self._db_path,
+                )
             self._db_url = f"sqlite:///{self._db_path}"
         # Hold ONE persistent connection for the shared in-memory DB; the
         # shared cache is dropped when the last connection closes, so the
@@ -2407,8 +2435,18 @@ class AuditRepository:
             from nexus_scalp.strategies.factory.store import ensure_factory_context_columns
 
             ensure_factory_context_columns(conn)
-        except Exception:
-            pass
+        except Exception as exc:
+            # The context_matrices column guarantees live in the strategies'
+            # own store schema; failure here means factory_candidates keeps
+            # its old shape and every later context write degrades. Warn (a
+            # schema run is rare — no flood risk).
+            logger.warning(
+                "[AUDIT-DB] event=AUDIT_DB_FACTORY_CONTEXT_COLUMNS_SKIPPED "
+                "error_type=%s (factory_candidates context_matrices "
+                "guarantee skipped; context persistence for factory "
+                "candidates is degraded)",
+                type(exc).__name__,
+            )
 
         conn.execute(
             """
@@ -2541,8 +2579,16 @@ class AuditRepository:
             from nexus_scalp.research.store import ensure_registry_context_columns
 
             ensure_registry_context_columns(conn)
-        except Exception:
-            pass
+        except Exception as exc:
+            # Twin of the factory_candidates guard above: strategy_registry
+            # keeps its old shape and registry context persistence degrades.
+            logger.warning(
+                "[AUDIT-DB] event=AUDIT_DB_REGISTRY_CONTEXT_COLUMNS_SKIPPED "
+                "error_type=%s (strategy_registry context_matrices "
+                "guarantee skipped; context persistence for registered "
+                "strategies is degraded)",
+                type(exc).__name__,
+            )
 
         conn.execute(
             """
@@ -2986,8 +3032,17 @@ class AuditRepository:
                     host = parts.get("host", "localhost")
                     port = parts.get("port", "5432")
                     return f"postgresql://{host}:{port}/{name}"
-            except Exception:
-                pass  # DSN unparseable: fall back to the workspace path
+            except Exception as exc:
+                # DSN unparseable: fall back to the workspace path, but say
+                # so — an operator diffing the live DSN against the reported
+                # location otherwise cannot tell a parse failure from a real
+                # workspace anchor. Debug (location lookups are hot).
+                logger.debug(
+                    "[DB-FABRIC] event=DB_FABRIC_DSN_LOCATION_FALLBACK "
+                    "error_type=%s (DSN unparseable; the location string "
+                    "falls back to the workspace audit-postgresql path)",
+                    type(exc).__name__,
+                )
         try:
             from nexus_scalp.release.paths import get_runtime_workspace
 
@@ -3124,7 +3179,18 @@ class AuditRepository:
             from nexus_scalp.database.fabric import get_domain_backend
 
             backend = get_domain_backend("audit", readonly=True)
-        except Exception:
+        except Exception as exc:
+            # The fabric's read-side accessor failed (import crash or accessor
+            # raise). With backend=None the caller's documented default is
+            # returned and the row the operator asked for is NOT returned
+            # from the plane it lives in — an error, not a normal
+            # "not provisioned yet" degradation.
+            logger.error(
+                "[DB-FABRIC] event=DB_FABRIC_READ_PLANE_LOOKUP_FAILED stage=lookup "
+                "domain=audit error=%s (registered read plane unavailable; "
+                "gated reads will fall back to their documented defaults)",
+                type(exc).__name__,
+            )
             backend = None
         if backend is None:
             # No read plane is registered in THIS process yet. The fabric
@@ -3140,7 +3206,19 @@ class AuditRepository:
 
             try:
                 backend = ensure_read_plane("audit")
-            except Exception:
+            except Exception as exc:
+                # The lazy bootstrap failed as well. Both probe stages have
+                # now failed: log THIS one too so an operator reading only
+                # the second event can diagnose the bootstrap crash without
+                # having to correlate it against the lookup stage's error
+                # record (the two stages fail for different reasons).
+                logger.error(
+                    "[DB-FABRIC] event=DB_FABRIC_READ_PLANE_BOOTSTRAP_FAILED stage=bootstrap "
+                    "domain=audit error=%s (lazy ensure_read_plane bootstrap "
+                    "crashed; gated reads will fall back to their documented "
+                    "defaults until the fabric provisions a read plane)",
+                    type(exc).__name__,
+                )
                 backend = None
         if backend is None:
             return None
@@ -3194,8 +3272,21 @@ class AuditRepository:
                 operation=operation,
                 detail="no read plane registered for domain 'audit'",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            # The cross-store degradation tracker itself raised; the guard's
+            # own (legacy) rate-limited warning below still fires, but the
+            # escalation contract (WARNING -> ERROR after repeats) lives in
+            # note_degraded_read — without a record the escalation silently
+            # never happens. Debug: this meta-failure repeats on every
+            # degraded read and the primary degradation is already logged.
+            logger.debug(
+                "[DB-FABRIC] event=DB_FABRIC_DEGRADED_READ_NOTE_FAILED "
+                "op=%s error_type=%s (cross-store degraded-read tracker "
+                "raised; the escalation contract for this degradation is "
+                "NOT running)",
+                operation,
+                type(exc).__name__,
+            )
         state = getattr(self, "_provider_read_guard_state", None)
         if not isinstance(state, dict):
             state = {}
@@ -3620,8 +3711,20 @@ class AuditRepository:
                                 "dead_lettered": dead_lettered,
                             },
                         )
-                    except Exception:
-                        pass
+                    except Exception as log_exc:
+                        # The log-store report of THIS batch failure raised.
+                        # The stdlib ERROR immediately below still names the
+                        # batch failure itself, so this is only the meta-fact
+                        # (the structured sink is degraded while we are
+                        # reporting a write failure) — DEBUG, same cadence as
+                        # the batch failures it accompanies.
+                        logger.debug(
+                            "[AUDIT-DB] event=AUDIT_DB_BATCH_FAILURE_REPORT_FAILED "
+                            "batch=%d error_type=%s (structured failure report "
+                            "for the failed batch did not reach the log store)",
+                            len(batch),
+                            type(log_exc).__name__,
+                        )
                     logger.error(
                         "Audit batch insert failed; recovery applied "
                         "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",
@@ -3920,8 +4023,21 @@ class AuditRepository:
                         error=row_err,
                         payload_note=f"overflow drain replay failure (BUG-285) file={path.name}",
                     )
-                except Exception:
-                    pass
+                except Exception as dl_err:
+                    # The dead-letter write for THIS rejected row failed: the
+                    # ERROR above claimed the row was "durably dead-lettered
+                    # instead" and it is NOT — after the retire below, the
+                    # payload is gone forever. This is a durable-loss event,
+                    # not a logging nicety.
+                    logger.error(
+                        "[AUDIT-DB] event=AUDIT_DB_OVERFLOW_DEAD_LETTER_FAILED "
+                        "file=%s error_type=%s dl_error=%s (the rejected "
+                        "payload is NOT durably saved; it is retired below "
+                        "and lost)",
+                        path.name,
+                        type(row_err).__name__,
+                        type(dl_err).__name__,
+                    )
                 # The dead-letter row is now the durable copy: retire the
                 # file the same way a recovered one is retired (rename then
                 # delete) so the directory stays bounded even when a row is
@@ -5340,10 +5456,12 @@ class AuditRepository:
         by_action: dict[str, int] = {}
         by_group: dict[str, int] = {}
         total = 0
+        skipped_rows = 0
         for r in raw:
             try:
                 row = dict(r)
             except Exception:
+                skipped_rows += 1  # counted every time; never silently dropped
                 continue
             n = int(row.get("n") or 0)
             total += n
@@ -5353,6 +5471,32 @@ class AuditRepository:
             gval = row.get(second_key)
             gkey = str(gval) if gval not in (None, "") else "NOT_RECORDED"
             by_group[gkey] = by_group.get(gkey, 0) + n
+        if skipped_rows:
+            # Row-shape failures: counted every pass, warned rate-limited.
+            # The shapes here are dict-like mappings on both providers (the
+            # sqlite branch sets sqlite3.Row; the read-plane branch returns
+            # tuples of mappings), so the COUNT is the canonical fact and
+            # the latest row's class a cheap orientation aid.
+            # Resist-the-flood: one warning per operation per 300s window
+            # (the audit repo's keyed rate-limit contract).
+            state = getattr(self, "_audit_batch_row_shape_state", None)
+            if not isinstance(state, dict):
+                state = {}
+                self._audit_batch_row_shape_state = state
+            now = time.monotonic()
+            last_seen, emissions = state.get("get_decision_stats", (0.0, 0))
+            if not emissions or (now - float(last_seen)) >= 300.0:
+                state["get_decision_stats"] = (now, emissions + 1)
+                logger.warning(
+                    "[DB-FABRIC] event=AUDIT_BATCH_ROW_SHAPE_SKIP op=get_decision_stats "
+                    "skipped=%d emission=%d latest_row_class=%s (rows failing "
+                    "dict(row) materialisation are excluded from by_action/"
+                    "by_group; the distribution below may be narrower than "
+                    "the sampled slice)",
+                    skipped_rows,
+                    emissions + 1,
+                    type(raw[0]).__name__ if raw else "?",
+                )
         # The slice is the `bounded` newest rows. If fewer than `bounded` of
         # them fall inside the window, the slice reached beyond the window's
         # start — so every row the window contains was inside the slice and

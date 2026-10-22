@@ -113,7 +113,14 @@ class OutcomeRepairJob:
         for row in self._outcome_rows():
             try:
                 payload = json.loads(row.get("payload") or "{}")
-            except Exception:
+            except Exception as e:
+                # OBS-012 wave: a corrupt zero-R candidate must stay visible,
+                # not vanish from the repair scan.
+                logger.warning(
+                    "[BROKER_OUTCOME_REPAIR] candidate payload unreadable (skipped)",
+                    idempotency_key=str(row.get("idempotency_key", ""))[:24],
+                    error=type(e).__name__,
+                )
                 payload = {}
             r = float(row.get("realized_r_multiple") or 0.0)
             pnl = float(row.get("realized_pnl_usd") or 0.0)
@@ -135,7 +142,12 @@ class OutcomeRepairJob:
         """The immutable decision row for an outcome (for entry/SL etc.)."""
         try:
             return self.ledger.get_experience_by_key(idempotency_key)
-        except Exception:
+        except Exception as e:
+            logger.warning(
+                "[BROKER_OUTCOME_REPAIR] decision context lookup failed",
+                idempotency_key=str(idempotency_key)[:24],
+                error=type(e).__name__,
+            )
             return None
 
     # ------------------------------------------------------------------

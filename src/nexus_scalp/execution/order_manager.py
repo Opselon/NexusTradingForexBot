@@ -615,6 +615,12 @@ class OrderLifecycleManager:
         self._ai_flip_warn_times: MutableMapping[int, float] = BoundedLRUMap(
             "ai_flip_warn_stamps", maxsize=AI_FLIP_WARN_STAMPS_MAX
         )
+        # OBS-SILENT-PASS (Lane A F8): rate-limit stamps for
+        # ADVISER_FORGET_FAILED warnings (monotonic clock; log-spam guard
+        # only) — bounded like _ai_flip_warn_times.
+        self._adviser_forget_warn_times: MutableMapping[str, float] = BoundedLRUMap(
+            "adviser_forget_warn_stamps", maxsize=AI_FLIP_WARN_STAMPS_MAX
+        )
 
         import threading
 
@@ -1704,7 +1710,16 @@ class OrderLifecycleManager:
         """
         try:
             live = self.adapter.get_positions(symbol=None) or []
-        except Exception:
+        except Exception as verify_err:
+            # OBS-SILENT-PASS (Lane A F9): verification unavailable — we TRUST
+            # the adapter's close result (Direct is self-verifying; paper is
+            # synchronous) but the gap must be observable.
+            logger.warning(
+                "CLOSE_VERIFICATION_UNAVAILABLE: ticket=%s position probe raised %s — "
+                "trusting adapter close result (broker-side absence NOT verified)",
+                ticket,
+                verify_err,
+            )
             # Verification unavailable: trust the adapter's close result (the
             # Direct adapter is already self-verifying; paper simulation is
             # synchronous). Never treat an exception as proof the position is open.
@@ -3903,8 +3918,17 @@ class OrderLifecycleManager:
                     ):
                         ai_flip_detected = True
                         ai_flip_action = ActionType.BUY_STOP
-            except Exception:
-                pass
+            except Exception as flip_err:
+                # OBS-SILENT-PASS (Lane A F4): the AI directional-flip and
+                # fast-reversal exit SILENTLY never runs when the probability
+                # assembly raises — the failure must be visible because the
+                # position's exit path is being skipped.
+                logger.error(
+                    "AI_FLIP_PROB_ASSEMBLY_FAILED: ticket=%s probability-assembly for AI "
+                    "directional flip raised %s — fast-reversal exit SKIPPED for this pass",
+                    getattr(pos, "ticket", None),
+                    flip_err,
+                )
 
         if ai_flip_detected and ai_flip_action is not None:
             # TASK-EXIT-SEPARATION (c): the AI direction-flip EXIT (close +
@@ -4535,5 +4559,20 @@ class OrderLifecycleManager:
         if adviser is not None:
             try:
                 adviser.forget(ticket)
-            except Exception:
-                pass
+            except Exception as forget_err:
+                # OBS-SILENT-PASS (Lane A F8): per-ticket adviser state may
+                # outlive the position (ticket-id reuse risk if it cannot
+                # forget) — non-fatal, but visible on the monotonic clock
+                # (rate-limited, one WARNING per ticket per hour).
+                now_mono = time.monotonic()
+                stamp_key = f"adviser_forget:{int(ticket)}"
+                # missing key -> -inf so the FIRST failure warns immediately
+                last = self._adviser_forget_warn_times.get(stamp_key, float("-inf"))
+                if (now_mono - last) >= 3600.0:
+                    self._adviser_forget_warn_times[stamp_key] = now_mono
+                    logger.warning(
+                        "ADVISER_FORGET_FAILED: adviser.forget(%s) raised %s — "
+                        "stale adviser per-ticket state retained",
+                        ticket,
+                        forget_err,
+                    )

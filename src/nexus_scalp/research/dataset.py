@@ -214,7 +214,15 @@ class ResearchDatasetBuilder:
                 payload = json.loads(r["payload"] or "{}")
                 bo = payload.get("broker_outcome") or {}
                 src = bo.get("reconstruction_source", "") if isinstance(bo, dict) else ""
-            except Exception:
+            except Exception as e:
+                # OBS-012 wave: unreadable outcome payload must be visible.
+                # WARN per row (loop is bounded by LIMIT 100000, malformed rows
+                # are the defect the wave is hunting).
+                logger.warning(
+                    "[RESEARCH_DATASET] reconstruction-source payload unreadable",
+                    idempotency_key=str(r.get("idempotency_key", ""))[:24],
+                    error=type(e).__name__,
+                )
                 src = ""
             out[str(r["idempotency_key"])] = str(src or "")
         return out
@@ -244,7 +252,13 @@ class ResearchDatasetBuilder:
         for r in rows:
             try:
                 payload = json.loads(r["payload"] or "{}")
-            except Exception:
+            except Exception as e:
+                # OBS-012 wave: unreadable outcome payload breaks the recovery
+                # census (a guarded gap would silently undercount) — WARN.
+                logger.warning(
+                    "[RESEARCH_DATASET] recovered-outcome payload unreadable",
+                    error=type(e).__name__,
+                )
                 continue
             cd = str(payload.get("correlation_detail") or "")
             ld = str(payload.get("lifecycle_detail") or "")

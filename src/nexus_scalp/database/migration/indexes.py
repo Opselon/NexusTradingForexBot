@@ -224,6 +224,21 @@ _NO_INDEX_AUDIT_SIGNALS_GENERATED_AT = (
 
 #: The ordered set of missing indexes. Order is hot-path-first; the migration
 #: is idempotent as a whole, so the ordering is readability, not dependency.
+#: The research/exit-optimizer worker reads the merged experience retrieval
+#: every ~60s: ``SELECT e.payload, o.payload FROM audit_experiences e
+#: LEFT JOIN audit_experience_outcomes o ON o.idempotency_key = e.idempotency_key
+#: ORDER BY e.decision_timestamp DESC LIMIT 20000`` (ExperienceLedger.
+#: list_all_experiences via research/dataset._iter_records). Live EXPLAIN on
+#: nexusdb 2026-10-22 pre-index: 436.98ms server — parallel seq-scan on
+#: audit_experiences plus an external-merge sort spilling 3.1MB and 42k
+#: per-key outcome heap fetches; post-index ~118ms. Both indexes stay
+#: application-facing (payload INCLUDE covered) and idempotent.
+_INDEX_EXPERIENCE_RETRIEVAL_REASON = (
+    "audit_experiences+audit_experience_outcomes merged-retrieval 60s research "
+    "cycle: LIMIT 20000 ORDER BY decision_timestamp DESC LEFT JOIN outcomes ON "
+    "idempotency_key (pre-fix EXPLAIN 436.98ms -> 118ms with these two covered indexes)"
+)
+
 MISSING_INDEXES: tuple[MissingIndex, ...] = (
     MissingIndex(
         name="idx_news_junk_hashes_reason",
@@ -300,6 +315,22 @@ MISSING_INDEXES: tuple[MissingIndex, ...] = (
         # n index entries instead of touching the whole table.
         definition="(updated_at DESC)",
         predicate=_INDEX_STRATEGY_REGISTRY_UPDATED_AT_REASON,
+    ),
+    MissingIndex(
+        # PG-only spelling (INCLUDE); translate_ddl keeps SQLite semantics
+        # via the trailing-columns form. Serves the every-60s merged
+        # retrieval: ORDER BY served from the index, payload read without
+        # touching the heap.
+        name="idx_exp_decision_ts_paged",
+        table="audit_experiences",
+        definition="(decision_timestamp DESC) INCLUDE (payload, idempotency_key)",
+        predicate=_INDEX_EXPERIENCE_RETRIEVAL_REASON,
+    ),
+    MissingIndex(
+        name="idx_exp_outcome_key_covering",
+        table="audit_experience_outcomes",
+        definition="(idempotency_key) INCLUDE (payload)",
+        predicate=_INDEX_EXPERIENCE_RETRIEVAL_REASON,
     ),
 )
 

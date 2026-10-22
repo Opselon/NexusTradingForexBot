@@ -86,8 +86,15 @@ def _expected_keys() -> tuple[str, str]:
         s_secret = store.get_secret("gateway_secret")
         if s_key and s_secret:
             return s_key.strip(), s_secret.strip()
-    except Exception:
-        pass
+    except Exception as store_err:
+        # OBS-SILENT-PASS (Lane A F6): a broken SecureSecretStore read must be
+        # observable on the way down the env-or-default chain — a silent drop
+        # makes the gateway look configured when it effectively is not.
+        logger.warning(
+            "GATEWAY_SECRET_STORE_READ_FAILED: SecureSecretStore probe raised %s — "
+            "falling through to env-or-default secret chain (store secrets skipped)",
+            store_err,
+        )
 
     allow_defaults = (
         os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1" and not _allow_live
@@ -136,8 +143,17 @@ def _get_adapter() -> Any:
             )
     except RuntimeError:
         raise
-    except Exception:
-        pass
+    except Exception as snap_err:
+        # OBS-SILENT-PASS (Lane A F7): a failed demo-guard probe means the
+        # account tier was NOT VERIFIED — fails closed with the adapter
+        # disconnected, and must say so loudly rather than pretend Demo.
+        logger.error(
+            "GATEWAY_ACCOUNT_SNAPSHOT_PROBE_FAILED: get_account_snapshot() raised %s — "
+            "account tier NOT VERIFIED (treated as unverified, refusing fails closed)",
+            snap_err,
+        )
+        a.disconnect()
+        raise
     _adapter = a
     return _adapter
 

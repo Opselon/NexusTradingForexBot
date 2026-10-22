@@ -310,3 +310,8 @@ tests/unit/test_risk_rejection_diagnostics.py
 tests/unit/test_task_spawner.py
 tests/unit/test_predictive_limit_stops_floor.py
 tests/unit/test_telegram_dedup_health.py
+tests/unit/test_lane_a_silent_pass_registry.py
+tests/unit/test_lane_c_new_log_records.py
+tests/unit/test_silent_pass_observability_lanes_a.py
+tests/unit/test_silent_pass_observability_lanes_b.py
+tests/unit/test_silent_pass_observability_lanes_c.py

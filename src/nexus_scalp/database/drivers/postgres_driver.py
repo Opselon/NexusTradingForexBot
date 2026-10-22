@@ -24,6 +24,7 @@ Driver responsibilities (portability contract):
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 import time
 from collections.abc import Iterable, Iterator, Sequence
@@ -34,6 +35,46 @@ from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask
 from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import _IDENT_SHAPE, DatabaseDriver
 from nexus_scalp.database.query_logging import QueryMetricsRecorder
+
+#: The catalog lookup in :func:`_resolve_conflict_target` runs on the INSERT
+#: hot path (through the cached-per-table seam). When it fails, the statement
+#: falls through WITHOUT any ON CONFLICT clause — the write proceeds as a
+#: plain INSERT (parser-counted, not dedup-counted). That degradation is
+#: operator-visible through this rate-limited warning, not through silence.
+_PG_CONFLICT_LOOKUP_LOG_INTERVAL_SEC = 300.0
+_pg_conflict_lookup_state: dict[tuple[str, str], tuple[float, int]] = {}
+
+_pg_probe_logger = logging.getLogger(__name__)
+
+
+def _pg_rate_limited_probe_warning(event_name: str, table: str, kind: str) -> None:
+    """One warning per (event, table, probe-kind) every 5 minutes, ever-capped.
+
+    The only counting machinery needed on this hot path: a monotonic-window
+    suppressor keyed on the condition, mirroring the resist-the-flood rate
+    limit on the INSERT hot path that the write plane's counters are paid
+    separately for.
+
+    (module-level contract: like the driver's other module-level state, this
+    dict is process-local and never synchronized)
+    """
+    state = _pg_conflict_lookup_state
+    key = (event_name, f"{table}:{kind}")
+    now = time.monotonic()
+    last_seen, emissions = state.get(key, (0.0, 0))
+    if emissions and (now - last_seen) < _PG_CONFLICT_LOOKUP_LOG_INTERVAL_SEC:
+        return  # suppressed by the rate limit
+    state[key] = (now, emissions + 1)
+    _pg_probe_logger.warning(
+        "[DB-DRIVERS] event=%s table=%s probe=%s emission=%d "
+        "(rate-limited; every occurrence still leaves the statement without "
+        "its ON CONFLICT clause: no dedup, no unique-violation upsert)",
+        event_name,
+        table,
+        kind,
+        emissions + 1,
+    )
+
 
 #: Case-insensitive map: SQLite/logical type -> PostgreSQL DDL type.
 PG_TYPE_MAP: dict[str, str] = {
@@ -199,8 +240,20 @@ def _log_driver_failure(
             domain=_driver_domain(own_connection),
             kind="write" if operation.startswith("execute") else "read",
         )
-    except Exception:
-        pass
+    except Exception as log_exc:
+        # The structured failure report itself failed: without a stdlib
+        # fallback record the query failure is COMPLETELY unlogged (the
+        # original driver error surfaces to the caller but the log store
+        # never hears about it). Emit the minimal, mask-safe fact directly.
+        _pg_probe_logger.error(
+            "PG_DRIVER event=PG_DRIVER_FAILURE_REPORT_FAILED op=%s "
+            "error_type=%s log_error_type=%s (the structured failure report "
+            "for this query did not reach the log store; the failing SQL "
+            "text is masked)",
+            operation,
+            type(exc).__name__,
+            type(log_exc).__name__,
+        )
 
 
 class _DriverQueryTimer:
@@ -246,9 +299,20 @@ class _DriverQueryTimer:
                     rows=self.rows,
                     domain=self.domain,
                 )
-            except Exception:
-                pass
-        return None
+            except Exception as log_exc:
+                # The slow-query report failed: the stutter disappears
+                # from the structured stream while the statement keeps
+                # being slow forever. Debug — the query itself did not
+                # fail; only its observability did.
+                _pg_probe_logger.debug(
+                    "PG_DRIVER event=PG_DRIVER_SLOW_QUERY_REPORT_FAILED "
+                    "op=%s error_type=%s log_error_type=%s (the slow "
+                    "query report did not reach the log store)",
+                    self.op,
+                    type(log_exc).__name__,
+                    type(log_exc.__cause__).__name__,
+                )
+            return None
 
 
 @contextmanager
@@ -513,7 +577,7 @@ def _resolve_conflict_target(table: str, conn: Any) -> tuple[list[str], list[str
     """
     pks: list[str] = []
     uniques: list[str] = []
-    with contextlib.suppress(Exception):
+    try:
         rows = conn.execute(
             "SELECT a.attname FROM pg_index i "
             "JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey) "
@@ -523,7 +587,15 @@ def _resolve_conflict_target(table: str, conn: Any) -> tuple[list[str], list[str
             (table,),
         ).fetchall()
         pks = [str(r[0]) for r in rows]
-    with contextlib.suppress(Exception):
+    except Exception:
+        # A failed PK catalog query leaves pks EMPTY — the downstream
+        # _best_conflict_target then sees a favourable-but-wrong layout and
+        # the emitted INSERT passes through with no upsert semantics (no
+        # dedup on re-insert, no REPLACE rewrite). Rate-limited warning so
+        # the degradation is operator-visible (resist-the-flood on the hot
+        # path; every occurrence still skips its dedup).
+        _pg_rate_limited_probe_warning("PG_CONFLICT_TARGET_LOOKUP_FAILED", table, "primary_keys")
+    try:
         rows = conn.execute(
             "SELECT kcu.column_name FROM information_schema.table_constraints tc "
             "JOIN information_schema.key_column_usage kcu "
@@ -533,6 +605,12 @@ def _resolve_conflict_target(table: str, conn: Any) -> tuple[list[str], list[str
             (table,),
         ).fetchall()
         uniques = [str(r[0]) for r in rows]
+    except Exception:
+        # Same contract as the PK probe above (empty -> fallback INSERT with
+        # no ON CONFLICT clause). Rate-limited warning for the condition.
+        _pg_rate_limited_probe_warning(
+            "PG_CONFLICT_TARGET_LOOKUP_FAILED", table, "unique_constraints"
+        )
     return (pks, uniques)
 
 
@@ -598,8 +676,29 @@ def _conflict_clause(parsed: dict[str, Any], conn: Any) -> str | None:
         pks, uniques = _resolve_conflict_target(parsed["table"], conn)
         target = _best_conflict_target(pks, uniques, parsed["cols"])
     except Exception:
+        # A clause-build crash (not just an empty catalog): the statement
+        # still falls through to a bare INSERT. Debug-level record so an
+        # operator can tell a table whose uniqueness could not be probed
+        # apart from one where the probe succeeded but no conflict target
+        # covered the row (the once-per-condition record below).
+        _pg_probe_logger.debug(
+            "[DB-DRIVERS] event=PG_CONFLICT_CLAUSE_UNAVAILABLE table=%s "
+            "probe=resolution_crashed (statement passes through without a "
+            "conflict clause; NOT a conflict-target miss)",
+            parsed["table"],
+        )
         return None
     if target is None:
+        # Probe SUCCEEDED but nothing covers this row. Debug-level (the
+        # statement runs; the semantics are just narrowed) with the
+        # distinguishing probe named — the once-per-condition record the
+        # PG_CONFLICT_CLAUSE_UNAVAILABLE contract calls for.
+        _pg_probe_logger.debug(
+            "[DB-DRIVERS] event=PG_CONFLICT_CLAUSE_UNAVAILABLE table=%s "
+            "probe=no_conflict_target_covers_row (statement passes through "
+            "without a conflict clause; no dedup on this write)",
+            parsed["table"],
+        )
         return None
     tcols, _covers = target
     if not tcols:
@@ -1014,6 +1113,14 @@ class PostgreSQLDriver(DatabaseDriver):
                 timer.rows = len(result)
                 metrics.rows = len(result)
                 return result
+            except Exception as exc:
+                # OBS-012 wave: the PG driver's read family previously raised
+                # bare; a caller-side silent-skip (any ``except Exception``
+                # downstream) left the failure unattributed. Same contract the
+                # SQLite driver has always had: one ERROR record, then re-raise.
+                self.last_failure = exc
+                _log_driver_failure("query", exc, sql, args, own)
+                raise
             finally:
                 if own:
                     c.close()
@@ -1053,6 +1160,11 @@ class PostgreSQLDriver(DatabaseDriver):
                 timer.rows = 1
                 metrics.rows = 1
                 return result
+            except Exception as exc:
+                # OBS-012 wave: same failed-read contract as query() above.
+                self.last_failure = exc
+                _log_driver_failure("query_one", exc, sql, args, own)
+                raise
             finally:
                 if own:
                     c.close()
@@ -1066,6 +1178,11 @@ class PostgreSQLDriver(DatabaseDriver):
                 tuple(args) if args else None,
             ).fetchone()
             return row[0] if row is not None else None
+        except Exception as exc:
+            # OBS-012 wave: same failed-read contract as query() above.
+            self.last_failure = exc
+            _log_driver_failure("scalar", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()

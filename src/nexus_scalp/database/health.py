@@ -18,6 +18,7 @@ from nexus_scalp.database.provider import DatabaseProvider
 from nexus_scalp.database.query_logging import query_observability_snapshot
 from nexus_scalp.database.views import ensure_analytics_views
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.settings.service import SettingsDatabase
 
 logger = get_logger("nexus_scalp.database.health")
 
@@ -244,11 +245,29 @@ class DatabaseHealthService:
             # SQLite uses the migration engine. PostgreSQL reads its own metadata.
             try:
                 if cfg.is_postgresql:
-                    version = driver.scalar(
-                        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
-                    )
-                    out["schema_version"] = int(version or 0)
-                    out["migration_state"] = "CURRENT"
+                    # Ask the catalog whether the relation exists instead of
+                    # SELECTing from it and catching the failure: the driver's
+                    # query-logging wrapper records a raised statement as a
+                    # [PG-QUERY] ERROR before the exception ever reaches this
+                    # frame, so a try/except here cannot keep a healthy
+                    # first boot out of the error stream. to_regclass() returns
+                    # NULL for a missing relation and never raises.
+                    if not _pg_relation_exists(driver, "schema_migrations"):
+                        out["schema_version"] = 0
+                        out["migration_state"] = "NOT_PROVISIONED"
+                        logger.warning(
+                            "[DB-HEALTH] event=DB_HEALTH_SCHEMA_NOT_PROVISIONED "
+                            "domain=%s detail=schema_migrations absent; database "
+                            "has not been provisioned yet (expected on first boot "
+                            "before the domain migration runs)",
+                            domain,
+                        )
+                    else:
+                        version = driver.scalar(
+                            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                        )
+                        out["schema_version"] = int(version or 0)
+                        out["migration_state"] = "CURRENT"
                 else:
                     from nexus_scalp.database.engine import DatabaseMigrationEngine
                     from nexus_scalp.database.models import DatabaseDomain
@@ -296,7 +315,19 @@ class DatabaseHealthService:
         for domain in self.domains:
             try:
                 configured.add(self.resolve_config(domain).provider.value)
-            except Exception:
+            except Exception as exc:
+                # Skipping the domain here shrinks the configured set: a
+                # snapshot over 2 domains where one config fails to resolve
+                # reports active_provider as if only 1 was configured (or
+                # "UNKNOWN" when it is the only one). Name the domain so the
+                # shrunken summary is attributable.
+                logger.warning(
+                    "[DB-HEALTH] event=DB_HEALTH_RESOLVE_CONFIG_SKIPPED domain=%s "
+                    "error_type=%s (domain EXCLUDED from the configured "
+                    "provider set; active_provider may be under-reported)",
+                    domain,
+                    type(exc).__name__,
+                )
                 continue
         active = (
             configured.pop()
@@ -420,6 +451,26 @@ class DatabaseHealthService:
         }
 
 
+def _pg_relation_exists(driver: Any, relation: str) -> bool:
+    """True when ``relation`` exists, asked safely via PG's catalog function.
+
+    ``to_regclass('schema_migrations')`` returns NULL for a missing relation
+    and never raises, so a first boot on an empty database is a normal FALSE
+    rather than a failed query. Using it also keeps the driver's query-logging
+    wrapper from classifying a healthy pre-provisioning probe as a
+    ``[PG-QUERY]`` error — a raised statement is logged at ERROR before any
+    caller's try/except can see it.
+
+    Defensive by design: any failure to answer the catalog question returns
+    True, so the caller falls through to the original SELECT and reports the
+    real error through the documented UNKNOWN path instead of guessing.
+    """
+    try:
+        return bool(driver.scalar(f"SELECT to_regclass('{relation}') IS NOT NULL"))
+    except Exception:
+        return True
+
+
 def _engine_path_for(cfg: DatabaseConfig) -> str:
     """TASK-10 migration engine still keys on a filesystem path; for
     PostgreSQL we pass the sqlite fallback path (per-domain migration state
@@ -449,7 +500,6 @@ def load_ui_config(workspace: str | None = None) -> dict[str, Any]:
         PG_CONFIG_SETTING_KEY,
         PROVIDER_SETTING_KEY,
     )
-    from nexus_scalp.settings.service import SettingsDatabase
 
     out: dict[str, Any] = {
         "provider": "sqlite",
@@ -474,6 +524,16 @@ def load_ui_config(workspace: str | None = None) -> dict[str, Any]:
             except (TypeError, ValueError):
                 out["postgres"] = None
         db.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        # The settings DB could not be read at all. out stays provider=
+        # "sqlite" + postgres=None — when the ACTUAL configuration was
+        # PostgreSQL, this payload reports the wrong provider with no
+        # trace of why. Error, with the unverified-payload caveat named.
+        logger.error(
+            "[DB-HEALTH] event=DB_HEALTH_SETTINGS_READ_FAILED error_type=%s "
+            "(settings DB unreadable: provider/postgres section reported as "
+            "unknown-default rather than the true configured values; treat "
+            "this payload as unverified, not as 'configured for sqlite')",
+            type(exc).__name__,
+        )
     return out

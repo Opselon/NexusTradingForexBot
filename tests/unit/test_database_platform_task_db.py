@@ -62,7 +62,11 @@ class TestManifestRegistryAgreement:
         # 2026-10-01: AUDIT-0012-experience-outcome-execution-id-index (the P0
         # pg-read slow query) extended the chain 11 -> 12, manifest bumped in
         # the same change.
-        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 12
+        # 2026-10-22: AUDIT-0013-experience-retrieval-covering-indexes (the
+        # experience merged-retrieval LIMIT 20000 ORDER BY decision_timestamp
+        # DESC slow query) extended the chain 12 -> 13, manifest bumped in the
+        # same change.
+        assert MANIFESTS[DatabaseDomain.AUDIT].schema_version == 13
         assert MANIFESTS[DatabaseDomain.NEWS].schema_version == 2
         assert MANIFESTS[DatabaseDomain.CANDLE_INTEL].schema_version == 2
 

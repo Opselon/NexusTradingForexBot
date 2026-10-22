@@ -174,8 +174,19 @@ class SecureSecretStore:
         try:
             if sys.platform != "win32":
                 os.chmod(tmp, 0o600)
-        except OSError:
-            pass
+        except OSError as exc:
+            # Never log the path or the payload: this is the secret store, and
+            # a path-shaped argument is indistinguishable from sensitive data
+            # to a scanner (and to anyone reading a shared log stream). The
+            # actionable facts are the error class and the fact that POSIX
+            # permissions could not be tightened.
+            logger.warning(
+                "[SECRET_STORE] event=SECRET_STORE_ACL_CHMOD_UNAVAILABLE "
+                "store=%s note=intended_mode_0600_not_applied_process_umask_"
+                "governs_file error_type=%s",
+                "secret_store",
+                type(exc).__name__,
+            )
         tmp.replace(self.path)
 
     # ------------------------------------------------------------------ API

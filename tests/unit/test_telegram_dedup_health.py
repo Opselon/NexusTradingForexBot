@@ -57,7 +57,11 @@ def test_duplicate_is_not_counted_as_failure(mock_urlopen) -> None:
     _deliver_resp.read.return_value = b'{"ok": true, "result": {"message_id": 301}}'
     mock_urlopen.return_value.__enter__.return_value = _deliver_resp
 
-    first = notifier.send("Repeated alert text ALPHA 001")
+    # send() acknowledges within a bounded 50ms window by design (hot callers
+    # must never block on network I/O). On a loaded CI runner the worker thread
+    # may not have delivered inside that window, which made this assertion a
+    # timing race rather than a behavior check. Give it a real window.
+    first = notifier.send("Repeated alert text ALPHA 001", wait_timeout=5.0)
     assert first == 301
 
     second = notifier.send("Repeated alert text ALPHA 001")

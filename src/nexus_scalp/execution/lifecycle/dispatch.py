@@ -193,7 +193,15 @@ class DispatchEngine:
         try:
             if symbol:
                 symbol_info = self.om.adapter.get_symbol_info(symbol)
-        except Exception:
+        except Exception as spec_err:
+            # OBS-SILENT-PASS (Lane A F2): clamping proceeds against engine
+            # defaults only; the missing broker spec must be observable.
+            logger.warning(
+                "DISPATCH_CLAMP_BROKER_SPEC_UNAVAILABLE: get_symbol_info(%s) raised %s "
+                "— clamping against defaults (broker volume_max not applied)",
+                symbol,
+                spec_err,
+            )
             symbol_info = None
 
         if self.om.risk_engine is not None and hasattr(
@@ -202,7 +210,13 @@ class DispatchEngine:
             account = None
             try:
                 account = self.om.adapter.get_account_info()
-            except Exception:
+            except Exception as acct_err:
+                # OBS-SILENT-PASS (Lane A F2): account unavailable for clamping.
+                logger.warning(
+                    "DISPATCH_CLAMP_BROKER_SPEC_UNAVAILABLE: get_account_info() raised %s "
+                    "— clamping against defaults (account balance/leverage not applied)",
+                    acct_err,
+                )
                 account = None
 
             try:

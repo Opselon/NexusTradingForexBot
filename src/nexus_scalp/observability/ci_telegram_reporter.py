@@ -122,6 +122,8 @@ class CITelegramReporter:
             max_document_bytes=max_document_bytes,
         )
         self._env_digest: dict[str, Any] = {}
+        # Warn-once latch keyed by event token, per reporter instance.
+        self._warned_parse_failures: set[str] = set()
 
     # ------------------------------------------------------------------
     # Context + reads
@@ -162,6 +164,22 @@ class CITelegramReporter:
         except Exception:
             return "skipped"
 
+    # ------------------------------------------------------------------
+    # guard counters (warn-once per event, per reporter instance)
+    # ------------------------------------------------------------------
+    def _warn_parse_once(self, event: str, where: str, exc: Exception) -> None:
+        """One warning per event token for the lifetime of this reporter
+        instance — repeated CI artifact failures must not flood the log."""
+        if event in self._warned_parse_failures:
+            return
+        self._warned_parse_failures.add(event)
+        logger.warning(
+            "[CI_REPORTER] event=%s site=%s note=degraded_read_continued error=%s",
+            event,
+            where,
+            exc,
+        )
+
     def _junit_stats_raw(self) -> dict[str, Any]:
         """Parse junit.xml; handles pytest's <testsuites> wrapper."""
         junit = self.results_dir / "pytest" / "junit.xml"
@@ -180,8 +198,8 @@ class CITelegramReporter:
                             stats[attr] += float(node.attrib[attr])
                         except ValueError:
                             pass
-        except Exception:
-            pass
+        except Exception as scan_err:
+            self._warn_parse_once("CI_REPORTER_SCAN_FAILED", "junit_stats", scan_err)
         return stats
 
     def junit_stats(self) -> dict[str, int]:
@@ -217,8 +235,8 @@ class CITelegramReporter:
             for case in root.iter("testcase"):
                 if case.find("failure") is not None or case.find("error") is not None:
                     names.append(case.attrib.get("name", "?"))
-        except Exception:
-            pass
+        except Exception as scan_err:
+            self._warn_parse_once("CI_REPORTER_SCAN_FAILED", "failed_test_names", scan_err)
         return names[:limit]
 
     # ------------------------------------------------------------------
@@ -450,8 +468,9 @@ class CITelegramReporter:
                 for p in sorted(info_dir.glob("*.json")):
                     try:
                         summary[p.stem] = json.loads(p.read_text(encoding="utf-8"))
-                    except Exception:
+                    except Exception as dec_err:
                         summary[p.stem] = {"status": "unreadable"}
+                        self._warn_parse_once("CI_REPORTER_BUNDLE_UNREADABLE", p.name, dec_err)
             zf.writestr("summary.json", json.dumps(summary, indent=2, sort_keys=True))
 
             # failed-tests.txt

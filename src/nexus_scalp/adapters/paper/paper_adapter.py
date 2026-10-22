@@ -1132,7 +1132,20 @@ class PaperMT5Adapter(IMT5Port):
                                     symbol=symbol,
                                 )
                             except Exception:
-                                pass
+                                # OBS-SILENT-PASS (Lane A F5): the inner
+                                # observability call itself failed — fall back
+                                # to stdlib logging so the ORIGINAL tick-path
+                                # fault is not dropped a second time.
+                                import logging as _stdlib_logging
+
+                                _stdlib_logging.getLogger("nexus_scalp.adapters.paper").error(
+                                    "PAPER_SLTP_PROCESSING_FAILED (fallback): original "
+                                    "tick-path error repr=%s symbol=%s "
+                                    "(observability logger itself failed; original "
+                                    "fault would otherwise be dropped)",
+                                    repr(exc),
+                                    symbol,
+                                )
                         return tick
         return None
 
