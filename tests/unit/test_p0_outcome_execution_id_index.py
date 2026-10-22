@@ -149,8 +149,10 @@ class TestMigrationDeliversTheIndex:
             DatabaseDomain.AUDIT
         )
 
-    def test_expected_version_is_12(self) -> None:
-        assert expected_version_for_domain(DatabaseDomain.AUDIT) == 12
+    def test_expected_version_is_13(self) -> None:
+        # AUDIT-0013-experience-retrieval-covering-indexes (2026-10-22,
+        # perf/exit-slow-query-wave-local) extended the chain 12 -> 13.
+        assert expected_version_for_domain(DatabaseDomain.AUDIT) == 13
 
     def test_migration_carries_verify_and_rollback(self) -> None:
         m = next(

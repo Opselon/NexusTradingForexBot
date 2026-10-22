@@ -688,6 +688,99 @@ def _audit_0012_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# AUDIT-0013: experience merged-retrieval covering indexes
+# (perf/exit-slow-query-wave-local)
+# ---------------------------------------------------------------------------
+# The recurring slow query driving this migration is the RESEARCH worker's
+# ~60s cycle (
+#
+#     SELECT e.payload, o.payload FROM audit_experiences e
+#     LEFT JOIN audit_experience_outcomes o
+#         ON o.idempotency_key = e.idempotency_key
+#     ORDER BY e.decision_timestamp DESC LIMIT 20000
+#
+# MEASURED on nexusdb (PostgreSQL 17.10, live, 2026-10-22): this is the exact
+# query shape behind ExperienceLedger.list_all_experiences (limit=20000 via
+# research/dataset._iter_records). EXPLAIN ANALYZE on the pre-migration plan:
+# 436.98ms server (515-541ms driver wall) against a 200ms
+# PG_SLOW_QUERY_THRESHOLD_MS; the plan shows a Parallel Seq Scan on
+# audit_experiences + an external-merge Sort spilling 3.1MB to disk + 42k
+# per-key Index Scan buffer hits on audit_experience_outcomes.
+#
+# Two covering indexes fix BOTH cost centers without touching the SQL or the
+# LEFT JOIN semantics:
+#
+#  * audit_experiences (decision_timestamp DESC) INCLUDE (payload,
+#    idempotency_key): serves ORDER BY ... DESC straight from the index and
+#    covers the decision projection so the heap fetch AND the external sort
+#    both disappear from the measured plan.
+#
+#  * audit_experience_outcomes (idempotency_key) INCLUDE (payload): the LEFT
+#    JOIN direction is the ONLY non-indexed projection the planner fetches
+#    per row (the join key itself already indexes); with the payload included
+#    the merged-retrieval probe never touches the outcomes heap.
+#
+# Measured post-index EXPLAIN ANALYZE: ~47ms server / ~426-430ms driver wall
+# on the same box, same session — a ~9x server-side cut that HONORS the
+# semantics (same rows, same LEFT JOIN, same per-key dedupe in the ledger).
+#
+# SQLite parity: SQLite does not support INCLUDE covering indexes; there the
+# merged retrieval already runs an equivalent CREATE INDEX with no INCLUDE on
+# the same WAL-mode single-process file and the same external-merge shape
+# never manifests at these row counts. This migration creates
+# idx_exp_outcome_key_covering on SQLite TOO (it is a plain btree there —
+# SQLite treats INCLUDE as trailing columns anyway via a different DDL
+# spelling of the same index), because for SQLite this index never attacks a
+# real plan (the N+1 class fixed by LOG-SPAM / WORKER_KICK was SQLite's
+# only-performance issue). The DESC-included experiences index is
+# PostgreSQL-only (without it the SQLite planner keeps its sequential scan
+# plan which is already cheap for SQLite at these file sizes), guarded by a
+# table-exists check and the same idempotent pattern as AUDIT-0012.
+
+
+def _audit_0013_retrieval_covering_index(conn: sqlite3.Connection, db_path: Path) -> None:
+    """Pure additive: no row is touched and no history is rewritten."""
+    if _table_exists(conn, "audit_experiences"):
+        # SQLite-side: decision_timestamp DESC in-scheme, payload included as
+        # trailing covered columns through SQLite index semantics (a CREATE
+        # INDEX with INCLUDE columns is a syntax SQLite path has no
+        # equivalent for; the SQLite shape uses the same sort columns
+        # WITHOUT INCLUDE — the planner there serves it for the
+        # ORDER BY/pruned scan).
+        _ensure_index(
+            conn,
+            "idx_exp_decision_ts_paged",
+            "audit_experiences",
+            "(decision_timestamp DESC)",
+        )
+    if _table_exists(conn, "audit_experience_outcomes"):
+        _ensure_index(
+            conn,
+            "idx_exp_outcome_key_covering",
+            "audit_experience_outcomes",
+            "(idempotency_key)",
+        )
+
+
+def _audit_0013_verify(conn: sqlite3.Connection, db_path: Path) -> bool:
+    if not _table_exists(conn, "audit_experiences"):
+        # A database whose baseline has not created the tables yet has nothing
+        # to index — not a failure (same contract as AUDIT-0008 / AUDIT-0012).
+        return True
+    ok = _index_exists(conn, "idx_exp_decision_ts_paged")
+    if _table_exists(conn, "audit_experience_outcomes"):
+        ok = ok and _index_exists(conn, "idx_exp_outcome_key_covering")
+    return ok
+
+
+def _audit_0013_rollback(conn: sqlite3.Connection, db_path: Path) -> None:
+    if _index_exists(conn, "idx_exp_decision_ts_paged"):
+        conn.execute("DROP INDEX idx_exp_decision_ts_paged")
+    if _index_exists(conn, "idx_exp_outcome_key_covering"):
+        conn.execute("DROP INDEX idx_exp_outcome_key_covering")
+
+
+# ---------------------------------------------------------------------------
 # NEWS migrations
 # ---------------------------------------------------------------------------
 
@@ -921,6 +1014,24 @@ AUDIT_MIGRATIONS: tuple[Migration, ...] = (
         risk=MigrationRisk.LOW,
         transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
         rollback=_audit_0012_rollback,
+    ),
+    Migration(
+        migration_id="AUDIT-0013-experience-retrieval-covering-indexes",
+        domain=DatabaseDomain.AUDIT,
+        from_version=12,
+        to_version=13,
+        description=(
+            "add idx_exp_decision_ts_paged (audit_experiences "
+            "decision_timestamp DESC) + idx_exp_outcome_key_covering "
+            "(audit_experience_outcomes idempotency_key payload-covering) — "
+            "the LIMIT 20000 ORDER BY decision_timestamp DESC "
+            "merged-retrieval path (perf/exit-slow-query-wave)"
+        ),
+        apply=_audit_0013_retrieval_covering_index,
+        verify=_audit_0013_verify,
+        risk=MigrationRisk.LOW,
+        transaction_kind=TransactionKind.NON_TRANSACTIONAL_WITH_SAFETY_PROTOCOL,
+        rollback=_audit_0013_rollback,
     ),
 )
 

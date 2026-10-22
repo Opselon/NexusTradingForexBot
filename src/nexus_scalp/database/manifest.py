@@ -45,7 +45,10 @@ from nexus_scalp.database.models import (
 # extend the chain to v11 — manifest bumped in the same change.
 # 2026-10-01: AUDIT-0012-experience-outcome-execution-id-index (P0 pg-read
 # slow query) extends the chain to v12 — manifest bumped in the same change.
-AUDIT_SCHEMA_VERSION: int = 12
+# 2026-10-22: AUDIT-0013-experience-retrieval-covering-indexes
+# (perf/exit-slow-query-wave-local) extends the chain to v13 — manifest
+# bumped in the same change.
+AUDIT_SCHEMA_VERSION: int = 13
 
 AUDIT_TABLES: tuple[SchemaTable, ...] = (
     SchemaTable(
@@ -120,11 +123,16 @@ AUDIT_TABLES: tuple[SchemaTable, ...] = (
             "idx_exp_symbol_time",
             "idx_exp_request",
             "idx_exp_schema",
+            "idx_exp_decision_ts_paged",
         ),
     ),
     SchemaTable(
         name="audit_experience_outcomes",
-        indexes=("idx_exp_outcome_key", "idx_exp_outcome_exec"),
+        indexes=(
+            "idx_exp_outcome_key",
+            "idx_exp_outcome_exec",
+            "idx_exp_outcome_key_covering",
+        ),
     ),
     SchemaTable(name="audit_experience_corrections", indexes=("idx_exp_corrections_key",)),
     SchemaTable(

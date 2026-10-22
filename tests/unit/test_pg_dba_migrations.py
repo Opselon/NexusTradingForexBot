@@ -107,6 +107,21 @@ _DBA_TABLES: tuple[tuple[str, str], ...] = (
     ),
     ("audit_broker_trades", "trade_id TEXT PRIMARY KEY, position_id BIGINT DEFAULT 0"),
     ("factory_generations", "generation_id TEXT PRIMARY KEY, number INTEGER DEFAULT 0"),
+    # experience-retrieval index hosts (idx_exp_decision_ts_paged /
+    # idx_exp_outcome_key_covering in the AUDIT-0010 layer need these two
+    # tables to exist for their DDL to build real objects; the fixture
+    # mirrors the minimal columns the layer's index DDL references).
+    (
+        "audit_experiences",
+        "idempotency_key TEXT PRIMARY KEY, decision_timestamp TEXT DEFAULT '', "
+        "payload TEXT DEFAULT '', strategy_id TEXT DEFAULT '', symbol TEXT DEFAULT '', "
+        "request_id TEXT DEFAULT '', feature_schema_id TEXT DEFAULT '', "
+        "feature_dimension INTEGER DEFAULT 0",
+    ),
+    (
+        "audit_experience_outcomes",
+        "outcome_id TEXT PRIMARY KEY, idempotency_key TEXT DEFAULT '', payload TEXT DEFAULT ''",
+    ),
     # trigger targets (only the column the trigger maintains is needed).
     # NOTE: ``application_settings`` / ``trading_rules_config`` are present so
     # the fixture covers the ANALYZE hot set and the failure-injection path,

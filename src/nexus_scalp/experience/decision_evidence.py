@@ -41,6 +41,9 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from nexus_scalp.experience.lifecycle import DecisionLifecycle
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.experience.decision_evidence")
 
 #: Gate stages that PROVE a pre-dispatch refusal (Phase 08 / Phase 09).
 GATE_REJECTION_STAGES: frozenset[str] = frozenset(
@@ -133,8 +136,16 @@ def resolve_decision_evidence(
                ORDER BY id LIMIT 1""",
             (rid,),
         ).fetchone()
-    except Exception:
+    except Exception as exc:
         # Both providers: a missing/unreadable signals table is not evidence.
+        # Unexpected-exception logging (OBS-012 wave): the absence of a table
+        # is an expected storage-missing condition; anything else is a
+        # real defect and must at least WARN.
+        logger.warning(
+            "[DECISION_EVIDENCE] signals probe failed (treated as no evidence)",
+            request_id=rid,
+            error=type(exc).__name__,
+        )
         row = None
     if row is not None:
         return TerminalStateEvidence(
@@ -154,7 +165,12 @@ def resolve_decision_evidence(
                WHERE order_id = ? AND ticket != 0 ORDER BY id LIMIT 1""",
             (rid,),
         ).fetchone()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[DECISION_EVIDENCE] dispatch probe failed (treated as no evidence)",
+            request_id=rid,
+            error=type(exc).__name__,
+        )
         row = None
     if row is not None:
         return TerminalStateEvidence(

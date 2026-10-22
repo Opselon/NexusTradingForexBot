@@ -835,7 +835,15 @@ class ExperienceIntelligenceEngine:
                     from nexus_scalp.experience.models import BrokerOutcome
 
                     broker = BrokerOutcome.model_validate(broker_outcome)
-                except Exception:
+                except Exception as e:
+                    # OBS-012 wave: a malformed broker_outcome blob silently
+                    # dropped was indistinguishable from a valid non-broker
+                    # outcome; WARN so the malformed provenance is visible.
+                    logger.warning(
+                        "[EXPERIENCE] broker_outcome payload invalid (continuing without it)",
+                        idempotency_key=key,
+                        error=str(e),
+                    )
                     broker = None
 
             outcome = ExperienceOutcome(
