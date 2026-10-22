@@ -234,9 +234,9 @@ _NO_INDEX_AUDIT_SIGNALS_GENERATED_AT = (
 #: per-key outcome heap fetches; post-index ~118ms. Both indexes stay
 #: application-facing (payload INCLUDE covered) and idempotent.
 _INDEX_EXPERIENCE_RETRIEVAL_REASON = (
-    "audit_experiences/merged-retrieval 60s research cycle: LIMIT 20000 "
-    "ORDER BY decision_timestamp DESC LEFT JOIN outcomes ON idempotency_key "
-    "(pre-fix EXPLAIN 436.98ms -> 118ms with these two covered indexes)"
+    "audit_experiences+audit_experience_outcomes merged-retrieval 60s research "
+    "cycle: LIMIT 20000 ORDER BY decision_timestamp DESC LEFT JOIN outcomes ON "
+    "idempotency_key (pre-fix EXPLAIN 436.98ms -> 118ms with these two covered indexes)"
 )
 
 MISSING_INDEXES: tuple[MissingIndex, ...] = (
