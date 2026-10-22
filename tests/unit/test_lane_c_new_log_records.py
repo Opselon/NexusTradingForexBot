@@ -129,9 +129,9 @@ def test_f1_runtime_mode_trade_allowed_probe_failure_is_loud(cap_capture):
     assert result is None
     assert eng._runtime_mode == "LIVE"  # legacy outcome: permissive default
     msgs = _records(cap_capture, logging.ERROR)
-    assert any(
-        m.startswith("RUNTIME_MODE_PROBE_FAILED") and "trade_allowed" in m for m in msgs
-    ), msgs
+    assert any(m.startswith("RUNTIME_MODE_PROBE_FAILED") and "trade_allowed" in m for m in msgs), (
+        msgs
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -186,8 +186,7 @@ def test_f2_dispatch_clamp_account_info_failure_warns_and_defaults(cap_capture):
     assert out == 2.0  # legacy outcome: risk engine returns clamped input
     msgs = _records(cap_capture, logging.WARNING)
     assert any(
-        "DISPATCH_CLAMP_BROKER_SPEC_UNAVAILABLE" in m
-        and "get_account_info() raised" in m
+        "DISPATCH_CLAMP_BROKER_SPEC_UNAVAILABLE" in m and "get_account_info() raised" in m
         for m in msgs
     ), msgs
     assert boomed.account_calls == 1
@@ -207,8 +206,7 @@ def test_f3_mode_swap_broker_identity_failure_is_loud(cap_capture):
     class _BoomIdentMT5:
         current_account_source = None
 
-        def __init__(self, account=None, password=None, server=None,
-                     timeout=5000, retries=3):
+        def __init__(self, account=None, password=None, server=None, timeout=5000, retries=3):
             pass
 
         def configure_broker_identity(self, magic=None, bot_symbol=None):
@@ -230,9 +228,11 @@ def test_f3_mode_swap_broker_identity_failure_is_loud(cap_capture):
         mt5_adapter = None
 
     eng = SimpleNamespace()
-    eng.config = SimpleNamespace(execution=_Exec(), mt5=SimpleNamespace(
-        account=None, password=None, server=None, timeout_ms=1000, retries=0),
-        paper_data=None)
+    eng.config = SimpleNamespace(
+        execution=_Exec(),
+        mt5=SimpleNamespace(account=None, password=None, server=None, timeout_ms=1000, retries=0),
+        paper_data=None,
+    )
     eng.adapter = PaperMT5Adapter()
     eng.order_manager = _OM()
     eng._mode_override = None
@@ -302,9 +302,18 @@ class _Tick:
 
 
 _XAUUSD = SymbolInfo(
-    symbol="XAUUSD", digits=2, point=0.01, tick_size=0.01, tick_value=1.0,
-    volume_min=0.01, volume_max=10.0, volume_step=0.01, stops_level=0,
-    freeze_level=0, trade_contract_size=100.0)
+    symbol="XAUUSD",
+    digits=2,
+    point=0.01,
+    tick_size=0.01,
+    tick_value=1.0,
+    volume_min=0.01,
+    volume_max=10.0,
+    volume_step=0.01,
+    stops_level=0,
+    freeze_level=0,
+    trade_contract_size=100.0,
+)
 
 
 def test_f4_ai_flip_prob_assembly_failure_is_error_logged(cap_capture):
@@ -312,22 +321,46 @@ def test_f4_ai_flip_prob_assembly_failure_is_error_logged(cap_capture):
 
     om = _fresh_om()
     pos = Position(
-        ticket=777, symbol="XAUUSD", type=OrderType.BUY, volume=0.1,
-        price_open=2000.0, sl=1990.0, tp=2020.0, profit=-5.0, magic=123)
+        ticket=777,
+        symbol="XAUUSD",
+        type=OrderType.BUY,
+        volume=0.1,
+        price_open=2000.0,
+        sl=1990.0,
+        tp=2020.0,
+        profit=-5.0,
+        magic=123,
+    )
 
     from nexus_scalp.execution.protection_ledger import PositionProtectionState
 
     prot = PositionProtectionState()
     prot.close_requested = True
     handled = om._run_protection_chain(
-        pos=pos, ticket=777, now=__import__("datetime").datetime.now(
-            __import__("datetime").UTC), current_time=1000.0,
-        protection=prot, price_current=1999.0, hold_score=0, base_hold_score=0,
-        invalidate_reasons=[], atr=1.0, spread=0.2, min_stop_gap=0.1,
-        symbol_info=_XAUUSD, smart_metrics={}, evidence={}, pnl_features={},
-        probs=_BoomProbs(), feature_vector=None, regime_state=None,
-        current_tick=_Tick(), holding_duration=0.0,
-        debounced_state=PositionState.LOSS_EARLY, prot_score=0)
+        pos=pos,
+        ticket=777,
+        now=__import__("datetime").datetime.now(__import__("datetime").UTC),
+        current_time=1000.0,
+        protection=prot,
+        price_current=1999.0,
+        hold_score=0,
+        base_hold_score=0,
+        invalidate_reasons=[],
+        atr=1.0,
+        spread=0.2,
+        min_stop_gap=0.1,
+        symbol_info=_XAUUSD,
+        smart_metrics={},
+        evidence={},
+        pnl_features={},
+        probs=_BoomProbs(),
+        feature_vector=None,
+        regime_state=None,
+        current_tick=_Tick(),
+        holding_duration=0.0,
+        debounced_state=PositionState.LOSS_EARLY,
+        prot_score=0,
+    )
     assert handled is True  # legacy outcome (close already accepted -> skip-rest)
     msgs = _records(cap_capture, logging.ERROR)
     assert any(
@@ -362,12 +395,16 @@ def test_f5_paper_tick_processing_failure_falls_back_to_stdlib_logging(caplog, m
 
     monkeypatch.setitem(sys.modules, "nexus_scalp.market_data.paper_stress", fake)
     with caplog.at_level(logging.ERROR):
-        with patch.object(
-            PaperMT5Adapter, "process_tick_execution",
-            side_effect=RuntimeError("tick path boom"),
-        ), patch(
-            "nexus_scalp.observability.logging.get_logger",
-            side_effect=RuntimeError("obs logger down"),
+        with (
+            patch.object(
+                PaperMT5Adapter,
+                "process_tick_execution",
+                side_effect=RuntimeError("tick path boom"),
+            ),
+            patch(
+                "nexus_scalp.observability.logging.get_logger",
+                side_effect=RuntimeError("obs logger down"),
+            ),
         ):
             tick = paper._get_last_tick_delegated("XAUUSD", seed=7)
     assert tick is not None  # legacy outcome: tick survives
@@ -399,15 +436,15 @@ def test_f6_gateway_secret_store_failure_warns(cap_capture, monkeypatch):
     monkeypatch.setenv("NSE_GATEWAY_ALLOW_DEFAULTS", "1")
     srv.set_allow_live(False)
     with patch(
-        "nexus_scalp.settings.secret_store.SecureSecretStore", _Boom,
+        "nexus_scalp.settings.secret_store.SecureSecretStore",
+        _Boom,
     ):
         key, secret = srv._expected_keys()
     assert key == srv.DEFAULT_API_KEY  # legacy outcome: defaults allowed when permitted
     assert secret == srv.DEFAULT_SECRET
     msgs = _records(cap_capture, logging.WARNING)
     assert any(
-        m.startswith("GATEWAY_SECRET_STORE_READ_FAILED")
-        and "secret store probe raised" in m
+        m.startswith("GATEWAY_SECRET_STORE_READ_FAILED") and "secret store probe raised" in m
         for m in msgs
     ), msgs
 
@@ -438,9 +475,10 @@ def test_f7_gateway_demo_guard_probe_failure_fails_closed_loudly(cap_capture):
             calls["disconnect"] += 1
 
     with patch(
-        "nexus_scalp.adapters.mt5.mt5_adapter.DirectMT5Adapter", _Adapter,
+        "nexus_scalp.adapters.mt5.mt5_adapter.DirectMT5Adapter",
+        _Adapter,
     ):
-        with pytest.raises(Exception):
+        with pytest.raises(Exception):  # noqa: B017 - ValueError expected here
             srv._get_adapter()
     # legacy outcomes: one connect, one probe attempt, fail-closed disconnect
     assert calls == {"connect": 1, "snap": 1, "disconnect": 1}
@@ -465,14 +503,19 @@ def test_f8_adviser_forget_failure_warns_rate_limited(cap_capture):
     from nexus_scalp.execution import order_manager as om_mod
 
     class _BoomForget:
-        calls: list[int] = []
+        call_list: list[int]
+
+        def __init__(self) -> None:
+            self.call_list = []
 
         def forget(self, ticket):
-            _BoomForget.calls.append(ticket)
+            assert self.call_list is not None
+            self.call_list.append(ticket)
             raise RuntimeError("boom-from-forget")
 
     om = _fresh_om()
-    om._position_adviser = _BoomForget()
+    boom = _BoomForget()
+    om._position_adviser = boom
     om._adviser_forget_warn_times = {}
 
     om._cleanup_ticket_state(555)
@@ -480,7 +523,7 @@ def test_f8_adviser_forget_failure_warns_rate_limited(cap_capture):
     om._cleanup_ticket_state(555)
     msgs = _records(cap_capture, logging.WARNING)
     assert len([m for m in msgs if m.startswith("ADVISER_FORGET_FAILED")]) == 1, msgs
-    assert len(_BoomForget.calls) == 3  # legacy outcome: non-fatal, still called
+    assert len(boom.call_list) == 3  # legacy outcome: non-fatal, still called
 
 
 def test_f8_adviser_forget_success_produces_no_record(cap_capture):
