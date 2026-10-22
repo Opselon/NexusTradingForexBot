@@ -312,11 +312,27 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
         )
         set_env("NSE_DATABASE__PG_USER", os.environ.get("NSE_DATABASE__PG_USER", "nse_user"))
         set_env("NSE_DATABASE__PG_SSLMODE", "disable")
-        password = os.environ.get("NSE_PG_TEST_PASSWORD", "nse_password_dev")
+        # POTWG-2026-10-22: this line used to write ``nse_password_dev`` into
+        # the LIVE operator store unconditionally, which broke every local
+        # (non-CI) run the moment the engine tried to connect to the user's
+        # own cluster — the real credential in ``db.postgresql.password`` was
+        # replaced by a CI value that only exists inside the disposable
+        # ``nse-ci-pg`` container. CI keeps its behaviour (the env fallback
+        # list below is unchanged); outside CI the operator's saved
+        # credential wins, and only when NO saved credential exists does the
+        # dev placeholder get written so a fresh CI-like environment still
+        # boots.
         from nexus_scalp.database.config import PG_PASSWORD_SECRET_KEY
         from nexus_scalp.settings.secret_store import SecureSecretStore
 
-        SecureSecretStore().set_secret(PG_PASSWORD_SECRET_KEY, password)
+        password = os.environ.get("NSE_PG_TEST_PASSWORD", "nse_password_dev")
+        store = SecureSecretStore()
+        if os.environ.get("CI") == "true":
+            store.set_secret(PG_PASSWORD_SECRET_KEY, password)
+        else:
+            local_pw = store.get_secret(PG_PASSWORD_SECRET_KEY)
+            if not local_pw:
+                store.set_secret(PG_PASSWORD_SECRET_KEY, password)
     elif provider == "sqlite":
         set_env("NSE_DATABASE__PROVIDER", "sqlite")
         set_env("NSE_DATABASE__SQLITE_PATH", str(state_root / "audit.db"))

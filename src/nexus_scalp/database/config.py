@@ -326,6 +326,16 @@ class DatabaseConfig:
         if not raw:
             return cls.for_sqlite(domain)
         try:
+            # POTWG-2026-10-22: a persisted PostgreSQL row was written by the
+            # settings DB WITHOUT ``password_secret`` (to_dict only added the
+            # key when include_secret_ref). Such a row then resolved to an
+            # empty secret reference at connect time, resolve_password fell
+            # through to the env seam, and the engine died with "password
+            # authentication failed" even though db.postgresql.password was
+            # valid and present in the OS store. The credential key is
+            # CONSTANT (PG_PASSWORD_SECRET_KEY), not per-row data — restoring
+            # it here is safe and makes to_dict's include_secret_ref contract
+            # unnecessary for the read path.
             cfg = cls(
                 provider=DatabaseProvider.parse(raw.get("provider")),
                 domain=raw.get("domain") or domain,
@@ -333,7 +343,14 @@ class DatabaseConfig:
                 port=int(raw.get("port") or 0),
                 database=str(raw.get("database") or ""),
                 username=str(raw.get("username") or ""),
-                password_secret=str(raw.get("password_secret") or ""),
+                password_secret=str(
+                    raw.get("password_secret")
+                    or (
+                        PG_PASSWORD_SECRET_KEY
+                        if str(raw.get("provider") or "").lower() == "postgresql"
+                        else ""
+                    )
+                ),
                 ssl_mode=str(raw.get("ssl_mode") or ""),
                 command_timeout_sec=int(raw.get("command_timeout_sec") or 0),
                 migrate_on_startup=bool(raw.get("migrate_on_startup", True)),

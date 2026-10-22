@@ -131,6 +131,14 @@ class AlgoConfig(BaseModel):
     ai_zone_confidence_threshold: float = Field(default=0.60, ge=0.50, le=0.99)
     fvg_mitigation_sensitivity: float = Field(default=0.5, ge=0.1, le=1.0)
     order_block_lookback_bars: int = Field(default=30, ge=10, le=100)
+    #: Minimum price distance a PENDING order (limit/stop) must keep from the
+    #: market for the symbol. This is the broker's STOPS_LEVEL expressed by the
+    #: execution adapter; the risk engine already rejects anything closer. The
+    #: candidate generator must honour the SAME floor when it clamps an entry
+    #: toward the market, otherwise every clamped proposal is generated only to
+    #: be rejected one layer later — a rejection storm that yields zero trades.
+    #: Sourced per-symbol at runtime; this default is the 2-digit XAUUSD value.
+    min_pending_stop_distance: float = Field(default=0.12, gt=0.0, le=10.0)
     ai_flip_relative_bias_threshold: float = Field(default=0.60, ge=0.51, le=0.85)
     ai_flip_min_delta: float = Field(default=0.10, ge=0.02, le=0.30)
 
