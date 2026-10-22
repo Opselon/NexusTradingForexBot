@@ -309,3 +309,4 @@ tests/unit/test_flood_control.py
 tests/unit/test_risk_rejection_diagnostics.py
 tests/unit/test_task_spawner.py
 tests/unit/test_predictive_limit_stops_floor.py
+tests/unit/test_telegram_dedup_health.py
