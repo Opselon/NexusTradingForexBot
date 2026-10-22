@@ -31,11 +31,11 @@ import pytest
 from nexus_scalp.adapters.database import audit_write_plane as awp_mod
 from nexus_scalp.database import config as config_mod
 from nexus_scalp.database import health as health_mod
-from nexus_scalp.settings import service as settings_service_mod
 from nexus_scalp.database import log_store as log_store_mod
 from nexus_scalp.database.drivers import base as drivers_base_mod
 from nexus_scalp.database.drivers import postgres_driver as pg_mod
 from nexus_scalp.database.engine import DatabaseMigrationEngine
+from nexus_scalp.settings import service as settings_service_mod
 
 
 class LogProbe:
