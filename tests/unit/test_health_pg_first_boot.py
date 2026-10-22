@@ -73,20 +73,23 @@ class _RecordingDriver(SQLiteDriver):
     def version_statements(self) -> list[str]:
         """The statements that would FAIL against a missing relation."""
         return [
-            s
-            for s in self.statements
-            if "FROM schema_migrations" in s or "FROM schema_meta" in s
+            s for s in self.statements if "FROM schema_migrations" in s or "FROM schema_meta" in s
         ]
 
 
-def _load_pg(monkeypatch: Any, driver_factory: Any) -> None:
+def _load_pg(monkeypatch: Any, driver_factory: Any, tmp_path: Any = None) -> None:
     cfg = DatabaseConfig(
         provider=DatabaseProvider.POSTGRESQL,
         domain="audit",
         host="127.0.0.1",
         port=5499,
-        database="nse_fresh",
+        database="nse_probe",
         username="postgres",
+        # The stub driver subclasses the SQLite driver for its interface only.
+        # Give it an explicit throwaway path under tmp so constructing it can
+        # never touch a real database OR drop a file in the repo root — the
+        # SQLite path is used as a fallback when ``database`` is a bare name.
+        sqlite_path=str((tmp_path or ".") / "unused_probe.db"),
     )
     DatabaseHealthService.invalidate_domain_cache()
     monkeypatch.setattr(
@@ -94,9 +97,7 @@ def _load_pg(monkeypatch: Any, driver_factory: Any) -> None:
         lambda domain, env=None, **kwargs: cfg,
         raising=True,
     )
-    monkeypatch.setattr(
-        "nexus_scalp.database.health.get_driver", driver_factory, raising=True
-    )
+    monkeypatch.setattr("nexus_scalp.database.health.get_driver", driver_factory, raising=True)
 
 
 def _capture_warnings(monkeypatch: Any) -> list[str]:
@@ -115,7 +116,7 @@ def _capture_warnings(monkeypatch: Any) -> list[str]:
     return records
 
 
-def test_fresh_pg_reports_not_provisioned(monkeypatch: Any) -> None:
+def test_fresh_pg_reports_not_provisioned(monkeypatch: Any, tmp_path: Any) -> None:
     """Absent relation => NOT_PROVISIONED, and NO version SELECT is issued."""
     captured: list[_RecordingDriver] = []
 
@@ -124,7 +125,7 @@ def test_fresh_pg_reports_not_provisioned(monkeypatch: Any) -> None:
         captured.append(driver)
         return driver
 
-    _load_pg(monkeypatch, factory)
+    _load_pg(monkeypatch, factory, tmp_path)
     records = _capture_warnings(monkeypatch)
     svc = DatabaseHealthService()
     snap = svc.check_domain("audit")
@@ -140,7 +141,7 @@ def test_fresh_pg_reports_not_provisioned(monkeypatch: Any) -> None:
     )
 
 
-def test_provisioned_pg_reads_version(monkeypatch: Any) -> None:
+def test_provisioned_pg_reads_version(monkeypatch: Any, tmp_path: Any) -> None:
     """The normal path still reads MAX(version) once the relation exists."""
     captured: list[_RecordingDriver] = []
 
@@ -149,7 +150,7 @@ def test_provisioned_pg_reads_version(monkeypatch: Any) -> None:
         captured.append(driver)
         return driver
 
-    _load_pg(monkeypatch, factory)
+    _load_pg(monkeypatch, factory, tmp_path)
     records = _capture_warnings(monkeypatch)
     svc = DatabaseHealthService()
     snap = svc.check_domain("audit")
@@ -159,7 +160,7 @@ def test_provisioned_pg_reads_version(monkeypatch: Any) -> None:
     assert not any("DB_HEALTH_SCHEMA_NOT_PROVISIONED" in r for r in records), records
 
 
-def test_other_scalar_failures_stay_unknown(monkeypatch: Any) -> None:
+def test_other_scalar_failures_stay_unknown(monkeypatch: Any, tmp_path: Any) -> None:
     """A failure that is NOT a missing relation degrades exactly as before."""
 
     def factory(config: Any) -> _RecordingDriver:
@@ -169,7 +170,7 @@ def test_other_scalar_failures_stay_unknown(monkeypatch: Any) -> None:
             version_error=RuntimeError("column schema_migrations.version missing"),
         )
 
-    _load_pg(monkeypatch, factory)
+    _load_pg(monkeypatch, factory, tmp_path)
     records = _capture_warnings(monkeypatch)
     svc = DatabaseHealthService()
     snap = svc.check_domain("audit")
