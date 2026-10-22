@@ -219,6 +219,16 @@ async def test_generated_token_persisted(tmp_path, monkeypatch):
     from nexus_scalp.release import paths as release_paths
 
     monkeypatch.setattr(release_paths, "app_data_root", lambda: tmp_path)
+    # HERMETIC: _resolve_token's precedence is env > repo-root .env > secret
+    # store, and a REAL boot publishes NSE_WEB_AUTH_TOKEN into the repo-root
+    # .env (auth_boot.publish). On any machine that has run the engine, that
+    # operator dotfile answers first and this test never reaches the
+    # generated/persisted branch it exists to prove — so the dotfile layer is
+    # isolated here. auth.py imports read_env_file INSIDE _resolve_token, so
+    # patching the defining module's attribute is what the call reads.
+    from nexus_scalp.web import auth_boot as auth_boot_mod
+
+    monkeypatch.setattr(auth_boot_mod, "read_env_file", lambda: {})
     # Fresh store instance semantics: ensure the secret store resolves its
     # root per-call (it caches the root in __init__, constructed inside
     # _resolve_token, so patching release_paths.app_data_root suffices).
