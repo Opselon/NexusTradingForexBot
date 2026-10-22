@@ -144,8 +144,8 @@ class RuntimeModeService:
                 # re-discover identity from CONFIG (mission §45) — never
                 # inherit stale magic/symbol assumptions from the previous
                 # provider. Failure-isolated; None leaves the fallback.
-                with contextlib.suppress(Exception):
-                    if hasattr(new_adapter_direct, "configure_broker_identity"):
+                if hasattr(new_adapter_direct, "configure_broker_identity"):
+                    try:
                         new_adapter_direct.configure_broker_identity(
                             magic=getattr(
                                 getattr(self.config, "execution", None), "magic_number", None
@@ -153,6 +153,17 @@ class RuntimeModeService:
                             bot_symbol=getattr(
                                 getattr(self.config, "execution", None), "symbol", None
                             ),
+                        )
+                    except Exception as ident_err:
+                        # OBS-SILENT-PASS (Lane A F3): a failed re-identity
+                        # leaves the adapter on the PREVIOUS provider's
+                        # magic/symbol (stale-magic risk) — it must not be
+                        # silent.
+                        logger.error(
+                            "MODE_CONFIGURE_BROKER_IDENTITY_FAILED: configure_broker_identity "
+                            "raised %s — adapter keeps STALE magic/symbol identity "
+                            "(stale-magic risk: orders may be attributed to the old provider)",
+                            ident_err,
                         )
                 self.adapter = new_adapter_direct
                 self.order_manager.adapter = new_adapter_direct

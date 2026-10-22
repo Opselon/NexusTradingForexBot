@@ -4462,7 +4462,16 @@ class LiveEngine:
                 allowed = True
                 try:
                     allowed = bool(getattr(snap, "trade_allowed", True))
-                except Exception:
+                except Exception as probe_err:
+                    # OBS-SILENT-PASS (Lane A F1): never silently re-permit
+                    # trading when the runtime-config probe is broken — the
+                    # read failing must be LOUD because the permissive default
+                    # keeps the account live.
+                    logger.error(
+                        "RUNTIME_MODE_PROBE_FAILED: trade_allowed probe raised %s "
+                        "— keeping permissive default (trading stays allowed)",
+                        probe_err,
+                    )
                     allowed = True
                 if allowed is False:
                     self._runtime_mode = "LIVE / TRADE_BLOCKED"
