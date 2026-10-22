@@ -245,11 +245,32 @@ class DatabaseHealthService:
             # SQLite uses the migration engine. PostgreSQL reads its own metadata.
             try:
                 if cfg.is_postgresql:
-                    version = driver.scalar(
-                        "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
-                    )
-                    out["schema_version"] = int(version or 0)
-                    out["migration_state"] = "CURRENT"
+                    try:
+                        version = driver.scalar(
+                            "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                        )
+                    except Exception as probe_exc:
+                        # A database that has not been provisioned yet has no
+                        # schema_migrations relation. That is a legitimate first-boot
+                        # state, not a query failure: report NOT_PROVISIONED (and
+                        # name it once at warning) instead of leaking a raw
+                        # [PG-QUERY] error that makes a healthy boot look broken.
+                        if _is_missing_relation(probe_exc):
+                            out["schema_version"] = 0
+                            out["migration_state"] = "NOT_PROVISIONED"
+                            logger.warning(
+                                "[DB-HEALTH] event=DB_HEALTH_SCHEMA_NOT_PROVISIONED "
+                                "domain=%s detail=schema_migrations absent; database "
+                                "has not been provisioned yet (expected on first boot "
+                                "before the domain migration runs)",
+                                domain,
+                            )
+                            version = None
+                        else:
+                            raise
+                    if version is not None:
+                        out["schema_version"] = int(version or 0)
+                        out["migration_state"] = "CURRENT"
                 else:
                     from nexus_scalp.database.engine import DatabaseMigrationEngine
                     from nexus_scalp.database.models import DatabaseDomain
@@ -431,6 +452,23 @@ class DatabaseHealthService:
             "critical_tables": audit_domain.get("critical_tables", {}),
             "timestamp_utc": _utc_now(),
         }
+
+
+def _is_missing_relation(exc: BaseException) -> bool:
+    """True when the failure is PostgreSQL's ``UndefinedTable`` for a probe.
+
+    A brand-new database legitimately has no ``schema_migrations`` relation
+    until the domain migration runs. Callers use this to distinguish "not
+    provisioned yet" from a real query failure, so a healthy first boot does
+    not emit an error record. Database-agnostic by design: it matches the
+    exception type name rather than importing a psycopg class (the health probe
+    must not hard-depend on a driver package).
+    """
+    if type(exc).__name__ in {"UndefinedTable", "ProgrammingError"}:
+        message = str(exc).lower()
+        if "does not exist" in message or "undefinedtable" in message:
+            return True
+    return False
 
 
 def _engine_path_for(cfg: DatabaseConfig) -> str:
