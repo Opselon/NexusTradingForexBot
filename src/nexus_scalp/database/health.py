@@ -18,6 +18,7 @@ from nexus_scalp.database.provider import DatabaseProvider
 from nexus_scalp.database.query_logging import query_observability_snapshot
 from nexus_scalp.database.views import ensure_analytics_views
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.settings.service import SettingsDatabase
 
 logger = get_logger("nexus_scalp.database.health")
 
@@ -461,7 +462,6 @@ def load_ui_config(workspace: str | None = None) -> dict[str, Any]:
         PG_CONFIG_SETTING_KEY,
         PROVIDER_SETTING_KEY,
     )
-    from nexus_scalp.settings.service import SettingsDatabase
 
     out: dict[str, Any] = {
         "provider": "sqlite",

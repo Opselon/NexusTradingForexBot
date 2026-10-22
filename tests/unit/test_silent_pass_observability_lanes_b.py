@@ -400,7 +400,7 @@ def test_db_health_settings_read_failed_logged(
     def boom(*_a: Any, **_k: Any) -> None:
         raise RuntimeError("settings db unreadable")
 
-    with patch.object(settings_service_mod, "SettingsDatabase", new=boom):
+    with patch.object(health_mod, "SettingsDatabase", new=boom):
         out = health_mod.load_ui_config()
     _assert_token(records, "DB_HEALTH_SETTINGS_READ_FAILED")
     # Behavior unchanged: provider/postgres stay the documented defaults.
@@ -478,7 +478,7 @@ def test_db_config_persisted_row_unparsable_logged(
         def close(self) -> None:
             return None
 
-    with patch.object(settings_service_mod, "SettingsDatabase", lambda *a, **k: ExplodingDB()):
+    with patch.object(config_mod, "SettingsDatabase", lambda *a, **k: ExplodingDB()):
         cfg = config_mod.load_database_config("news")
     _assert_token(records, "DB_CONFIG_PERSISTED_ROW_UNPARSABLE")
     # The log_store DEBUG record (nested config resolve during persist) can
