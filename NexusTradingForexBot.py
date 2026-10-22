@@ -107,6 +107,18 @@ from nexus_scalp.web.server import create_app
 console = Console()
 logger = get_logger("nexus_scalp.launcher")
 
+# WINDOWS-UX-001 (taskbar identity): this SOURCE launcher is a real Windows
+# process — the taskbar entry belongs to python.exe unless the AppUserModelID
+# is pinned to the product before the console renders. Applied at module import
+# (before display_startup_banner and before any GUI/taskbar registration), and
+# failure-isolated so branding can never block a boot. Non-Windows: no-op.
+try:
+    from nexus_scalp.platform.windows_identity import apply_windows_identity
+
+    apply_windows_identity()
+except Exception as _identity_err:  # pragma: no cover - never blocks a launch
+    logger.warning("Windows taskbar identity not applied (non-fatal): %s", _identity_err)
+
 GRADIENT_TITLE = "bold cyan"
 MODE_TIPS = {
     "PAPER": "Safe simulation — no broker orders. Perfect for first run.",
@@ -131,6 +143,12 @@ def display_startup_banner() -> None:
     title = Text("NEXUS SCALP ENGINE", style="bold cyan")
     title.append(f"  {tag}", style="dim cyan")
     is_tty = bool(getattr(sys.stdout, "isatty", lambda: False)())
+    # WINDOWS-UX-001: pin the visible console window text to the product label
+    # so the taskbar entry (already grouped under the AppUserModelID) shows
+    # "NexusTraderBot" instead of the python.exe image name. Best-effort: the
+    # title is cosmetic and must never break a banner render (e.g. a pipe).
+    with contextlib.suppress(Exception):
+        console.set_window_title("NexusTraderBot")
     # Two-frame shimmer on TTY, single frame otherwise
     frames: list[Panel] = []
     for step in (0, 1):

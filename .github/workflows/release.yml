@@ -301,7 +301,7 @@ jobs:
         run: |
           python -m PyInstaller --noconfirm --clean --onedir --name NexusScalpEngine `
             --icon "$PWD\installer\NexusScalpEngine.ico" `
-            --version-file "$PWD\installer\version_info.txt" `
+            --version-file "installer\version_info.txt" `
             --add-data "$PWD\Web;Web" --add-data "$PWD\configs;configs" `
             --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
             --add-data "$PWD\frontend\dist;frontend/dist" `
@@ -325,7 +325,7 @@ jobs:
           # stamped so version identity is truthful in the frozen binary.
           python -m PyInstaller --noconfirm --clean --onefile --name NexusScalpEngine-CLI `
             --icon "$PWD\installer\NexusScalpEngine.ico" `
-            --version-file "$PWD\installer\version_info.txt" `
+            --version-file "installer\version_info.txt" `
             --add-data "$PWD\build-info.json;." `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `
