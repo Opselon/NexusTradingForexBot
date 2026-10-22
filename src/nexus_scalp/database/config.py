@@ -24,6 +24,7 @@ from typing import Any
 from nexus_scalp.database.provider import DatabaseProvider
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.secret_store import SecureSecretStore
+from nexus_scalp.settings.service import SettingsDatabase
 
 _logger = get_logger("nexus_scalp.database.config")
 
@@ -444,8 +445,6 @@ def load_database_config(
     settings. Without the seam, persisted settings keep their full authority.
     Non-audit domains ignore the seam entirely.
     """
-    from nexus_scalp.settings.service import SettingsDatabase
-
     cfg = DatabaseConfig.for_sqlite(domain)
 
     envd = env if env is not None else os.environ
