@@ -141,70 +141,22 @@ class SqliteToPostgresMigrator:
         return [t for t in tables if t not in SKIP_TABLES]
 
     def _financial_cols(self) -> dict[str, list[str]]:
-        """Financial precision watch-list per table (audit + broker + candle)."""
-        return {
-            "audit_ledger": [
-                "pnl",
-                "commission",
-                "swap",
-                "gross_pnl_usd",
-                "net_pnl_usd",
-                "mae",
-                "mfe",
-                "MAE_usd",
-                "MFE_usd",
-                "account_balance_after",
-                "account_equity_after",
-                "drawdown_percent_after",
-                "exit_reason_confidence",
-                "ai_confidence_at_open",
-            ],
-            "audit_broker_trades": [
-                "gross_pnl",
-                "commission",
-                "swap",
-                "fee",
-                "net_pnl",
-                "entry_price",
-                "exit_price",
-                "volume",
-            ],
-            "audit_broker_deals": [
-                "profit",
-                "fee",
-                "swap",
-                "commission",
-                "net_result",
-                "price",
-                "volume",
-            ],
-            "audit_broker_orders": [
-                "price_open",
-                "price_current",
-                "price_stop_limit",
-                "sl",
-                "tp",
-                "volume_initial",
-                "volume_current",
-            ],
-            "audit_account_snapshots": ["balance", "equity", "margin_free", "peak_equity"],
-            "audit_signals": [
-                "confidence",
-                "proposed_entry",
-                "stop_loss",
-                "take_profit",
-                "htf_score",
-                "smc_score",
-            ],
-            "audit_experience_outcomes": [
-                "realized_pnl_usd",
-                "realized_r_multiple",
-                "mae_usd",
-                "mfe_usd",
-            ],
-        }
-        merged = dict(self.options.financial_tables or {})
-        merged.update(_DEFAULT_FINANCIAL)
+        """Financial precision watch-list per table (audit + broker + candle).
+
+        ``_DEFAULT_FINANCIAL`` is the baseline watch-list (SHARED-DEFAULTS
+        authority, module constant below); ``options.financial_tables`` is
+        the per-run override contract. Probing a column the SQLite source
+        genuinely does not carry is a hard validation error
+        (MIG-VALID: "SQLite source column missing") — never skip, never
+        zero-fill — so the watch-list must reflect what the source schema
+        actually carries. For audit_ledger the older, narrower columns
+        (pnl, commission, swap, mae, mfe, gross/net_pnl_usd) come from the
+        application's baseline skeleton heal (app_columns
+        APP_REQUIRED_COLUMNS) — a migrator targeting a heal-less SQLite
+        source uses the narrower ``options.financial_tables`` entry instead.
+        """
+        merged = dict(_DEFAULT_FINANCIAL)
+        merged.update(self.options.financial_tables or {})
         return merged
 
     # ------------------------------------------------------------- preview
@@ -491,7 +443,76 @@ class SqliteToPostgresMigrator:
             return "FAILED"
 
 
-_DEFAULT_FINANCIAL: dict[str, list[str]] = {}
+#: Financial precision watch-list — the single authority for ``_financial_cols``.
+#: A baseline (not a decree): ``MigrationOptions.financial_tables`` overrides a
+#: table's entry per run, because the columns a migration can honestly compare
+#: are exactly the columns the SQLITE SOURCE carries. ``audit_ledger``'s older
+#: narrow columns (pnl/commission/swap/gross_pnl_usd/net_pnl_usd/mae/mfe) are
+#: added by the app's baseline-skeleton heal (``app_columns.APP_REQUIRED_COLUMNS``),
+#: so a source that never ran that heal does not carry them and must not be
+#: probed for them — a genuinely absent column is a hard validation failure
+#: (MIG-VALID), never a silent skip.
+_DEFAULT_FINANCIAL: dict[str, list[str]] = {
+    "audit_ledger": [
+        "pnl",
+        "commission",
+        "swap",
+        "gross_pnl_usd",
+        "net_pnl_usd",
+        "mae",
+        "mfe",
+        "MAE_usd",
+        "MFE_usd",
+        "account_balance_after",
+        "account_equity_after",
+        "drawdown_percent_after",
+        "exit_reason_confidence",
+        "ai_confidence_at_open",
+    ],
+    "audit_broker_trades": [
+        "gross_pnl",
+        "commission",
+        "swap",
+        "fee",
+        "net_pnl",
+        "entry_price",
+        "exit_price",
+        "volume",
+    ],
+    "audit_broker_deals": [
+        "profit",
+        "fee",
+        "swap",
+        "commission",
+        "net_result",
+        "price",
+        "volume",
+    ],
+    "audit_broker_orders": [
+        "price_open",
+        "price_current",
+        "price_stop_limit",
+        "sl",
+        "tp",
+        "volume_initial",
+        "volume_current",
+    ],
+    "audit_account_snapshots": ["balance", "equity", "margin_free", "peak_equity"],
+    "audit_signals": [
+        "confidence",
+        "proposed_entry",
+        "stop_loss",
+        "take_profit",
+        "htf_score",
+        "smc_score",
+    ],
+    "audit_experience_outcomes": [
+        "realized_pnl_usd",
+        "realized_r_multiple",
+        "mae_usd",
+        "mfe_usd",
+    ],
+}
 
 
 def load_migration_dest_config(workspace: str | None = None) -> DatabaseConfig:
