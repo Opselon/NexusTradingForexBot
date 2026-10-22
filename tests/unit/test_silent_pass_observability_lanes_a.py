@@ -593,6 +593,11 @@ def test_f7_gateway_account_snapshot_probe_failure_fails_closed(monkeypatch) -> 
 
     adapter = _Adapter()
 
+    # The production guard refuses to build an adapter off-Windows, so a test
+    # running on Linux CI would never reach the probe under test. Pin the
+    # platform for the duration of this test (restored by monkeypatch).
+    monkeypatch.setattr(srv_mod.sys, "platform", "win32")
+
     # _get_adapter imports DirectMT5Adapter from
     # nexus_scalp.adapters.mt5.mt5_adapter at call time: stub the module.
     stub = type(sys)("nexus_scalp.adapters.mt5.mt5_adapter")

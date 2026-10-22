@@ -474,9 +474,12 @@ def test_f7_gateway_demo_guard_probe_failure_fails_closed_loudly(cap_capture):
         def disconnect(self):
             calls["disconnect"] += 1
 
-    with patch(
-        "nexus_scalp.adapters.mt5.mt5_adapter.DirectMT5Adapter",
-        _Adapter,
+    with (
+        patch(
+            "nexus_scalp.adapters.mt5.mt5_adapter.DirectMT5Adapter",
+            _Adapter,
+        ),
+        patch.object(srv.sys, "platform", "win32"),
     ):
         with pytest.raises(Exception):  # noqa: B017 - ValueError expected here
             srv._get_adapter()
