@@ -159,9 +159,9 @@ def test_load_ui_config_settings_failure_logs_error(monkeypatch) -> None:
     def boom() -> None:
         raise RuntimeError("settings db unreadable")
 
-    # load_ui_config imports SettingsDatabase inside the function, so the
-    # real import site is patched, not a (nonexistent) module-level binding.
-    monkeypatch.setattr(settings_service_mod, "SettingsDatabase", boom, raising=False)
+    # SettingsDatabase is resolved from health.py's MODULE binding (hoisted in
+    # d69af0f1b), so patch the defining-module seam there.
+    monkeypatch.setattr(health_mod, "SettingsDatabase", boom, raising=False)
     out = health_mod.load_ui_config()
     assert out["provider"] == "sqlite" and out["postgres"] is None  # unchanged
     hits = probe.messages(level="error", token="DB_HEALTH_SETTINGS_READ_FAILED")
@@ -179,7 +179,7 @@ def test_load_ui_config_healthy_path_silent(monkeypatch) -> None:
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(settings_service_mod, "SettingsDatabase", QuietDB, raising=False)
+    monkeypatch.setattr(health_mod, "SettingsDatabase", QuietDB, raising=False)
     health_mod.load_ui_config()
     assert probe.emitted == []
 
