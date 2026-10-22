@@ -50,6 +50,34 @@ if TYPE_CHECKING:  # pragma: no cover - import-cycle guard
 
 logger = logging.getLogger("nexus_scalp.audit")
 
+#: The resolver-swap guards (``_effective_queue`` etc.) fail open to the
+#: constructor-frozen value when the owner's live resolver raises. The swap
+#: then does NOT happen for the plane (yet still happens for the owner): the
+#: worker keeps draining / cadencing / spilling per the STALE value while the
+#: owner believes its new value is live. Every failure is therefore
+#: observable through this rate-limited warning — one emission per resolver
+#: per 5-minute window (the resist-the-flood contract) with the emission
+#: count as the canonical fact.
+_AUDIT_PLANE_RESOLVER_LOG_INTERVAL_SEC: Final = 300.0
+_resolver_warn_state: Final[dict[str, tuple[float, int]]] = {}
+
+
+def _rate_limited_resolver_warning(resolver: str, error: BaseException) -> None:
+    """Warn once per resolver per window that a runtime swap fell back."""
+    now = time.monotonic()
+    last_seen, emissions = _resolver_warn_state.get(resolver, (0.0, 0))
+    if emissions and (now - last_seen) < _AUDIT_PLANE_RESOLVER_LOG_INTERVAL_SEC:
+        return  # suppressed by the rate limit; the owner's swap is still live
+    _resolver_warn_state[resolver] = (now, emissions + 1)
+    # Pre-formatted (not printf-args): plain-logging probes and tests treat
+    # the message as immutable text; structlog still renders it unchanged.
+    logger.warning(
+        "[AUDIT-PLANE] event=AUDIT_PLANE_RESOLVER_FALLBACK "
+        f"resolver={resolver} emission={emissions + 1} "
+        f"error_type={type(error).__name__} (constructor-frozen value back "
+        "in force; the runtime swap is NOT effective for this plane)"
+    )
+
 _WriteItem = tuple[str, tuple]
 
 
@@ -513,8 +541,8 @@ class AuditWritePlane:
                 resolved = self._queue_resolver()
                 if resolved is not None:
                     return resolved
-        except Exception:
-            pass
+        except Exception as exc:
+            _rate_limited_resolver_warning("queue", exc)
         return self._queue
 
     def _effective_flush_interval(self) -> float:
@@ -529,8 +557,8 @@ class AuditWritePlane:
                 resolved = self._flush_interval_resolver()
                 if resolved is not None:
                     return max(0.01, float(resolved))
-        except Exception:
-            pass
+        except Exception as exc:
+            _rate_limited_resolver_warning("flush_interval", exc)
         return self._flush_interval
 
     def _effective_overflow_dir(self) -> Path:
@@ -545,8 +573,8 @@ class AuditWritePlane:
                 resolved = self._overflow_resolver()
                 if resolved is not None:
                     return Path(resolved)
-        except Exception:
-            pass
+        except Exception as exc:
+            _rate_limited_resolver_warning("overflow_dir", exc)
         return self._overflow_dir
 
     def stop(self, drain_timeout_sec: float = 5.0) -> bool:
@@ -819,8 +847,19 @@ class AuditWritePlane:
                             "dead_lettered": dead_lettered,
                         },
                     )
-                except Exception:
-                    pass
+                except Exception as probe_err:
+                    # The masked diagnostic channel itself failed. The outlets
+                    # above (dead-letter rows, counters, the logger.error below)
+                    # already carry the failure, so this pass drops only the
+                    # log_query_failure DEPTH — emit one record that names the
+                    # probe failure so the diagnostic channel being dead is
+                    # itself operator-visible.
+                    logger.error(
+                        "[AUDIT-PLANE] event=BATCH_PROBE_LOG_FAILED "
+                        "error_type=%s (log_query_failure raised; the recovery "
+                        "record below is unaffected)",
+                        type(probe_err).__name__,
+                    )
                 logger.error(
                     "Audit batch insert failed; recovery applied "
                     "batch=%d salvaged=%d dead_lettered=%d error_type=%s error=%s",
@@ -1000,8 +1039,20 @@ class AuditWritePlane:
                         error=row_err,
                         payload_note=f"overflow drain replay failure file={path.name}",
                     )
-                except Exception:
-                    pass
+                except Exception as dl_err:
+                    # Twin of the repository-side guard: the ERROR above
+                    # claimed "durably dead-lettered instead" and the store
+                    # write just failed — after the retire below the payload
+                    # is gone. Durable-loss event, not a logging nicety.
+                    logger.error(
+                        "[AUDIT-PLANE] event=AUDIT_PLANE_OVERFLOW_DEAD_LETTER_FAILED "
+                        "file=%s error_type=%s dl_error_type=%s (the rejected "
+                        "payload is NOT durably saved; it is retired below "
+                        "and lost)",
+                        path.name,
+                        type(row_err).__name__,
+                        type(dl_err).__name__,
+                    )
                 self._retire_overflow(path, ".rejected-")
         if recovered:
             self.financial_overflow_recovered += recovered

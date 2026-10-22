@@ -351,8 +351,19 @@ class DatabaseLogStore:
                     f"CREATE INDEX IF NOT EXISTS idx_{LOG_TABLE}_fp "
                     f"ON {LOG_TABLE} (fingerprint, last_seen_at)"
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                # Without this index the dedup path degrades to a full-table
+                # scan per record (or, on some backends, silently skips the
+                # re-record suppression entirely). Emit the failure so the
+                # degraded dedup is diagnosable instead of assumed-fine.
+                logger.warning(
+                    "[LOG-STORE] event=LOG_STORE_INDEX_BOOTSTRAP_FAILED "
+                    "table=%s error_type=%s (fingerprint/last_seen_at index "
+                    "absent; dedup path degraded — record-level dedup may "
+                    "miss or slow down until the index exists)",
+                    LOG_TABLE,
+                    type(exc).__name__,
+                )
         finally:
             if close_needed:
                 driver.close()
@@ -1140,8 +1151,18 @@ def uninstall_database_log_handler() -> None:
                 root.removeHandler(h)
                 with contextlib.suppress(Exception):
                     h.close()
-    except Exception:
-        pass
+    except Exception as exc:
+        # Sink teardown failure: a handler that could not be detached (or
+        # closed) keeps the DB sink attached while the caller believes the
+        # uninstall succeeded — the next install would then see TWO sinks.
+        # Debug-only record (uninstall runs on boot re-configuration paths
+        # and at interpreter shutdown, where a WARNING per reconfigure would
+        # flood), naming the condition so the stale-sink state is findable.
+        logger.debug(
+            "[LOG-STORE] event=LOG_SINK_UNINSTALL_FAILED error_type=%s "
+            "(a DB sink handler may remain attached on the root logger)",
+            type(exc).__name__,
+        )
 
 
 def _is_sink_handler(handler: logging.Handler) -> bool:

@@ -18,6 +18,7 @@ Portability rules enforced by this boundary:
 from __future__ import annotations
 
 import contextlib
+import logging
 import re
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
@@ -129,7 +130,23 @@ def _log_bind_arity_failure(
             extra={"placeholder_count": placeholders, "arg_count": params},
         )
     except Exception:
-        pass
+        # The diagnostic channel itself failed. Discarding the record here
+        # would drop the failure-evidence chain twice (the statement lost
+        # its placeholders AND its probe) — so fall back to plain stdlib
+        # logging for one ERROR record: no SQL, no values, just the two
+        # counts. Even when nothing else works, the arity mismatch is on
+        # the wire for an operator to find.
+        logging.getLogger(__name__).error(
+            "[DB-DRIVERS] event=BIND_ARITY_LOG_PATH_FAILED "
+            "operation=%s driver=%s placeholders=%d params=%d "
+            "(reporting via stdlib fallback; bind-arity mismatch remains "
+            "operator-visible even though the masked diagnostic channel "
+            "itself raised)",
+            operation,
+            driver,
+            placeholders,
+            params,
+        )
 
 
 def check_bind_arity(sql: str, args: Any, *, driver: str, operation: str) -> None:
