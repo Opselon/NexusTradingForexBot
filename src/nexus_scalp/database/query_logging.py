@@ -70,7 +70,15 @@ def _persistence_enabled() -> bool:
         from nexus_scalp.database.log_store import log_persistence_enabled
 
         return log_persistence_enabled()
-    except Exception:
+    except Exception as exc:
+        # OBS-012 wave: the sink-setting probe normally cannot fail (missing
+        # row is an ON per the contract); a raised exception is a real
+        # log_store defect and must surface as at least a WARN.
+        _log(
+            logger.warning,
+            "log persistence probe failed; defaulting ON",
+            error=str(exc),
+        )
         return True
 
 

@@ -350,7 +350,14 @@ def reconstruct_broker_outcome(
         if entry_time is not None:
             try:
                 duration = max(0.0, (close_time - entry_time).total_seconds())
-            except Exception:
+            except Exception as e:  # pragma: no cover - defensive (typed impls)
+                # OBS-012 wave: an arithmetic TypeError on unexpected broker
+                # deal types must be visible, not silently zeroed.
+                logger.warning(
+                    "[EXPERIENCE_OUTCOME] holding duration arithmetic failed (zeroed)",
+                    ticket=str(ticket),
+                    error=type(e).__name__,
+                )
                 duration = 0.0
         return BrokerOutcome(
             ticket=str(ticket),
@@ -482,7 +489,13 @@ def outcome_row_to_broker_outcome(row: sqlite3.Row | dict[str, Any]) -> BrokerOu
         get = row.__getitem__  # type: ignore[union-attr, assignment]
     try:
         ticket = str(get("execution_id", "") or "")
-    except Exception:
+    except Exception as e:
+        # OBS-012 wave: empty ticket identification for a recovered broker
+        # outcome silently loses the broker correlation — WARN.
+        logger.warning(
+            "[EXPERIENCE_OUTCOME] outcome row lacks usable execution_id",
+            error=type(e).__name__,
+        )
         ticket = ""
     return BrokerOutcome(
         ticket=ticket,
@@ -614,6 +627,12 @@ def _iso(value: Any) -> str:
             if getattr(dt_value, "tzinfo", None) is None:
                 dt_value = dt_value.replace(tzinfo=UTC)
             return dt_value.isoformat()
-    except Exception:
+    except Exception as e:  # pragma: no cover - defensive (adapter shapes)
+        # OBS-012 wave: a datetime-like object that fails isoformat() is an
+        # adapter-shape anomaly; the fallback keeps the string cast as before.
+        logger.warning(
+            "[EXPERIENCE_OUTCOME] isoformat coercion failed (string fallback)",
+            error=type(e).__name__,
+        )
         return str(value)
     return str(value)

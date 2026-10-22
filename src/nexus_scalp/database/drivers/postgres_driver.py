@@ -1014,6 +1014,14 @@ class PostgreSQLDriver(DatabaseDriver):
                 timer.rows = len(result)
                 metrics.rows = len(result)
                 return result
+            except Exception as exc:
+                # OBS-012 wave: the PG driver's read family previously raised
+                # bare; a caller-side silent-skip (any ``except Exception``
+                # downstream) left the failure unattributed. Same contract the
+                # SQLite driver has always had: one ERROR record, then re-raise.
+                self.last_failure = exc
+                _log_driver_failure("query", exc, sql, args, own)
+                raise
             finally:
                 if own:
                     c.close()
@@ -1053,6 +1061,11 @@ class PostgreSQLDriver(DatabaseDriver):
                 timer.rows = 1
                 metrics.rows = 1
                 return result
+            except Exception as exc:
+                # OBS-012 wave: same failed-read contract as query() above.
+                self.last_failure = exc
+                _log_driver_failure("query_one", exc, sql, args, own)
+                raise
             finally:
                 if own:
                     c.close()
@@ -1066,6 +1079,11 @@ class PostgreSQLDriver(DatabaseDriver):
                 tuple(args) if args else None,
             ).fetchone()
             return row[0] if row is not None else None
+        except Exception as exc:
+            # OBS-012 wave: same failed-read contract as query() above.
+            self.last_failure = exc
+            _log_driver_failure("scalar", exc, sql, args, own)
+            raise
         finally:
             if own:
                 c.close()
