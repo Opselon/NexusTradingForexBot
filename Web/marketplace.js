@@ -47,13 +47,13 @@ window.NX = window.NX || {};
       <div class="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
           <h2 class="text-2xl font-black tracking-tight text-cyan-400 flex items-center gap-3">
-            <i class="fa-solid fa-store text-xl"></i> ${t('mkt.title', 'Strategy Marketplace & Research Lab')}
+            <i class="fa-solid fa-store text-xl"></i> <span data-mkt-i18n="mkt.title">Strategy Marketplace & Research Lab</span>
           </h2>
-          <p class="text-xs text-slate-400 mt-1">${t('mkt.subtitle', 'Discover, install, validate, score, repair, and govern strategy seeds across isolated research persistence.')}</p>
+          <p class="text-xs text-slate-400 mt-1" data-mkt-i18n="mkt.subtitle">Discover, install, validate, score, repair, and govern strategy seeds across isolated research persistence.</p>
         </div>
         <div class="flex items-center gap-3">
           <button id="mkt-refresh-btn" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 transition border border-slate-700 flex items-center gap-2">
-            <i class="fa-solid fa-rotate"></i> ${t('mkt.refresh', 'Refresh Marketplace')}
+            <i class="fa-solid fa-rotate"></i> <span data-mkt-i18n="mkt.refresh">Refresh Marketplace</span>
           </button>
         </div>
       </div>
@@ -64,7 +64,7 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-box-archive text-cyan-400"></i> ${t('mkt.installed_seeds', 'Installed Strategy Seeds')}
+              <i class="fa-solid fa-box-archive text-cyan-400"></i> <span data-mkt-i18n="mkt.installed_seeds">Installed Strategy Seeds</span>
             </h3>
             <span id="mkt-installed-count" class="text-xs font-mono px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">0 seeds</span>
           </div>
@@ -72,14 +72,14 @@ window.NX = window.NX || {};
             <table class="w-full text-left text-xs">
               <thead class="text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-950">
                 <tr>
-                  <th class="pb-2 font-semibold">${t('mkt.th_seed', 'Seed ID / Name')}</th>
-                  <th class="pb-2 font-semibold">${t('mkt.th_family', 'Family')}</th>
-                  <th class="pb-2 font-semibold">${t('mkt.th_lifecycle', 'Lifecycle')}</th>
-                  <th class="pb-2 font-semibold text-right">${t('mkt.th_actions', 'Actions')}</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_seed">Seed ID / Name</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_family">Family</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_lifecycle">Lifecycle</th>
+                  <th class="pb-2 font-semibold text-right" data-mkt-i18n="mkt.th_actions">Actions</th>
                 </tr>
               </thead>
               <tbody id="mkt-installed-tbody" class="divide-y divide-slate-900 text-slate-300">
-                <tr><td colspan="4" class="py-4 text-center text-slate-500 italic">${t('mkt.no_seeds', 'No strategy seeds installed. Install a pack below.')}</td></tr>
+                <tr><td colspan="4" class="py-4 text-center text-slate-500 italic"><span data-mkt-i18n="mkt.no_seeds">No strategy seeds installed. Install a pack below.</span></td></tr>
               </tbody>
             </table>
           </div>
@@ -89,12 +89,12 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-boxes-stacked text-amber-400"></i> ${t('mkt.available_packs', 'Available Installable Packs')}
+              <i class="fa-solid fa-boxes-stacked text-amber-400"></i> <span data-mkt-i18n="mkt.available_packs">Available Installable Packs</span>
             </h3>
             <span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-950 text-amber-300 border border-amber-800">13 packs</span>
           </div>
           <div id="mkt-packs-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto pr-1">
-            <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-400 animate-pulse">${t('mkt.packs_loading', 'Loading packs catalog...')}</div>
+            <div class="p-3 rounded-lg bg-slate-900 border border-slate-800 text-xs text-slate-400 animate-pulse" data-mkt-i18n="mkt.packs_loading">Loading packs catalog...</div>
           </div>
         </div>
       </div>
@@ -104,20 +104,20 @@ window.NX = window.NX || {};
         <!-- Panel 3: Research Lab -->
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 mb-4 flex items-center gap-2">
-            <i class="fa-solid fa-flask text-emerald-400"></i> ${t('mkt.research_lab', 'Research Lab & Sandbox')}
+            <i class="fa-solid fa-flask text-emerald-400"></i> <span data-mkt-i18n="mkt.research_lab">Research Lab & Sandbox</span>
           </h3>
           <div class="space-y-4 text-xs">
             <div>
-              <label class="block text-slate-400 mb-1 font-medium">${t('mkt.select_seed_research', 'Select Installed Seed for Research Execution:')}</label>
+              <label class="block text-slate-400 mb-1 font-medium" data-mkt-i18n="mkt.select_seed_research">Select Installed Seed for Research Execution:</label>
               <select id="mkt-research-seed-select" class="w-full bg-slate-900 border border-slate-700 rounded p-2 text-slate-200">
-                <option value="">${t('mkt.choose_seed', '-- Choose installed seed --')}</option>
+                <option value="" data-mkt-i18n="mkt.choose_seed">-- Choose installed seed --</option>
               </select>
             </div>
             <div class="flex items-center gap-3">
               <button id="mkt-run-research-btn" class="px-4 py-2 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition flex items-center gap-2 shadow">
-                <i class="fa-solid fa-play"></i> ${t('mkt.run_research', 'Run Research Pipeline')}
+                <i class="fa-solid fa-play"></i> <span data-mkt-i18n="mkt.run_research">Run Research Pipeline</span>
               </button>
-              <span id="mkt-research-status" class="text-slate-400 italic">${t('mkt.status_ready', 'Ready.')}</span>
+              <span id="mkt-research-status" class="text-slate-400 italic" data-mkt-i18n="mkt.status_ready">Ready.</span>
             </div>
             <div id="mkt-research-result-box" class="bg-slate-900 border border-slate-800 rounded p-3 font-mono text-[11px] text-slate-300 max-h-40 overflow-y-auto hidden">
               <!-- Research result JSON output -->
@@ -129,7 +129,7 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-ranking-star text-purple-400"></i> ${t('mkt.rankings', 'Strategy Rankings & 14-Factor Scores')}
+              <i class="fa-solid fa-ranking-star text-purple-400"></i> <span data-mkt-i18n="mkt.rankings">Strategy Rankings & 14-Factor Scores</span>
             </h3>
             <select id="mkt-rank-dim-select" class="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-200">
               <option value="OVERALL">Dimension: Overall</option>
@@ -143,10 +143,10 @@ window.NX = window.NX || {};
             <table class="w-full text-left text-xs">
               <thead class="text-slate-400 border-b border-slate-800 sticky top-0 bg-slate-950">
                 <tr>
-                  <th class="pb-2 font-semibold">${t('mkt.th_rank', 'Rank')}</th>
-                  <th class="pb-2 font-semibold">${t('mkt.th_seed_id', 'Seed ID')}</th>
-                  <th class="pb-2 font-semibold">${t('mkt.th_family', 'Family')}</th>
-                  <th class="pb-2 font-semibold text-right">${t('mkt.th_score', 'Score')}</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_rank">Rank</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_seed_id">Seed ID</th>
+                  <th class="pb-2 font-semibold" data-mkt-i18n="mkt.th_family">Family</th>
+                  <th class="pb-2 font-semibold text-right" data-mkt-i18n="mkt.th_score">Score</th>
                 </tr>
               </thead>
               <tbody id="mkt-rankings-tbody" class="divide-y divide-slate-900 text-slate-300">
@@ -167,14 +167,14 @@ window.NX = window.NX || {};
           <div class="space-y-3 text-xs flex-1">
             <div class="flex items-center gap-3">
               <select id="mkt-repair-seed-select" class="flex-1 bg-slate-900 border border-slate-700 rounded p-2 text-slate-200">
-                <option value="">${t('mkt.choose_repair_seed', '-- Choose seed to repair --')}</option>
+                <option value="" data-mkt-i18n="mkt.choose_repair_seed">-- Choose seed to repair --</option>
               </select>
               <button id="mkt-trigger-repair-btn" class="px-3 py-2 rounded bg-rose-600 hover:bg-rose-500 text-white font-semibold transition flex items-center gap-2">
-                <i class="fa-solid fa-hammer"></i> ${t('mkt.trigger_repair', 'Trigger Repair')}
+                <i class="fa-solid fa-hammer"></i> <span data-mkt-i18n="mkt.trigger_repair">Trigger Repair</span>
               </button>
             </div>
             <div class="overflow-x-auto max-h-36 overflow-y-auto pr-1 border border-slate-800 rounded bg-slate-900/50 p-2">
-              <div id="mkt-repair-log" class="text-slate-400 italic">${t('mkt.no_repairs', 'No repair runs recorded.')}</div>
+              <div id="mkt-repair-log" class="text-slate-400 italic" data-mkt-i18n="mkt.no_repairs">No repair runs recorded.</div>
             </div>
           </div>
         </div>
@@ -183,12 +183,12 @@ window.NX = window.NX || {};
         <div class="bg-slate-950/60 border border-slate-800 rounded-xl p-5 shadow-lg flex flex-col">
           <div class="flex items-center justify-between mb-4">
             <h3 class="text-sm font-bold uppercase tracking-wider text-slate-300 flex items-center gap-2">
-              <i class="fa-solid fa-microchip text-blue-400"></i> ${t('mkt.snapshot_store', 'Strategy Runtime Snapshot Store')}</div>
+              <i class="fa-solid fa-microchip text-blue-400"></i> <span data-mkt-i18n="mkt.snapshot_store">Strategy Runtime Snapshot Store</span></div>
             </h3>
-            <span id="mkt-snapshot-version" class="text-xs font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800">${t('mkt.version', 'Version: {n}', { n: 0 })}</span>
+            <span id="mkt-snapshot-version" class="text-xs font-mono px-2 py-0.5 rounded bg-blue-950 text-blue-300 border border-blue-800" data-mkt-i18n="mkt.version" data-mkt-vars='{"n":0}'>Version: {n}</span>
           </div>
           <div class="bg-slate-900 border border-slate-800 rounded p-3 font-mono text-[11px] text-slate-300 max-h-40 overflow-y-auto" id="mkt-snapshot-content">
-            <span class="text-slate-500 italic">${t('mkt.snapshot_loading', 'Loading active runtime strategy set...')}</span>
+            <span class="text-slate-500 italic" data-mkt-i18n="mkt.snapshot_loading">Loading active runtime strategy set...</span>
           </div>
         </div>
       </div>
@@ -197,7 +197,7 @@ window.NX = window.NX || {};
       <div id="mkt-seed-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
         <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 id="mkt-modal-title" class="text-lg font-bold text-cyan-300">${t('mkt.seed_detail', 'Seed Detail')}</h3>
+            <h3 id="mkt-modal-title" class="text-lg font-bold text-cyan-300" data-mkt-i18n="mkt.seed_detail">Seed Detail</h3>
             <button id="mkt-modal-close" class="text-slate-400 hover:text-slate-200 text-lg font-bold px-2">&times;</button>
           </div>
           <div id="mkt-modal-body" class="text-xs space-y-3 text-slate-300">
@@ -210,6 +210,13 @@ window.NX = window.NX || {};
       </div>
     `;
 
+    // SSOT-XSS: the shell above is LITERAL markup (English source strings).
+    // Localized text is applied here through textContent — never through an
+    // innerHTML interpolation — so a translation (operator-editable, fetched
+    // from a language pack) can never become markup. Elements opt in with
+    // data-mkt-i18n="<key>" (+ optional data-mkt-vars='{"n":"..."}').
+    applyShellTranslations(container);
+
     // Bind event listeners
     document.getElementById('mkt-refresh-btn').addEventListener('click', refreshMarketplaceData);
     document.getElementById('mkt-run-research-btn').addEventListener('click', triggerResearchRun);
@@ -218,6 +225,22 @@ window.NX = window.NX || {};
     document.getElementById('mkt-modal-close').addEventListener('click', closeModal);
 
     refreshMarketplaceData();
+  }
+
+  // Re-localize the static shell (language switch re-renders without markup
+  // work: every node is already addressable by its data attribute).
+  function applyShellTranslations(root) {
+    const scope = root || document.getElementById('tab-marketplace');
+    if (!scope) return;
+    scope.querySelectorAll('[data-mkt-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-mkt-i18n');
+      let vars = null;
+      const raw = el.getAttribute('data-mkt-vars');
+      if (raw) {
+        try { vars = JSON.parse(raw); } catch (e) { vars = null; }
+      }
+      el.textContent = t(key, el.textContent, vars || undefined);
+    });
   }
 
   async function refreshMarketplaceData() {
