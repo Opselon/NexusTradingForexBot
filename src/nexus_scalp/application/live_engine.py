@@ -1377,8 +1377,12 @@ class LiveEngine:
             row = liq_svc.db.get("model.liquidity_features_enabled")
             if row is not None:
                 liq_enabled = bool(row.value)
-        except Exception:
-            pass  # settings DB absent -> keep config default, never crash boot
+        except Exception as liq_err:
+            # settings DB absent -> keep config default, never crash boot
+            logger.warning(
+                "[LIQUIDITY] event=SETTINGS_DB_UNAVAILABLE note=defaults_from_yaml_config error=%s",
+                liq_err,
+            )
         self.liquidity_governor = LiquidityGovernor(enabled=liq_enabled, settings_service=liq_svc)
         self.liquidity_governor.bind_engine(self)
         # ---------------------------------------------------------------------
@@ -2169,7 +2173,11 @@ class LiveEngine:
             if self._bundle is None:
                 return False
             return True
-        except Exception:
+        except Exception as smoke_err:
+            logger.warning(
+                "[GOVERNANCE] event=GOVERNANCE_CHAMPION_SMOKE_FAILED status=SMOKE_FALSE error=%s",
+                smoke_err,
+            )
             return False
 
     def _governance_snapshot_health(self) -> dict[str, Any]:
@@ -2913,7 +2921,12 @@ class LiveEngine:
                 execution_id=execution_id,
                 severity=severity,
             )
-        except Exception:
+        except Exception as emit_err:
+            logger.warning(
+                "[INCIDENT_TELEMETRY] event=INCIDENT_TELEMETRY_EMIT_FAILED"
+                " status=NOT_EMITTED error=%s",
+                emit_err,
+            )
             return False
 
     async def _stop_incident_worker(self) -> None:

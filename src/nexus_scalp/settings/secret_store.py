@@ -174,8 +174,13 @@ class SecureSecretStore:
         try:
             if sys.platform != "win32":
                 os.chmod(tmp, 0o600)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.warning(
+                "[SECRET_STORE] event=SECRET_STORE_ACL_CHMOD_UNAVAILABLE path=%s"
+                " note=intended_mode_0600_kept_process_umask error=%s",
+                tmp,
+                exc,
+            )
         tmp.replace(self.path)
 
     # ------------------------------------------------------------------ API
