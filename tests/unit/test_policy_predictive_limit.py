@@ -201,7 +201,12 @@ def test_evaluate_predictive_limit_buy_limit_default_swings():
     # Default swing low: bid - atr = 2000.0 - 2.0 = 1998.0
     # Default swing high: ask + atr = 2000.2 + 2.0 = 2002.2
     # Equilibrium 50%: 1998.0 + 0.5 * (2002.2 - 1998.0) = 2000.1
-    assert proposal.proposed_entry == 2000.1
+    # The equilibrium sits 0.10 from the ask, INSIDE the broker stops level
+    # (10 points x 0.01 = 0.10), so it is clamped out to
+    # ask - min_pending_stop_distance = 2000.2 - 0.12 = 2000.08. Asserting the
+    # un-clamped 2000.1 is what pinned the old bug in place: the generator
+    # emitted an entry the risk engine is guaranteed to reject.
+    assert proposal.proposed_entry == 2000.08
     # Deepest wick = swing_low_20 = 1998.0
     # Stop loss = round(1998.0 - 2.0 * atr_sl_buffer_multiplier (1.5), 2) = 1995.0
     assert proposal.stop_loss == 1995.0
@@ -350,7 +355,9 @@ def test_evaluate_predictive_limit_sell_limit_default_swings():
     # Default swing low: bid - atr = 1998.0
     # Default swing high: ask + atr = 2002.2
     # Equilibrium 50%: 2000.10
-    assert proposal.proposed_entry == 2000.1
+    # 0.10 from the bid is inside the broker stops level (10 pts x 0.01), so
+    # the entry is clamped OUT to bid + min_pending_stop_distance = 2000.12
+    assert proposal.proposed_entry == 2000.12
     # Deepest wick = swing_high_20 = 2002.2
     # Stop loss = round(2002.2 + 2.0 * 1.5, 2) = 2005.2
     assert proposal.stop_loss == 2005.2

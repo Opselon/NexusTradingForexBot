@@ -1829,12 +1829,24 @@ class SignalPolicy:
                 swing_high_20 = max(b.high for b in completed_bars[-20:])
             target_entry_price = round(swing_low_20 + 0.50 * (swing_high_20 - swing_low_20), 2)
 
-            if proposed_action == ActionType.BUY_LIMIT and target_entry_price >= current_tick.ask:
-                target_entry_price = round(current_tick.ask - 0.12, 2)
-            elif (
-                proposed_action == ActionType.SELL_LIMIT and target_entry_price <= current_tick.bid
+            # PENDING-ORDER STOPS-LEVEL FLOOR (fixed here): a bounded resting
+            # order must keep the broker's minimum distance from the market.
+            # The old clamp pushed the entry to ask-0.12 but only when it was
+            # ALREADY at/through the ask, so the common case — an equilibrium
+            # just inside the market, e.g. ask-0.06 — passed straight through
+            # and the risk engine rejected it one layer later. Every order the
+            # predictive path produced died that way: a rejection storm with a
+            # zero trade yield. Clamp the DISTANCE, not just the side, so the
+            # proposal the engine sees is always placeable.
+            min_pending_dist = float(getattr(self.algo_config, "min_pending_stop_distance", 0.12))
+            if proposed_action == ActionType.BUY_LIMIT and (
+                current_tick.ask - target_entry_price < min_pending_dist
             ):
-                target_entry_price = round(current_tick.bid + 0.12, 2)
+                target_entry_price = round(current_tick.ask - min_pending_dist, 2)
+            elif proposed_action == ActionType.SELL_LIMIT and (
+                target_entry_price - current_tick.bid < min_pending_dist
+            ):
+                target_entry_price = round(current_tick.bid + min_pending_dist, 2)
 
             deepest_wick = (
                 swing_low_20 if proposed_action == ActionType.BUY_LIMIT else swing_high_20
