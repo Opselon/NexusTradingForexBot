@@ -12,6 +12,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.api_v1.common import (
     adapter_or_503,
     build_page,
@@ -25,6 +26,8 @@ from nexus_scalp.web.api_v1.common import (
     parse_pagination,
     utc_now_iso,
 )
+
+logger = get_logger("nexus_scalp.web.api_v1.positions")
 
 router = APIRouter(
     prefix="/api/v1",
@@ -309,11 +312,20 @@ def model_contracts(request: Request) -> Any:
                     if _prov_dim is not None:
                         try:
                             _model_dimension = int(_prov_dim) or _model_dimension
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug(
+                                "[WEB-API-V1] event=WEB_API_V1_MODEL_PROV_DIM_UNREADABLE "
+                                "error_type=%s (keeps the bundle-derived dimension)",
+                                type(exc).__name__,
+                            )
         try:
             _model_dimension = int(_model_dimension) if _model_dimension is not None else None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[WEB-API-V1] event=WEB_API_V1_MODEL_DIM_NORMALIZE_FAILED "
+                "error_type=%s (schema compatibility reported as None)",
+                type(exc).__name__,
+            )
             _model_dimension = None
         contracts["compatible_model_schemas"] = compatible_model_schema(
             _model_schema_id, _model_dimension, SCHEMA_ID, DIMENSION
@@ -475,7 +487,12 @@ def features_current(request: Request) -> Any:
 def _safe_mode(engine: Any) -> str | None:
     try:
         return engine.config.execution.mode.value  # type: ignore[union-attr]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[WEB-API-V1] event=WEB_API_V1_SAFE_MODE_UNREADABLE "
+            "error_type=%s (execution mode omitted from the adapter snapshot)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -507,5 +524,10 @@ def _ledger_row(repo: Any, ticket: int) -> dict[str, Any] | None:
 def _deals_for(repo: Any, ticket: int) -> list[dict[str, Any]]:
     try:
         return list(repo.get_broker_deals_for_position(ticket))[:200]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[WEB-API-V1] event=WEB_API_V1_POSITION_DEALS_READ_FAILED "
+            "error_type=%s (deals list served empty; the position itself is unaffected)",
+            type(exc).__name__,
+        )
         return []

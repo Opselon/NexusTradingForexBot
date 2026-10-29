@@ -477,7 +477,14 @@ def _audit_read_plane(audit_repo: Any) -> Any:
         from nexus_scalp.database.fabric import get_domain_backend
 
         backend = get_domain_backend("audit", readonly=True)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[INCIDENTS] event=AUDIT_READ_BACKEND_UNAVAILABLE "
+            "op=registered_audit_read_plane error_type=%s (the fabric read "
+            "plane could not be resolved; the store falls through to its "
+            "direct read path)",
+            type(exc).__name__,
+        )
         return None
     # A READ plane must not be write-shaped: it exposes ``query``/``scalar``
     # and never ``execute``. A write backend here would let a read silently
@@ -931,8 +938,13 @@ class IncidentStore:
                 )
                 or 0
             )
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.warning(
+                "[INCIDENTS] event=STATUS_COUNTS_UNAVAILABLE op=status_counts "
+                "error_type=%s (a failed count query leaves the missing bucket "
+                "at 0; the other buckets are still reported)",
+                type(exc).__name__,
+            )
         return counts
 
     def search(self, query: str, limit: int = 50) -> list[Incident]:
@@ -976,8 +988,13 @@ class IncidentStore:
                 inc = row_to_incident(row)
                 if inc is not None and inc.incident_id not in {i.incident_id for i in out}:
                     out.append(inc)
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.warning(
+                "[INCIDENTS] event=SEARCH_QUERY_FAILED op=search error_type=%s "
+                "(a failed search query returns only the hits already collected "
+                "by the other terms; the caller sees a narrower result set)",
+                type(exc).__name__,
+            )
         return out[:bounded]
 
     def stats_by_component(self) -> list[dict[str, Any]]:
@@ -989,7 +1006,13 @@ class IncidentStore:
                 "SUM(CASE WHEN severity='HIGH' THEN 1 ELSE 0 END) AS high "
                 "FROM incidents GROUP BY component ORDER BY n DESC LIMIT 50"
             )
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            logger.warning(
+                "[INCIDENTS] event=COMPONENT_STATS_UNAVAILABLE "
+                "op=stats_by_component error_type=%s (a failed query reports no "
+                "per-component rows, the documented empty default)",
+                type(exc).__name__,
+            )
             return []
 
     def recurring_fingerprints(self, limit: int = 20) -> list[dict[str, Any]]:
@@ -1017,7 +1040,13 @@ class IncidentStore:
             )
         try:
             return self._query(sql, (max(1, min(limit, 100)),))
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            logger.warning(
+                "[INCIDENTS] event=RECURRING_QUERY_FAILED op=recurring_fingerprints "
+                "error_type=%s (a failed query reports no recurring fingerprints, "
+                "the documented empty default)",
+                type(exc).__name__,
+            )
             return []
 
     def archive_evidence(

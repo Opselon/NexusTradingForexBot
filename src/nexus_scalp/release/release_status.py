@@ -48,7 +48,11 @@ logger = get_logger("nexus_scalp.release.release_status")
 def _safe_json(path: Path) -> dict[str, Any]:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-STATUS] event=RELEASE_STATUS_SAFE_JSON_UNREADABLE op=_safe_json error_type=%s (the absent/!unreadable record is reported as an empty object)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -136,9 +140,17 @@ def _history_rows(limit: int = 10) -> list[dict[str, Any]]:
             if line.strip():
                 try:
                     rows.append(_sanitize_release_record(json.loads(line)))
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "[RELEASE-STATUS] event=RELEASE_STATUS_HISTORY_ROW_INVALID op=_history_rows error_type=%s (that history line is skipped; the remaining rows are still reported)",
+                        type(exc).__name__,
+                    )
                     continue
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[RELEASE-STATUS] event=RELEASE_STATUS_HISTORY_UNREADABLE op=_history_rows error_type=%s (no history rows are reported; the rest of the status is unchanged)",
+            type(exc).__name__,
+        )
         pass
     return rows
 
@@ -169,7 +181,11 @@ def _recent_commit_titles(limit: int = 5, remote: str = "origin/main") -> list[s
         if out.returncode != 0:
             return []
         return [line.strip() for line in out.stdout.splitlines() if line.strip()]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-STATUS] event=RELEASE_STATUS_REMOTE_COMMITS_PROBE_FAILED op=_recent_commit_titles error_type=%s (commits-ahead is reported as UNKNOWN, never invented)",
+            type(exc).__name__,
+        )
         return []
 
 

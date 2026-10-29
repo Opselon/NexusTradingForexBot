@@ -141,15 +141,27 @@ def ensure_registry_context_columns(conn: sqlite3.Connection) -> None:
             conn, "strategy_registry"
         ):
             return
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_RESEARCH] event=MIGRATION_EXISTING_COLUMNS_PROBE_SKIPPED "
+            "op=strategy_registry_context_matrices error_type=%s (column "
+            "presence probe failed; the ADD COLUMN below is idempotent, so a "
+            "pre-existing column is success)",
+            type(exc).__name__,
+        )
     try:
         conn.execute(
             f"ALTER TABLE strategy_registry ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
             "TEXT DEFAULT '{}';"
         )
-    except Exception:
-        pass  # column already exists (race) or table not created yet
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_RESEARCH] event=MIGRATION_ADD_COLUMN_SKIPPED "
+            "op=strategy_registry_context_matrices error_type=%s (idempotent "
+            "migration DDL: a duplicate column or a not-yet-created table is "
+            "success)",
+            type(exc).__name__,
+        )
 
 
 def _json_text_safe(value: Any) -> str:

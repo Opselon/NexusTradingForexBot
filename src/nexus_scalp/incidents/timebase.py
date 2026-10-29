@@ -91,7 +91,13 @@ class TimebaseProbe:
                 return datetime.fromisoformat(str(row[0]) + "+00:00")
             finally:
                 conn.close()
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            logger.debug(
+                "[INCIDENTS] event=HEARTBEAT_TS_UNAVAILABLE op=host_heartbeat "
+                "error_type=%s (no host heartbeat row is readable, so the clock "
+                "probe reports no host time and cannot compute an offset)",
+                type(exc).__name__,
+            )
             return None
 
     def _broker_evidence(self, host_now: datetime) -> tuple[list[float], list[float]]:
@@ -122,8 +128,14 @@ class TimebaseProbe:
                         deal_offsets.append((sync - host_now).total_seconds())
             finally:
                 conn.close()
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.debug(
+                "[INCIDENTS] event=BROKER_OFFSETS_SKIPPED op=_broker_evidence "
+                "error_type=%s (broker-deal offsets need audit_broker_trades; "
+                "without it the probe reports ledger offsets only and makes no "
+                "claim about broker clock skew)",
+                type(exc).__name__,
+            )
         return offsets, deal_offsets
 
     def probe_event(self, ticket: str | int | None = None) -> dict[str, Any]:

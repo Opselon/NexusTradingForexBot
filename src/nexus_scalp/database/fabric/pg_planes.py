@@ -98,7 +98,16 @@ class PgPool:
             import psycopg_pool  # noqa: F401
 
             return True
-        except ImportError:
+        except ImportError as exc:
+            # Optional dependency probe: False is the documented answer and the
+            # caller routes to the SQLite plane / degraded read path.
+            logger.debug(
+                "[DB-FABRIC] event=PG_POOL_DEPENDENCY_UNAVAILABLE "
+                "error_type=%s (psycopg_pool is an optional dependency; the "
+                "pool reports unavailable and the caller keeps the provider it "
+                "already chose)",
+                type(exc).__name__,
+            )
             return False
 
     def open(self) -> None:

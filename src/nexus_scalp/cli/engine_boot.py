@@ -677,7 +677,11 @@ def start_cmd(
 
         svc = SettingsService()
         svc.set("execution.mode", chosen.value, actor="cli:start")  # type: ignore[attr-defined]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI] event=CLI_START_MODE_PERSIST_FAILED op=start_cmd error_type=%s (the explicit start mode is not recorded; boot continues on the requested mode)",
+            type(exc).__name__,
+        )
         pass
 
     endpoints = _heavy_wizard_endpoints(port)
@@ -1091,7 +1095,11 @@ def _finalize_interrupted_shutdown(supervisor: Any, engine: Any) -> None:
 
     try:
         supervisor.request_shutdown("keyboard_interrupt")
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI] event=CLI_SHUTDOWN_SUPERVISOR_REQUEST_FAILED op=_finalize_interrupted_shutdown error_type=%s (the process is already exiting; the interrupt cleanup continues)",
+            type(exc).__name__,
+        )
         pass
     try:
         loop = asyncio.new_event_loop()

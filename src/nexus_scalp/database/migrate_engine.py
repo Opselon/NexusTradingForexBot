@@ -112,7 +112,18 @@ def _sqlite_indexes(src_driver: Any, table: str) -> list[dict[str, Any]]:
                 }
             )
         return out
-    except Exception:
+    except Exception as exc:
+        # Index discovery only: the table is still copied, just without its
+        # indexes recreated; the migration report carries the row counts that
+        # prove the data itself moved.
+        logger.debug(
+            "[DB-MIGRATE] event=MIGRATE_ENGINE_INDEX_DISCOVERY_FAILED "
+            "table=%s error_type=%s (index definitions are auxiliary to the "
+            "row copy; an unreadable sqlite_master means the table migrates "
+            "without index recreation, never that the table is skipped)",
+            table,
+            type(exc).__name__,
+        )
         return []
 
 

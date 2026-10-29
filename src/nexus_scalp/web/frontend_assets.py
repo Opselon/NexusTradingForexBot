@@ -57,15 +57,24 @@ import os
 import sys
 from pathlib import Path
 
+from nexus_scalp.observability.logging import get_logger
+
 #: Frozen env override slot (contract #9, search slot 1).
 DIST_ENV_VAR: str = "NEXUS_ALT_UI_DIR"
+
+logger = get_logger("nexus_scalp.web.frontend_assets")
 
 
 def _has_index(candidate: Path) -> bool:
     """True when `candidate` is a directory holding a servable index.html."""
     try:
         return (candidate / "index.html").is_file()
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[WEB-ASSETS] event=WEB_ASSETS_INDEX_PROBE_FAILED "
+            "error_type=%s (candidate treated as not servable)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -140,6 +149,10 @@ def frontend_status() -> dict[str, str | bool | None]:
             candidate = Path(override)
             if candidate.is_dir():
                 return {"dist_present": True, "index": False, "dir": str(candidate)}
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug(
+            "[WEB-ASSETS] event=WEB_ASSETS_OVERRIDE_PROBE_FAILED "
+            "error_type=%s (override treated as absent; /health reports no dist)",
+            type(exc).__name__,
+        )
     return {"dist_present": False, "index": False, "dir": None}

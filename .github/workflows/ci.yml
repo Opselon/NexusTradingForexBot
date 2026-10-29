@@ -75,7 +75,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
@@ -165,7 +165,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -313,6 +313,29 @@ jobs:
           print("mutation runner smoke:", "PASS" if ok else "FAIL")
           sys.exit(0 if ok else 1)
           PY
+
+      # -------- Anti-crash static (silent-handler / lost-traceback policy) --------
+      # scripts/ci/anti_crash_static.py existed since the MASTER crash-containment
+      # pass but was never wired into CI, so 490 silent handlers accumulated
+      # invisibly on main. Blocking from the OBS "log everything" wave onward:
+      # an exception handler either logs (with error_type), re-raises, records
+      # state, or carries a reviewed `# anti-crash: allow (<reason>)` marker.
+      - name: Anti-crash static policy
+        id: anti_crash
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/anti_crash"
+          python scripts/ci/anti_crash_static.py > "$CI_RESULTS_DIR/anti_crash/anti_crash.txt" 2>&1
+          rc=$?
+          { echo "ANTI_CRASH_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" anti_crash "$rc" \
+            "silent exception handler(s) found (see anti_crash/)" || true
+          if [ "$rc" -ne 0 ]; then
+            grep -E '^  src/|^\[' "$CI_RESULTS_DIR/anti_crash/anti_crash.txt" | head -20 \
+              | sed 's/^/::error::anti-crash: /' || true
+            exit "$rc"
+          fi
 
       - name: Mypy - Type checking
         id: mypy
@@ -755,7 +778,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -976,7 +999,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -1318,7 +1341,7 @@ jobs:
           echo "DISPLAY=:$NEXUS_MT5_DISPLAY" >> "$GITHUB_ENV"
 
       - name: Set up Python 3.11 for repository diagnostics
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: pip
@@ -1471,7 +1494,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: "pip"
@@ -1551,7 +1574,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.11
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
           cache: "pip"

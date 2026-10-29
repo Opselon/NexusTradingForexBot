@@ -166,7 +166,14 @@ def _extract_named(feats: Any) -> list[float] | None:
                 return None
             out2.append(float(getattr(feats, name)))
         return _sanitize(out2)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[SHADOW] event=LIQUIDITY_SLOTS_UNAVAILABLE op=extract_liq_slots "
+            "error_type=%s (a feature bundle without usable liquidity slots "
+            "yields none; the caller records the slot family as absent rather "
+            "than zero-filled)",
+            type(exc).__name__,
+        )
         return None
 
 

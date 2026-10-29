@@ -384,8 +384,13 @@ class SettingsDatabase:
         with self._lock:
             try:
                 self._conn.close()
-            except sqlite3.Error:
-                pass
+            except sqlite3.Error as exc:
+                logger.debug(
+                    "[SETTINGS] event=DB_CLOSE_SKIPPED op=close error_type=%s "
+                    "(the settings handle was already closed or is unusable; the "
+                    "store stays closed and the finalizer is detached below)",
+                    type(exc).__name__,
+                )
         # The finalizer would close the same handle again; detach it so the
         # close is exactly once and the callback does not fire at GC time.
         finalizer = getattr(self, "_finalizer", None)

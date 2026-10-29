@@ -150,6 +150,13 @@ def _parse_retry_after(value: str | None) -> float | None:
     try:
         return max(0.0, float(value))
     except ValueError:
+        # Expected control flow: the HTTP-date form is handled by the caller's
+        # own fallback, so a non-integer value simply yields no delay.
+        logger.debug(
+            "[AI_PROVIDERS] event=RETRY_AFTER_NOT_SECONDS op=_retry_after_seconds "
+            "error_type=ValueError (only the integer-seconds form is handled "
+            "here; HTTP-date values fall through to the caller's fallback)"
+        )
         return None
 
 

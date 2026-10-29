@@ -22,6 +22,9 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.verify")
 
 REQUIRED_TOP_LEVEL = (
     "Web",
@@ -92,7 +95,11 @@ class ReleaseVerifier:
         try:
             data = json.loads(stdout)
             return "version" in data
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-VERIFY] event=RELEASE_VERIFY_JSON_VERSION_PROBE_FAILED op=_json_version error_type=%s (the output is treated as not-JSON; the plain-text PASS path still applies)",
+                type(exc).__name__,
+            )
             return False
 
     def _cli_health(self) -> VerifyResult:
@@ -259,14 +266,22 @@ class ReleaseVerifier:
             try:
                 if candidate.exists():
                     return candidate
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERIFY] event=RELEASE_VERIFY_ARTIFACT_EXISTS_PROBE_FAILED op=_find_artifact error_type=%s (this base is skipped; the remaining bases are still probed)",
+                    type(exc).__name__,
+                )
                 continue
         for spelling in self._sums_rel_candidates(rel):
             candidate = sums_base / spelling
             try:
                 if candidate.exists():
                     return candidate
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERIFY] event=RELEASE_VERIFY_ARTIFACT_SPELLING_PROBE_FAILED op=_find_artifact error_type=%s (this spelling is skipped; the remaining spellings are still probed)",
+                    type(exc).__name__,
+                )
                 continue
         return None
 
@@ -306,7 +321,11 @@ class ReleaseVerifier:
                     for rel in rels
                 ):
                     return candidate
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERIFY] event=RELEASE_VERIFY_SUMS_BASE_PROBE_FAILED op=_resolve_sums_base error_type=%s (this candidate base is skipped; the sums directory remains the default)",
+                    type(exc).__name__,
+                )
                 continue
         return sums.parent
 
@@ -433,7 +452,11 @@ class ReleaseVerifier:
             try:
                 if p.stat().st_size > 2 * 1024 * 1024:
                     continue
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERIFY] event=RELEASE_VERIFY_SECRET_SCAN_STAT_FAILED op=_secrets_scan error_type=%s (the file is skipped by the secrets scan)",
+                    type(exc).__name__,
+                )
                 continue
             try:
                 # STRICT decode: errors='ignore' can transmogrify non-ASCII
@@ -463,7 +486,11 @@ class ReleaseVerifier:
                         "FAIL",
                         "live.yaml has mode=LIVE — first-run must be PAPER/SHADOW",
                     )
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERIFY] event=RELEASE_VERIFY_LIVE_YAML_UNREADABLE op=_no_live_default error_type=%s (the LIVE-mode guard cannot read live.yaml, so it cannot prove live is off)",
+                    type(exc).__name__,
+                )
                 pass
         # Engine mode default is controlled LIVE-safe by the start command.
         return VerifyResult(

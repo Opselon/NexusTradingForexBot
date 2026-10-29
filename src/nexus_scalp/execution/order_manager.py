@@ -784,7 +784,14 @@ class OrderLifecycleManager:
                 )
 
                 self._position_adviser = get_position_adviser_service()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[EXECUTION] event=POSITION_ADVISER_UNAVAILABLE op=_adviser "
+                    "error_type=%s (the web-layer adviser singleton could not be "
+                    "imported in this process; the caller treats None as "
+                    "'disabled', so the adviser has no influence on trading)",
+                    type(exc).__name__,
+                )
                 return None
         return self._position_adviser
 
@@ -2361,8 +2368,14 @@ class OrderLifecycleManager:
 
             if isinstance(self.adapter, PaperMT5Adapter):
                 return "PAPER"
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[EXECUTION] event=PAPER_ADAPTER_PROBE_SKIPPED op=_mode_label "
+                "error_type=%s (the paper adapter class could not be imported; "
+                "the adapter is labelled LIVE unless it is provably the paper "
+                "class, the conservative default)",
+                type(exc).__name__,
+            )
         return "LIVE"
 
     # ------------------------------------------------------------------

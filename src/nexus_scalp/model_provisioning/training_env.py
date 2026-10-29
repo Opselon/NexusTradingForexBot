@@ -268,8 +268,12 @@ def current_torch_facts() -> dict[str, Any]:
         facts["version"] = ver.split("+", 1)[0]
         facts["local_tag"] = ver.split("+", 1)[1] if "+" in ver else "none"
         facts["version_full"] = ver
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[TRAINING-ENV] event=TORCH_FACTS_PROBE_FAILED op=current_torch_facts "
+            "error_type=%s (torch facts stay not-installed)",
+            type(exc).__name__,
+        )
     return facts
 
 

@@ -48,6 +48,7 @@ Safety
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import socket
@@ -58,6 +59,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Configuration surface
@@ -229,7 +232,12 @@ def _parse_sse(text: str) -> str:
             continue
         try:
             obj = json.loads(payload)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[CI_AI] event=SSE_FRAME_UNPARSEABLE op=_parse_sse error_type=%s "
+                "(frame skipped; other deltas still joined)",
+                type(exc).__name__,
+            )
             continue
         for ch in obj.get("choices") or []:
             delta = ch.get("delta") or {}
@@ -651,8 +659,12 @@ def _context_from_results(kind: str, results: Path) -> dict[str, Any]:
         cov = rep.coverage_percent()
         if cov is not None:
             ctx["coverage_percent"] = round(cov, 1)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[CI_AI] event=CONTEXT_READER_FAILED op=_build_context error_type=%s "
+            "(junit/coverage context omitted from the prompt)",
+            type(exc).__name__,
+        )
     for name, rel in (
         ("pytest_tail", "pytest/pytest.txt"),
         ("mypy_tail", "mypy/mypy.txt"),
@@ -662,6 +674,10 @@ def _context_from_results(kind: str, results: Path) -> dict[str, Any]:
         if p.exists():
             try:
                 ctx[name] = p.read_text(encoding="utf-8", errors="replace")[-3000:]
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[CI_AI] event=CONTEXT_TAIL_UNREADABLE op=_build_context "
+                    "error_type=%s (log tail omitted from the prompt)",
+                    type(exc).__name__,
+                )
     return ctx

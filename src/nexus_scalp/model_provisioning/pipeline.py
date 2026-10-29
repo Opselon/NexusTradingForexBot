@@ -179,8 +179,13 @@ def import_user_bars(source_file: Path, candles: int | None = None) -> UserBarsI
                     pass
                 bad_mask = m if bad_mask is None else (bad_mask | m)
             invalid_count = int(bad_mask.sum()) if bad_mask is not None else 0
-    except Exception:
-        pass  # diagnostics are best-effort; normalize below remains the authority
+    except Exception as exc:
+        # diagnostics are best-effort; normalize below remains the authority
+        logger.debug(
+            "[LOCAL-TRAIN] event=PRE_CLEAN_DIAGNOSTICS_FAILED op=load_bars "
+            "error_type=%s (normalize_bars_frame remains the authority)",
+            type(exc).__name__,
+        )
     frame, _normalize_stats = normalize_bars_frame(raw)
     rows_valid = frame.height
     # Missing-bar gaps on the selected cadence (M1 assumption for scalp

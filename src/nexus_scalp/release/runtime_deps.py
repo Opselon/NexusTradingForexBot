@@ -52,6 +52,9 @@ from importlib import metadata as _md
 from importlib.util import find_spec
 from pathlib import Path
 from typing import IO
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.runtime_deps")
 
 #: Distribution name of this project (pyproject ``[project].name``).
 PROJECT_NAME = "nexus-scalp-engine"
@@ -174,7 +177,11 @@ def _parse(raw: str) -> Requirement:
             specifier=str(parsed.specifier),
             marker=str(parsed.marker) if parsed.marker else "",
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_REQUIREMENT_PARSE_FAILED op=_parse error_type=%s (the local fallback regex parses the requirement instead)",
+            type(exc).__name__,
+        )
         pass
     match = _REQ_RE.match(text)
     if not match:  # pragma: no cover - defensive
@@ -202,7 +209,11 @@ def _marker_applies(marker: str) -> bool:
         from packaging.markers import Marker
 
         return bool(Marker(marker).evaluate())
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_MARKER_EVAL_FAILED op=_marker_applies error_type=%s (an unevaluable marker is treated as not-applicable, never a missing dependency)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -219,7 +230,11 @@ def _base_requirements(root: Path | None) -> tuple[list[Requirement], str]:
                     [r for r in (_parse(raw) for raw in declared) if _marker_applies(r.marker)],
                     "pyproject.toml [project].dependencies",
                 )
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-DEPS] event=RELEASE_DEPS_PYPROJECT_REQUIREMENTS_UNAVAILABLE op=_base_requirements error_type=%s (the installed distribution metadata is used as the source instead)",
+                type(exc).__name__,
+            )
             pass
     try:  # Installed distribution metadata (packaged / no checkout).
         declared = list(_md.requires(PROJECT_NAME) or [])
@@ -250,14 +265,22 @@ def _packages_distributions() -> dict[str, list[str]]:
     """
     try:
         return {k: list(v) for k, v in _md.packages_distributions().items()}
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_PACKAGES_DISTRIBUTIONS_UNAVAILABLE op=_packages_distributions error_type=%s (the module->distribution map is empty; top_level.txt is used as a fallback)",
+            type(exc).__name__,
+        )
         return {}
 
 
 def _installed_version(name: str) -> str | None:
     try:
         return _md.version(name)  # type: ignore[no-any-return]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_INSTALLED_VERSION_UNAVAILABLE op=_installed_version error_type=%s (the dependency is treated as not installed)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -296,7 +319,11 @@ def _top_level_modules(name: str) -> list[str]:
     try:
         dist = _md.distribution(name)
         text = dist.read_text("top_level.txt") or ""
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_TOP_LEVEL_TXT_UNREADABLE op=_top_level_modules error_type=%s (no import names can be derived for this distribution)",
+            type(exc).__name__,
+        )
         return []
     for line in text.splitlines():
         candidate = line.strip()
@@ -364,7 +391,11 @@ def _is_optional_companion(name: str, parent: str | None = None) -> bool:
     key = name.lower().replace("_", "-")
     try:
         requires = _md.requires(parent) or []
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-DEPS] event=RELEASE_DEPS_PARENT_REQUIRES_UNAVAILABLE op=_is_optional_companion error_type=%s (without marker evidence the companion is treated as mandatory (fail-safe))",
+            type(exc).__name__,
+        )
         return False
     for raw in requires:
         parsed = _parse(raw)

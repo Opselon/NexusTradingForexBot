@@ -164,7 +164,12 @@ class DefaultExternalAnalyzer(ExternalNewsAnalyzer):
             if not isinstance(parsed, dict):
                 return None
             return parsed
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS_ANALYSIS] event=LLM_RESPONSE_UNPARSEABLE op=_parse_response "
+                "error_type=%s (caller falls back to the local analyzer)",
+                type(exc).__name__,
+            )
             return None
 
 
@@ -299,8 +304,12 @@ class NewsAnalysisPipeline:
                         impacts=[],
                         novelty=NewsNovelty.NEW,
                     )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[NEWS_ANALYSIS] event=IDEMPOTENCY_CHECK_SKIPPED op=analyze "
+                    "error_type=%s (fresh analysis runs instead of the cached skip)",
+                    type(exc).__name__,
+                )
         run_id = f"run_{uuid.uuid4().hex[:12]}"
         analysis_id = f"ana_{uuid.uuid4().hex[:12]}"
         self.db.start_run(run_id)
@@ -534,7 +543,12 @@ def _parse_db_dt(value: Any) -> datetime | None:
     if isinstance(value, str) and value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS_ANALYSIS] event=TIMESTAMP_UNPARSEABLE op=_parse_dt "
+                "error_type=%s (row timestamp omitted)",
+                type(exc).__name__,
+            )
             return None
     return None
 

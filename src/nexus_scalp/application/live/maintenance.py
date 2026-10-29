@@ -499,8 +499,15 @@ class MaintenanceCycle:
                                 self.om.notifier.send(chunk, severity="INFO")
                         else:
                             self.om.notifier.send(deep, severity="INFO")
-                except Exception:
-                    pass  # Telegram failure is isolated
+                except Exception as _tg_err:
+                    # Telegram failure is isolated; the generation error one
+                    # level up still logs at error.
+                    logger.warning(
+                        "[TELEGRAM_REPORT] event=SEND_FAILED error_type=%s "
+                        "(notifier send failed; the built report is dropped "
+                        "without disturbing the maintenance cycle)",
+                        type(_tg_err).__name__,
+                    )
             except Exception as summary_err:
                 logger.error(
                     "[TELEGRAM_REPORT] event=FAILURE error_type=GENERATION error=%s",
