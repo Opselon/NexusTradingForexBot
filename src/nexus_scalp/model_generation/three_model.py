@@ -63,7 +63,14 @@ def _lifecycle_registry() -> Any | None:
         return ModelLifecycleRegistry(
             audit_repo=audit, model_registry=ModelRegistry(audit_repo=audit)
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[MODEL_GENERATION] event=LIFECYCLE_REGISTRY_UNAVAILABLE "
+            "op=_model_lifecycle_registry error_type=%s (the lifecycle registry "
+            "could not be built; the candidate row carries NO lifecycle status "
+            "rather than a wrong one)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -487,7 +494,15 @@ def _prior_pass(variant: str) -> dict[str, Any] | None:
         return None
     try:
         prior = json.loads(report_path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[MODEL_GENERATION] event=PRIOR_BENCHMARK_UNDECODABLE "
+            "op=prior_benchmark variant=%s error_type=%s (a corrupt prior "
+            "benchmark report is treated as absent; the variant is re-benchmarked "
+            "rather than skipped on an unreadable result)",
+            variant,
+            type(exc).__name__,
+        )
         return None
     if str(prior.get("gate")) not in ("PASS", "READY", "COMPLETED"):
         return None

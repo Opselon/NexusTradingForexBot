@@ -182,7 +182,13 @@ class ScalerBundle:
             return False
         try:
             return bool(np.all(np.isfinite(self.std)) and np.all(self.std > 0.0))
-        except Exception:
+        except Exception as _ready_err:
+            logger.debug(
+                "[SCALER] event=STD_FINITENESS_PROBE_FAILED error_type=%s "
+                "(std is not a probe-able array; the scaler is NOT ready so "
+                "transform() passes raw features through unchanged)",
+                type(_ready_err).__name__,
+            )
             return False
 
     def dimension(self) -> int | None:
@@ -191,7 +197,16 @@ class ScalerBundle:
             return None
         try:
             return int(self.mean.shape[0])
-        except Exception:
+        except Exception as _dim_err:
+            # Declared-contract probe chain (EXPECTED_SILENT_HANDLERS): the
+            # width is simply unknown, so callers fall through to their own
+            # declared default. Observability only — the fallback stays.
+            logger.debug(
+                "[SCALER] event=DIMENSION_PROBE_FAILED error_type=%s "
+                "(mean has no usable shape; the caller falls through to its "
+                "declared default width)",
+                type(_dim_err).__name__,
+            )
             return None
 
     def transform(self, x: np.ndarray) -> np.ndarray:
@@ -275,8 +290,15 @@ class LiveEngine:
                 from nexus_scalp.features.schema_contract import SCHEMA_ID as _SCHEMA_70D
 
                 return _SCHEMA_70D
-        except Exception:
-            pass
+        except Exception as _schema_err:
+            # Declared-contract probe: the 70D schema module is unavailable,
+            # so the ACTIVE schema id is the contract. Observability only.
+            logger.debug(
+                "[SCHEMA] event=SCHEMA_70D_PROBE_FAILED error_type=%s "
+                "(the 70D schema contract is unavailable; the effective "
+                "schema id falls back to the declared class default)",
+                type(_schema_err).__name__,
+            )
         return str(self.__class__.FEATURE_SCHEMA_ID)
 
     @property
@@ -1711,8 +1733,14 @@ class LiveEngine:
                         "[STRATEGY_FACTORY] provider build skipped (effective_enabled=false)"
                     )
                     return None
-            except AttributeError:
-                pass  # older settings service without CHG-0034 API
+            except AttributeError as _eff_enabled_err:
+                # older settings service without CHG-0034 API
+                logger.debug(
+                    "[STRATEGY_FACTORY] event=EFFECTIVE_ENABLED_PROBE_SKIPPED "
+                    "error_type=%s (settings service predates the CHG-0034 "
+                    "gate; the provider is built exactly as before)",
+                    type(_eff_enabled_err).__name__,
+                )
             return LLMGenerationProvider(
                 api_base_url=cfg["api_base_url"],
                 model=cfg["model"],
@@ -2089,8 +2117,15 @@ class LiveEngine:
                                 component="ENGINE_SIGNAL",
                             ),
                         )
-                    except NotImplementedError:
-                        pass
+                    except NotImplementedError as _sig_err:
+                        logger.debug(
+                            "[SIGNAL] event=SIGNAL_HANDLER_UNSUPPORTED "
+                            "signal=%s error_type=%s (this event loop cannot "
+                            "install signal handlers; shutdown still runs "
+                            "through KeyboardInterrupt and the outer stop)",
+                            getattr(sig, "name", "UNKNOWN"),
+                            type(_sig_err).__name__,
+                        )
 
             loop.run_until_complete(self.run_loop())
 
@@ -3833,7 +3868,7 @@ class LiveEngine:
             self._shadow_recorder_instance = eng
         return eng
 
-    def _build_freshness_snapshot(self):  # type: ignore[no-untyped-def]
+    def _build_freshness_snapshot(self, *, decision_ts: datetime | None = None):  # type: ignore[no-untyped-def]
         from nexus_scalp.application.live_freshness import LiveFreshnessSnapshot
 
         return LiveFreshnessSnapshot(
@@ -3841,7 +3876,9 @@ class LiveEngine:
             last_tick_timestamp=self._last_tick_timestamp,
             last_feature_update=self.last_feature_update,
             last_inference_timestamp=self.last_inference_timestamp,
-            last_decision_timestamp=self.last_decision_timestamp,
+            last_decision_timestamp=(
+                decision_ts if decision_ts is not None else self.last_decision_timestamp
+            ),
             tick_sequence=self._tick_sequence,
             feature_sequence=self._feature_sequence,
             inference_sequence=self._inference_sequence,
@@ -3866,20 +3903,29 @@ class LiveEngine:
 
         return LiveFreshnessService.stage_freshness(stamp, max_age_sec)
 
-    def compute_live_freshness(self) -> dict[str, Any]:
+    def compute_live_freshness(self, *, decision_ts: datetime | None = None) -> dict[str, Any]:
         from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        snap = self._build_freshness_snapshot()
+        snap = self._build_freshness_snapshot(decision_ts=decision_ts)
         fresh = LiveFreshnessService().compute_freshness(snap)
         if fresh.get("overall") == "STALE":
             self._stale_state_detected_total += 1
             fresh["telemetry"]["stale_state_detected_total"] = self._stale_state_detected_total
         return fresh
 
-    def live_freshness_gate(self, proposal: Any) -> tuple[Any, bool]:
+    def live_freshness_gate(
+        self, proposal: Any, *, decision_ts: datetime | None = None
+    ) -> tuple[Any, bool]:
+        """Downgrade a proposal to NO_TRADE when the intelligence chain is frozen.
+
+        ``decision_ts`` lets the live path supply the CURRENT tick's local
+        decision timestamp. The gate runs before the freshness instrumentation
+        block refreshes ``last_decision_timestamp``, so without it the gate
+        judged this tick's proposal against the PREVIOUS cycle's stamps.
+        """
         from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        fresh = self.compute_live_freshness()
+        fresh = self.compute_live_freshness(decision_ts=decision_ts)
         if fresh.get("overall") != "STALE":
             return proposal, False
         self._stale_state_detected_total += 1
@@ -4980,8 +5026,13 @@ class LiveEngine:
             self._tick_reject_last_epoch = int(epoch)
             if detail:
                 self._tick_reject_last_detail = str(detail)[:160]
-        except Exception:  # telemetry must never disturb the tick loop
-            pass
+        except Exception as _count_err:  # telemetry must never disturb the tick loop
+            logger.debug(
+                "[FEED_EPOCH] event=TICK_REJECT_COUNT_DROPPED error_type=%s "
+                "(the per-class reject counter could not be updated; the "
+                "next periodic summary simply under-counts this one tick)",
+                type(_count_err).__name__,
+            )
 
     def note_feed_reconnected(self, *, epoch: int, reacquire_ticks: int = 0) -> None:
         """One INFO line per FEED RECONNECT (state transition, not per tick)."""
@@ -4999,8 +5050,13 @@ class LiveEngine:
                 severity="INFO",
                 correlation_id="tick-stream",
             )
-        except Exception:
-            pass
+        except Exception as _epoch_err:
+            logger.debug(
+                "[FEED_EPOCH] event=RECONNECT_ANNOUNCE_FAILED error_type=%s "
+                "(the epoch-bump log/incident emit raised; the epoch bump "
+                "itself already applied, only the announcement is lost)",
+                type(_epoch_err).__name__,
+            )
 
     def _summarize_replay_telemetry(self, *, now: float | None = None) -> None:
         """Emit the aggregated replay/duplicate summary on a quiet cadence.

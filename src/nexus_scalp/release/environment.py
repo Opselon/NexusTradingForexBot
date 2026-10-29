@@ -31,6 +31,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.environment")
+
 SUPPORTED_ARCHES = ("x64", "AMD64", "x86_64")
 UNSUPPORTED_ARCHES = ("ARM64", "aarch64", "arm64")
 
@@ -90,7 +94,11 @@ def _run(cmd: list[str], timeout: int = 5) -> str | None:
     try:
         if shutil.which(cmd[0]) is None:
             return None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_BINARY_LOOKUP_FAILED op=_run error_type=%s (the pre-flight is skipped and the spawn is attempted anyway)",
+            type(exc).__name__,
+        )
         pass
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
@@ -102,7 +110,11 @@ def _run(cmd: list[str], timeout: int = 5) -> str | None:
         # [WinError 2] from _detect_gpu -> detect_environment -> health.env
         # -> run_infrastructure_doctor -> main, engine never boots).
         return None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_PROBE_COMMAND_FAILED op=_run error_type=%s (the caller treats None as unknown, never fatal)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -134,7 +146,11 @@ def _detect_ram_mb() -> int:
             stat.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
                 return int(stat.ullTotalPhys // (1024 * 1024))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-ENV] event=RELEASE_ENV_RAM_CTYPES_PROBE_FAILED op=_detect_ram_mb error_type=%s (the wmic fallback still measures RAM)",
+                type(exc).__name__,
+            )
             pass
     with contextlib.suppress(Exception):
         out = _run(["wmic", "ComputerSystem", "get", "TotalPhysicalMemory"])
@@ -158,7 +174,11 @@ def _detect_free_disk_mb(path: Path) -> int:
         else:
             usage = shutil.disk_usage(path)
             return int(usage.free // (1024 * 1024))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_FREE_DISK_PROBE_FAILED op=_detect_free_disk_mb error_type=%s (free disk is reported as 0 (unknown) and the check degrades)",
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -199,7 +219,11 @@ def _detect_gpu() -> tuple[str | None, str | None, bool, str | None]:
             cuda_ver = torch.version.cuda
             if not gpu:
                 gpu = torch.cuda.get_device_name(0)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_GPU_TORCH_PROBE_FAILED op=_detect_gpu error_type=%s (CUDA detail is absent; the driver-level probe result is kept)",
+            type(exc).__name__,
+        )
         pass
     return gpu, driver, cuda, cuda_ver
 
@@ -227,7 +251,11 @@ def _detect_vc_runtime() -> str | None:
                         return ver
                     except OSError:
                         return "installed"
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-ENV] event=RELEASE_ENV_VCRUNTIME_REGISTRY_KEY_FAILED op=_detect_vc_runtime error_type=%s (this registry key is skipped; the other keys are still probed)",
+                type(exc).__name__,
+            )
             continue
     return None
 
@@ -257,6 +285,9 @@ def _detect_mt5() -> tuple[bool, bool]:
                     if p.exists():
                         terminal = True
     except Exception:
+        # Import/probe failure means only "not detected"; stay silent so
+        # --json commands keep stdout parseable (logging here would
+        # initialise the console handler onto stdout mid-command).
         pass
     return terminal, native_module
 
@@ -269,7 +300,11 @@ def _detect_network(timeout: int = 4) -> bool | None:
         req = urllib.request.Request("https://pypi.org", method="HEAD")
         with urllib.request.urlopen(req, timeout=timeout):
             return True
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_NETWORK_PROBE_FAILED op=_detect_network error_type=%s (no network is assumed; local-only features still work)",
+            type(exc).__name__,
+        )
         pass
     # No network -> local-only features still work; report False (not fatal).
     return False
@@ -280,7 +315,11 @@ def _is_admin() -> bool:
         return os.geteuid() == 0 if hasattr(os, "geteuid") else False
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-ENV] event=RELEASE_ENV_ADMIN_PROBE_FAILED op=_is_admin error_type=%s (elevation is reported as False (the conservative answer))",
+            type(exc).__name__,
+        )
         return False
 
 

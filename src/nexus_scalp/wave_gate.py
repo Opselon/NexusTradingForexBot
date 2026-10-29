@@ -38,12 +38,15 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.pr_evidence.collectors import (
     EvidenceOptions,
     collect_evidence,
 )
 from nexus_scalp.pr_evidence.github_client import GitHubClient
 from nexus_scalp.pr_evidence.models import UNKNOWN
+
+logger = get_logger("nexus_scalp.wave_gate")
 
 __all__ = [
     "DriftReport",
@@ -281,8 +284,14 @@ def wave_status(
             ctxs = (protection.get("required_status_checks") or {}).get("contexts") or []
             required = _to_str_tuple(ctxs)
             base_sha = str((protection.get("required_status_checks") or {}).get("sha") or UNKNOWN)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[WAVE_GATE] event=BRANCH_PROTECTION_UNAVAILABLE "
+            "op=collect_required_contexts error_type=%s (the required status "
+            "contexts could not be read; gates rely on the checks GitHub reports "
+            "for the PR instead of an assumed required set)",
+            type(exc).__name__,
+        )
 
     lane_states: list[LaneState] = []
     for spec in specs:

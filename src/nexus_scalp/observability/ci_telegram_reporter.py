@@ -138,7 +138,12 @@ class CITelegramReporter:
                     if data:
                         self._env_digest = data
                         break
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "[CI_TELEGRAM] event=ENV_DIGEST_CANDIDATE_UNREADABLE "
+                        "op=load_env_digest error_type=%s (next candidate tried)",
+                        type(exc).__name__,
+                    )
                     continue
         return self._env_digest
 
@@ -220,7 +225,12 @@ class CITelegramReporter:
 
             rate = ET.parse(p).getroot().attrib.get("line-rate")
             return float(rate) * 100.0 if rate is not None else None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[CI_TELEGRAM] event=COVERAGE_PARSE_FAILED op=coverage_percent "
+                "error_type=%s (coverage omitted from the summary)",
+                type(exc).__name__,
+            )
             return None
 
     def failed_test_names(self, limit: int = 20) -> list[str]:

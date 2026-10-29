@@ -216,7 +216,13 @@ class NewsContextCache:
 
                 # decayed impact score per event
                 _ = published_at
-            except Exception:
+            except Exception as exc:
+                # one malformed row drops out of the consensus sum only
+                logger.debug(
+                    "[NEWS] event=CONTEXT_ROW_SKIPPED op=build_context "
+                    "error_type=%s (row excluded from the consensus weights)",
+                    type(exc).__name__,
+                )
                 continue
 
         if weights <= 0.0:
@@ -311,5 +317,10 @@ def _parse_dt(value: object) -> datetime | None:
     try:
         dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
         return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug(
+            "[NEWS] event=TIMESTAMP_UNPARSEABLE op=_parse_utc error_type=%s "
+            "(row timestamp omitted)",
+            type(exc).__name__,
+        )
         return None

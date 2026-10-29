@@ -21,6 +21,9 @@ from nexus_scalp.release.update_engine.constants import (
     INSTALL_MODE_SOURCE,
     INSTALL_MODE_UNKNOWN,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.update_engine.pidfile_lock")
 
 
 def _pid_alive(pid: int) -> bool:
@@ -44,11 +47,14 @@ def _pid_alive(pid: int) -> bool:
     try:
         os.kill(pid, 0)
         return True
-    except ProcessLookupError:
+    except ProcessLookupError as exc:
+        logger.debug(
+            "[UPDATE] event=UPDATE_PID_PROBE_NOT_RUNNING op=_pid_alive error_type=%s (the recorded pid does not exist, so its lock is treated as not held)",
+            type(exc).__name__,
+        )
         return False
     except PermissionError:
         return True
-
 
 
 class UpdateLock:
@@ -91,14 +97,17 @@ class UpdateLock:
         try:
             age = time.time() - self.lock_path.stat().st_mtime
             return age > 30 * 60
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_LOCK_STALE_PROBE_FAILED op=UpdateLock._stale error_type=%s (the lock age is undeterminable, so the lock is treated as fresh (not stolen))",
+                type(exc).__name__,
+            )
             return False
 
     def release(self) -> None:
         if self._held:
             shutil.rmtree(self.lock_path, ignore_errors=True)
             self._held = False
-
 
 
 class SettingsGuard:
@@ -162,7 +171,6 @@ class InstallModeDetector:
             "build_info": info,
             "frozen": bool(getattr(sys, "frozen", False)),
         }
-
 
 
 def _current_app_root() -> Path:

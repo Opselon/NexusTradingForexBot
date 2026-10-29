@@ -17,6 +17,7 @@ degraded verdict in the JSON payload.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -30,6 +31,8 @@ STEP_SUMMARY: Path | None = Path(_SUMMARY_PATH) if _SUMMARY_PATH else None
 ARTIFACT_DIR = (
     Path(os.environ.get("GITHUB_WORKSPACE") or str(REPO_ROOT)) / "ci-results" / "run-info"
 )
+
+_log = logging.getLogger(__name__)
 
 
 def _safe_text_payload(payload: dict[str, Any]) -> str:
@@ -59,8 +62,12 @@ def _write_artifact(payload: dict[str, Any]) -> None:
             json.dumps(payload, indent=2, sort_keys=True),
             encoding="utf-8",
         )
-    except OSError:
-        pass
+    except OSError as exc:
+        _log.debug(
+            "[CI_LANE] event=LANE_ARTIFACT_WRITE_FAILED op=_write_artifact "
+            "error_type=%s (advisory artifact missing; lane verdict unchanged)",
+            type(exc).__name__,
+        )
 
 
 def _try_telegram_block(lane: str, payload: dict[str, Any]) -> None:

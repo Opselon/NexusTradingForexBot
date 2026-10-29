@@ -41,6 +41,7 @@ report (spec §21 — no CI machine paths in published comments).
 from __future__ import annotations
 
 import json
+import logging
 import re
 import xml.etree.ElementTree as ET
 import zipfile
@@ -62,6 +63,8 @@ from nexus_scalp.pr_evidence.parsers import (
     parse_pytest_output,
     parse_ruff_output,
 )
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "ArtifactCollector",
@@ -281,7 +284,13 @@ def _parse_check_file(check: str, rel: str, text: str, repo_root: str | None) ->
             return _parse_json_or_log(rel, text, repo_root, "RuntimeCertification")
         if check == "layered_smoke":
             return _parse_layered_smoke(rel, text, repo_root)
-    except Exception:
+    except Exception as exc:
+        # one malformed artifact file yields no failures for THAT check only
+        _log.debug(
+            "[PR_EVIDENCE] event=ARTIFACT_PARSE_FAILED op=_parse_check_file "
+            "error_type=%s (check degrades to no deep diagnostics)",
+            type(exc).__name__,
+        )
         return []
     return []
 

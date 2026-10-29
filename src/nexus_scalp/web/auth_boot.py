@@ -185,7 +185,12 @@ def read_env_file() -> dict[str, str]:
         return {}
     try:
         raw = path.read_text(encoding="utf-8")
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[WEB-AUTH] event=WEB_AUTH_DOTENV_READ_FAILED "
+            "error_type=%s (boot proceeds with process-env secrets only)",
+            type(exc).__name__,
+        )
         return {}
     out: dict[str, str] = {}
     for raw_line in raw.splitlines():

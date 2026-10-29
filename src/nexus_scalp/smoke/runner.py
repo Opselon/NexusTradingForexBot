@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import logging
 import os
 import re
 import sqlite3
@@ -48,6 +49,8 @@ from nexus_scalp.smoke.result_contract import (
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SRC_DIR = REPO_ROOT / "src"
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -529,8 +532,13 @@ class SmokeRunner:
             try:
                 FEATURE_SCHEMAS.resolve("does_not_exist_xyz")
                 raise RuntimeError("unknown schema should have raised KeyError")
-            except KeyError:
-                pass
+            except KeyError as exc:
+                # the expected outcome of the strict-resolve assertion
+                _log.debug(
+                    "[SMOKE] event=UNKNOWN_SCHEMA_REJECTED op=_registry error_type=%s "
+                    "(strict resolve raised as required)",
+                    type(exc).__name__,
+                )
 
         _check(
             self.report,
@@ -1149,7 +1157,12 @@ class SmokeRunner:
             for py in root.rglob("*.py"):
                 try:
                     tree = ast.parse(py.read_text(encoding="utf-8", errors="ignore"))
-                except Exception:
+                except Exception as exc:
+                    _log.debug(
+                        "[SMOKE] event=AST_SCAN_FILE_SKIPPED op=_neg_research_authority "
+                        "error_type=%s (unparsable module excluded from the scan)",
+                        type(exc).__name__,
+                    )
                     continue
                 for node in ast.walk(tree):
                     if (
@@ -1868,8 +1881,12 @@ class SmokeRunner:
                 if self._adapter
                 else 0,
             }
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug(
+                "[SMOKE] event=IDENTITY_EVIDENCE_FAILED op=_collect_evidence "
+                "error_type=%s (model/schema identity block omitted)",
+                type(exc).__name__,
+            )
         # Worker health (from engine if available)
         if self._engine is not None:
             try:
@@ -1878,8 +1895,12 @@ class SmokeRunner:
                     "background_tasks_pending": len(bg),
                     "engine_mode": getattr(self._engine, "_runtime_mode", "unknown"),
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.debug(
+                    "[SMOKE] event=WORKER_HEALTH_EVIDENCE_FAILED op=_collect_evidence "
+                    "error_type=%s (worker health block omitted)",
+                    type(exc).__name__,
+                )
 
 
 def run_smoke(tier: str = "full") -> SmokeReport:

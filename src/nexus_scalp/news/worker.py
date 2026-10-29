@@ -149,7 +149,12 @@ class NewsWorker:
         while not self._jobs.empty():
             try:
                 _, article_id, enqueued = self._jobs.get_nowait()
-            except queue.Empty:
+            except queue.Empty as exc:
+                logger.debug(
+                    "[NEWS_QUEUE] event=DRAIN_NO_JOB op=_drain_next error_type=%s "
+                    "(queue drained nothing; nothing pending)",
+                    type(exc).__name__,
+                )
                 return None
             self._queued_ids.discard(article_id)
             enq = self._enqueue_ts.get(article_id, enqueued)

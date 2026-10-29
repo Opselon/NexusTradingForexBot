@@ -356,8 +356,14 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
                 poss = adapter.get_positions(symbol=order.symbol)
                 if poss:
                     ticket = int(max(getattr(p, "ticket", 0) for p in poss) or 0)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "GATEWAY_TICKET_ECHO_FAILED: op=get_positions error_type=%s "
+                    "(the order WAS accepted by the adapter, but its ticket could "
+                    "not be echoed; the success response carries ticket=0 and the "
+                    "client reconciles from positions — the order is not resent)",
+                    type(exc).__name__,
+                )
             return _json_success(ticket=ticket, message="order sent")
         # MT5-PARITY T5 (E-MF-01): the adapter exposes the last broker
         # retcode/diagnostic — forward it so the client can classify the
@@ -450,8 +456,14 @@ def _handle_action(action: str, payload: dict[str, Any], adapter: Any) -> dict[s
                         }
                     )
                 return {"status": "SUCCESS", "data": data}
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.info(
+                "GATEWAY_PENDING_SNAPSHOT_FALLBACK: op=get_pending_orders_snapshot "
+                "error_type=%s (snapshot form unavailable; falling back to the "
+                "legacy pending-order query, which still reports an empty roster "
+                "as SUCCESS or fails closed when the query itself fails)",
+                type(exc).__name__,
+            )
         data = adapter.get_pending_orders(symbol=symbol)
         if data is None:
             # MT5-PARITY T1/T5: forward the failure instead of reporting a

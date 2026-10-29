@@ -186,11 +186,21 @@ def resolve_factory_provider(
             from nexus_scalp.settings import load_settings_service
 
             svc = load_settings_service()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS_AI] event=SETTINGS_SERVICE_UNAVAILABLE op=_resolve_provider "
+                "error_type=%s (provider reported as NOT_CONFIGURED)",
+                type(exc).__name__,
+            )
             return None
     try:
         cfg = svc.get_factory_llm_config()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[NEWS_AI] event=FACTORY_LLM_CONFIG_UNAVAILABLE op=_resolve_provider "
+            "error_type=%s (provider reported as NOT_CONFIGURED)",
+            type(exc).__name__,
+        )
         return None
     if not (cfg.get("api_base_url") and cfg.get("model") and cfg.get("api_key")):
         return None
@@ -199,8 +209,13 @@ def resolve_factory_provider(
     try:
         if not svc.factory_effective_enabled():
             return None
-    except AttributeError:
-        pass  # older settings service without CHG-0034 API
+    except AttributeError as exc:
+        # older settings service without CHG-0034 API
+        logger.debug(
+            "[NEWS_AI] event=FACTORY_GATE_UNSUPPORTED op=_resolve_provider "
+            "error_type=%s (pre-CHG-0034 settings service: no global gate)",
+            type(exc).__name__,
+        )
     try:
         from nexus_scalp.strategies.factory.provider import LLMGenerationProvider
 
@@ -864,6 +879,11 @@ def _parse_dt(value: Any) -> Any:
     if isinstance(value, str) and value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS_AI] event=TIMESTAMP_UNPARSEABLE op=_parse_dt "
+                "error_type=%s (row timestamp omitted)",
+                type(exc).__name__,
+            )
             return None
     return value

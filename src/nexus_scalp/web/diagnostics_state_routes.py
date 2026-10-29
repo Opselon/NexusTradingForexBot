@@ -146,11 +146,23 @@ def _local_sqlite_evidence() -> list[dict[str, Any]]:
         try:
             cfg = load_database_config(domain)
             path = Path(cfg.sqlite_connect_path)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[DIAG-STATE] event=DIAG_STATE_TRUTH_DOMAIN_CONFIG_UNREADABLE "
+                "domain=%s error_type=%s (domain omitted from the DB truth rows)",
+                domain,
+                type(exc).__name__,
+            )
             continue
         try:
             st = path.stat()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[DIAG-STATE] event=DIAG_STATE_TRUTH_DOMAIN_FILE_UNREADABLE "
+                "domain=%s error_type=%s (domain omitted from the DB truth rows)",
+                domain,
+                type(exc).__name__,
+            )
             continue
         age = max(0, int(now - st.st_mtime))
         rows.append(
@@ -362,7 +374,12 @@ def current_execution_mode(engine: Any) -> str | None:
     """Canonical current mode string ('LIVE', 'PAPER', ...) or None if unreadable."""
     try:
         mode = engine.config.execution.mode  # type: ignore[union-attr]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[DIAG-STATE] event=DIAG_STATE_EXECUTION_MODE_UNREADABLE "
+            "error_type=%s (execution mode rendered as unknown)",
+            type(exc).__name__,
+        )
         return None
     value = getattr(mode, "value", mode)
     text = str(value or "").strip().upper()
@@ -401,7 +418,12 @@ def _effective_risk(engine: Any) -> dict[str, Any]:
             logger.warning("[LIVE_STATE] runtime snapshot unreadable", exc_info=exc)
     try:
         risk = engine.config.risk  # type: ignore[union-attr]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[DIAG-STATE] event=DIAG_STATE_RISK_CONFIG_UNREADABLE "
+            "error_type=%s (risk section rendered empty)",
+            type(exc).__name__,
+        )
         return {}
     return {
         "max_account_drawdown_pct": getattr(risk, "max_account_drawdown_pct", None),
@@ -1624,8 +1646,12 @@ def register_diagnostics_state_routes(
             if db is not None:
                 try:
                     db.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[DIAG-STATE] event=DIAG_STATE_CONFIG_DB_CLOSE_FAILED "
+                        "error_type=%s (connection is being discarded anyway)",
+                        type(exc).__name__,
+                    )
 
     def _repair_pg_truth(ui: dict[str, Any]) -> None:
         """Honest `postgres` + `password_set` for the status payload (Lane D).
@@ -1914,8 +1940,13 @@ def register_diagnostics_state_routes(
                     from nexus_scalp.settings.secret_store import SecureSecretStore
 
                     SecureSecretStore().delete_secret(f"{PG_PASSWORD_SECRET_KEY}.probe")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[DIAG-STATE] event=DIAG_STATE_PROBE_SECRET_CLEANUP_FAILED "
+                    "error_type=%s (probe secret is re-deleted on the next "
+                    "connection test)",
+                    type(exc).__name__,
+                )
 
     @app.post("/api/db/manage/preview")
     def db_manage_preview(payload: dict[str, Any]) -> dict[str, Any]:

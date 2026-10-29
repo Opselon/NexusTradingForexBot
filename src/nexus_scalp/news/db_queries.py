@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +18,8 @@ from typing import Any
 from nexus_scalp.database.sqlite_session import session as sqlite_session
 from nexus_scalp.news._db_core_protocol import _NewsDbCoreProto
 from nexus_scalp.news.db_schema import _is_pg_conn
+
+logger = logging.getLogger(__name__)
 
 
 def _epoch_seconds(column: str, *, sqlite: bool | None = None) -> str:
@@ -194,14 +197,24 @@ class QueriesMixin(_NewsDbCoreProto):
                     ts = ts.astimezone(UTC)
                 if ts >= cutoff:
                     rows.append(r)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[NEWS_DB] event=IMPACT_ANCHOR_SKIPPED op=impact_timeline "
+                    "error_type=%s (unparseable anchor drops one bucket row)",
+                    type(exc).__name__,
+                )
                 continue
 
         buckets: dict[int, dict[str, Any]] = {}
         for anchor_ts, direction, strength, relevance, title in rows:
             try:
                 _ts_f = datetime.fromisoformat(str(anchor_ts).replace("Z", "+00:00")).timestamp()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[NEWS_DB] event=IMPACT_ANCHOR_UNPARSEABLE op=impact_timeline "
+                    "error_type=%s (row not bucketed)",
+                    type(exc).__name__,
+                )
                 continue
             bucket = int(_ts_f // bucket_sec) * bucket_sec
             b = buckets.setdefault(
@@ -249,7 +262,13 @@ class QueriesMixin(_NewsDbCoreProto):
             with sqlite_session(self._connect()) as conn:
                 cur = conn.execute(_backfill_impact_anchors_sql(sqlite=self._conn_is_sqlite(conn)))
                 return int(cur.rowcount or 0)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS_DB] event=IMPACT_ANCHOR_BACKFILL_FAILED "
+                "op=_backfill_impact_anchors error_type=%s "
+                "(reported as 0 rows re-anchored; idempotent retry next call)",
+                type(exc).__name__,
+            )
             return 0
 
     def _conn_is_sqlite(self, conn: Any) -> bool:
@@ -503,7 +522,12 @@ class QueriesMixin(_NewsDbCoreProto):
                         )
                     rebuilt["topics"] += len(topics)
                     rebuilt["analysis"] += 1
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "[NEWS_DB] event=HEAL_ARTICLE_SKIPPED op=rebuild "
+                        "error_type=%s (article left for the next heal pass)",
+                        type(exc).__name__,
+                    )
                     continue
             conn.commit()
         return rebuilt

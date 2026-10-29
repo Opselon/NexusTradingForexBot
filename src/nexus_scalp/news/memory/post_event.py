@@ -222,7 +222,12 @@ class PostEventValidator:
                 return [dict(r) for r in conn.execute(sql, args).fetchall()]
             finally:
                 conn.close()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS_MEMORY] event=POST_EVENT_LIST_FAILED op=list_records "
+                "error_type=%s (empty list; caller renders no rows)",
+                type(exc).__name__,
+            )
             return []
 
     def accuracy_summary(self, limit: int = 200) -> dict[str, Any]:

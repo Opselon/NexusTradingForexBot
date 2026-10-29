@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -31,6 +32,8 @@ from nexus_scalp.marketplace.models import (
 )
 from nexus_scalp.marketplace.snapshot import StrategyRuntimeSnapshotStore
 from nexus_scalp.marketplace.store import MarketplaceStore
+
+logger = logging.getLogger(__name__)
 
 _RESEARCH_VALIDATED = MarketplaceLifecycle.RESEARCH_VALIDATED
 _ALLOW_LIVE = "marketplace.live_approval_enabled"  # default OFF — PENDING until approved
@@ -71,7 +74,13 @@ class MarketplaceService:
         if callable(self._live_approved_fn):
             try:
                 return bool(self._live_approved_fn())
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "[MARKETPLACE] event=LIVE_APPROVAL_PROBE_FAILED "
+                    "op=_is_live_approved error_type=%s (a failing approval probe "
+                    "reports NOT live-approved, the safe default)",
+                    type(exc).__name__,
+                )
                 return False
         if isinstance(self._live_approved_fn, bool):
             return self._live_approved_fn
@@ -97,7 +106,13 @@ class MarketplaceService:
         raw = str(row["lifecycle"]) if isinstance(row, dict) else str(row[0])
         try:
             return MarketplaceLifecycle(raw)
-        except ValueError:
+        except ValueError as exc:
+            logger.warning(
+                "[MARKETPLACE] event=SEED_LIFECYCLE_UNKNOWN op=_seed_lifecycle "
+                "error_type=%s (an unrecognised lifecycle value is reported as "
+                "unknown instead of being coerced into a real state)",
+                type(exc).__name__,
+            )
             return None
 
     def _write_seed(

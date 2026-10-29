@@ -606,7 +606,18 @@ def _persisted_pool_config(domain: str) -> DatabaseConfig | None:
         from nexus_scalp.database.config import load_database_config
 
         cfg = load_database_config(domain)
-    except Exception:
+    except Exception as exc:
+        # Best-effort by design: a fresh install / missing settings DB means
+        # the call-site pool literals are the contract. Never logs the config
+        # (it can carry a DSN with credentials).
+        logger.debug(
+            "[DB-FABRIC] event=FABRIC_PERSISTED_POOL_CONFIG_UNAVAILABLE "
+            "domain=%s error_type=%s (persisted pool knobs are best-effort; "
+            "provisioning falls back to the call-site pool sizes and never "
+            "fails on an unreadable settings row)",
+            domain,
+            type(exc).__name__,
+        )
         return None
     return cfg if cfg.is_postgresql else None
 

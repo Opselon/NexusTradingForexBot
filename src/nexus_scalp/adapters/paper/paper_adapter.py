@@ -91,7 +91,15 @@ def _get_seed() -> int | None:
     except ValueError:
         try:
             return int(float(raw))
-        except Exception:
+        except Exception as exc:
+            # NEXUS_PAPER_STRESS_SEED is not a number; deterministic seed off.
+            # Debug: read per adapter construction, and the raw value can be
+            # arbitrary operator input, so only the type is logged.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_STRESS_SEED_UNPARSEABLE "
+                "error_type=%s (seed env is not numeric; paper runs unseeded)",
+                type(exc).__name__,
+            )
             return None
 
 
@@ -329,14 +337,29 @@ class PaperMT5Adapter(IMT5Port):
         if self._stress_spread_scale is not None:
             try:
                 return float(self._stress_spread_scale)
-            except Exception:
+            except Exception as exc:
+                # Non-numeric stress override falls through to env then 1.0.
+                # Debug: resolve runs per quote — never warn on this path.
+                logger.debug(
+                    "[PAPER-ADAPTER] event=PAPER_SPREAD_SCALE_OVERRIDE_UNUSABLE "
+                    "error_type=%s (stress spread override not numeric; "
+                    "falling back to env/default)",
+                    type(exc).__name__,
+                )
                 pass
         raw = os.environ.get("NEXUS_PAPER_SPREAD_SCALE", "").strip()
         if raw:
             try:
                 s = float(raw)
                 return max(0.1, min(s, 10.0))
-            except Exception:
+            except Exception as exc:
+                # Same hot quote path: unparseable env scale degrades to 1.0.
+                logger.debug(
+                    "[PAPER-ADAPTER] event=PAPER_SPREAD_SCALE_ENV_UNUSABLE "
+                    "error_type=%s (NEXUS_PAPER_SPREAD_SCALE not numeric; "
+                    "using default scale 1.0)",
+                    type(exc).__name__,
+                )
                 pass
         return 1.0
 
@@ -368,7 +391,16 @@ class PaperMT5Adapter(IMT5Port):
         if env_root:
             try:
                 return Path(env_root) / "paper_state.json"
-            except Exception:
+            except Exception as exc:
+                # Unusable NEXUS_DATA_ROOT: fall through to the release data
+                # root rather than crash. Per-persist (cold-ish) — debug. The
+                # env value itself is a filesystem path, so it is NOT logged.
+                logger.debug(
+                    "[PAPER-ADAPTER] event=PAPER_DATA_ROOT_UNUSABLE error_type=%s "
+                    "(NEXUS_DATA_ROOT could not be turned into a state path; "
+                    "falling back to the release data root)",
+                    type(exc).__name__,
+                )
                 pass
         try:
             from nexus_scalp.release import paths as rpaths  # type: ignore
@@ -566,7 +598,14 @@ class PaperMT5Adapter(IMT5Port):
             p = self._persist_path()
             if p.exists():
                 p.unlink()
-        except Exception:
+        except Exception as exc:
+            # Teardown helper: a state file that will not delete is harmless
+            # (the next connect overwrites it). Debug — no path in the record.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_STATE_CLEAR_FAILED error_type=%s "
+                "(persisted state file left in place; teardown continues)",
+                type(exc).__name__,
+            )
             pass
         # also clear in-memory closed set for the instance
         with contextlib.suppress(Exception):
@@ -695,7 +734,14 @@ class PaperMT5Adapter(IMT5Port):
             )
             if tick is None:
                 tick = self.get_last_tick(pos.symbol)
-        except Exception:
+        except Exception as exc:
+            # No price for this leg: _floating_pnl keeps the stored profit.
+            # Per position, per account refresh — debug only.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_PRICE_FOR_PNL_UNAVAILABLE "
+                "error_type=%s (no tick for the position; stored profit used)",
+                type(exc).__name__,
+            )
             return None
         if pos.type == OrderType.BUY:
             return float(tick.bid)
@@ -1744,7 +1790,14 @@ class PaperMT5Adapter(IMT5Port):
                 return False
             age = (datetime.now(UTC) - self._last_tick_time).total_seconds()
             return age > 30.0
-        except Exception:
+        except Exception as exc:
+            # Uncomparable tick time: the stale guard cannot fire, so the
+            # order is NOT rejected — same fallback, now visible.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_STALE_TICK_CHECK_SKIPPED "
+                "error_type=%s (tick age incomparable; order not treated as stale)",
+                type(exc).__name__,
+            )
             return False
 
     def _margin_required(self, symbol: str, price: float, volume: float) -> float:
@@ -1978,7 +2031,17 @@ class PaperMT5Adapter(IMT5Port):
                 with contextlib.suppress(Exception):
                     self._persist_state()
                 return 0
-        except Exception:
+        except Exception as exc:
+            # Margin gate could not be evaluated (see G above): the order
+            # proceeds exactly as before. Money path — but the fallback is
+            # "no margin rejection", not a failure, and this block can run
+            # on a hot replay loop, so debug rather than warn.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_MARGIN_GATE_SKIPPED error_type=%s "
+                "(margin/equity refresh failed; order proceeds without the "
+                "margin rejection check)",
+                type(exc).__name__,
+            )
             pass
 
         # E: fill-price realism — fill at current tick bid/ask, not order.price
@@ -2157,7 +2220,16 @@ class PaperMT5Adapter(IMT5Port):
             if int(ticket) in getattr(self, "_closed_tickets", set()):
                 logger.warning("PAPER CLOSE IGNORED (already closed)", ticket=ticket)
                 return False
-        except Exception:
+        except Exception as exc:
+            # Duplicate-close guard could not be evaluated (non-int ticket):
+            # the close continues and the guard's later record below still
+            # covers it. Money path, but the guard is a backstop only.
+            logger.debug(
+                "[PAPER-ADAPTER] event=PAPER_CLOSE_GUARD_SKIPPED "
+                "op=close_position error_type=%s (ticket not an int; duplicate-"
+                "close guard not evaluated, close continues)",
+                type(exc).__name__,
+            )
             pass
         # locate position
         target = next((p for p in self._positions if p.ticket == ticket), None)
@@ -2231,7 +2303,16 @@ class PaperMT5Adapter(IMT5Port):
         # Record closed ticket so a restart never double-credits it.
         try:
             self._closed_tickets.add(int(ticket))
-        except Exception:
+        except Exception as exc:
+            # The ticket could not be remembered as closed — a restart could
+            # then re-credit this close. This is a durability gap on the money
+            # path, so warn (once per affected close), ticket only, no payload.
+            logger.warning(
+                "[PAPER-ADAPTER] event=PAPER_CLOSED_TICKET_NOT_RECORDED "
+                "op=close_position error_type=%s (closed-ticket set update "
+                "failed; a restart may re-credit this close)",
+                type(exc).__name__,
+            )
             pass
         # release dedup key if any (conservative: drop one arbitrary id — send_order tracks order_id->ticket externally)
         logger.info(

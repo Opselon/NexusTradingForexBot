@@ -18,6 +18,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.marketplace.models import SeedSpec
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.marketplace.repair")
 
 
 def new_version_for_repair(base_version: str, trigger: str) -> str:
@@ -105,7 +108,13 @@ def mutated_seed_from_trigger(
             compatibility_contract=dict(seed.compatibility_contract),
             dsl=child_dsl,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[MARKETPLACE] event=SEED_REPAIR_FALLBACK_SKIPPED op=repair_seed "
+            "error_type=%s (the seed-repair fallback could not be produced; the "
+            "seed is left unrepaired rather than replaced with a partial one)",
+            type(exc).__name__,
+        )
         return None
 
 

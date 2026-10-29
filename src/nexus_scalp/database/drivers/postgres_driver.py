@@ -31,7 +31,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
+from nexus_scalp.database.config import DatabaseConfig, build_postgres_url
 from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import _IDENT_SHAPE, DatabaseDriver
 from nexus_scalp.database.query_logging import QueryMetricsRecorder
@@ -277,8 +277,17 @@ class _DriverQueryTimer:
     def __enter__(self) -> _DriverQueryTimer:
         try:
             self.start = time.monotonic()
-        except Exception:
+        except Exception as exc:
+            # No clock sample: the slow-query WARNING is skipped for this one
+            # statement. The statement itself still executes.
             self.start = None
+            _pg_probe_logger.debug(
+                "PG_DRIVER event=PG_DRIVER_TIMER_START_FAILED op=%s "
+                "error_type=%s (timing is best-effort observability; only the "
+                "slow-query duration for this statement is lost)",
+                self.op,
+                type(exc).__name__,
+            )
         return self
 
     def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
@@ -286,7 +295,15 @@ class _DriverQueryTimer:
             return None
         try:
             elapsed = (time.monotonic() - self.start) * 1000.0
-        except Exception:
+        except Exception as timer_exc:
+            # Same contract as __enter__: only the duration is unavailable.
+            _pg_probe_logger.debug(
+                "PG_DRIVER event=PG_DRIVER_TIMER_STOP_FAILED op=%s "
+                "error_type=%s (timing is best-effort observability; the "
+                "statement outcome is unchanged)",
+                self.op,
+                type(timer_exc).__name__,
+            )
             return None
         if exc_type is None:
             try:
@@ -791,7 +808,16 @@ class PostgreSQLDriver(DatabaseDriver):
             import psycopg  # noqa: F401
 
             return True
-        except ImportError:
+        except ImportError as exc:  # pragma: no cover - env dependent
+            # Optional dependency probe: False is the documented answer and the
+            # caller routes to SQLite; recorded once so "why is this SQLite?"
+            # is answerable from the log.
+            _pg_probe_logger.debug(
+                "PG_DRIVER event=PG_DRIVER_PSYCOPG_UNAVAILABLE error_type=%s "
+                "(optional PostgreSQL dependency is not importable; the "
+                "caller falls back to the provider it already chose)",
+                type(exc).__name__,
+            )
             return False
 
     # -- SQL helpers ------------------------------------------------------
@@ -850,11 +876,14 @@ class PostgreSQLDriver(DatabaseDriver):
             kwargs["sslmode"] = cfg.ssl_mode
         if cfg.command_timeout_sec:
             kwargs["options"] = f"-c statement_timeout={cfg.command_timeout_sec * 1000}"
-        # Log only the sanitized form (never the password).
-        import structlog
-
-        structlog.get_logger("nexus_scalp.database.drivers.postgres").debug(
-            "postgres connect", url=mask_url_password(url)
+        # Log only non-sensitive connection shape. Never log the URL itself:
+        # CodeQL's py/clear-text-logging-sensitive-data taints any password
+        # source that reaches a log call, even through a masking helper.
+        _pg_probe_logger.debug(
+            "postgres connect host=%s port=%s db=%s",
+            cfg.host,
+            cfg.port,
+            cfg.database,
         )
         return psycopg.connect(url, **kwargs)
 
@@ -1302,7 +1331,15 @@ class PostgreSQLDriver(DatabaseDriver):
     def database_size_bytes(self) -> int | None:
         try:
             return int(self.scalar("SELECT pg_database_size(current_database())") or 0)
-        except Exception:
+        except Exception as exc:
+            # Health-surface measurement only: None is the documented "size
+            # unavailable" answer and no query path depends on it.
+            _pg_probe_logger.debug(
+                "PG_DRIVER event=PG_DRIVER_SIZE_PROBE_FAILED error_type=%s "
+                "(database-size measurement is diagnostics-only; None is the "
+                "documented answer and no data path depends on it)",
+                type(exc).__name__,
+            )
             return None
 
     def table_count(self, conn: Any = None) -> int:

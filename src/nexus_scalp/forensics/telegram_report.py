@@ -172,8 +172,12 @@ class TelegramReportScheduler:
                 ),
                 encoding="utf-8",
             )
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "[FORENSIC_REPORT] event=REPORT_STATE_PERSIST_FAILED op=save_state "
+                "error_type=%s (next scheduled report re-derives state)",
+                type(exc).__name__,
+            )
 
     def should_send(self, now: float | None = None) -> bool:
         """Interval gate: at most one report per configured interval."""
