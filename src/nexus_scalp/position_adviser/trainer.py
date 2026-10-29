@@ -384,13 +384,23 @@ def train_position_adviser(
     # cannot vary between runs), CUBLAS workspace pinned for CUDA.
     try:
         torch.use_deterministic_algorithms(True)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[POSITION_ADVISER] event=DETERMINISTIC_OPS_UNAVAILABLE "
+            "op=train error_type=%s (this torch build exposes no deterministic "
+            "switch; training proceeds with the default algorithm selection)",
+            type(exc).__name__,
+        )
     try:
         torch.backends.cudnn.benchmark = False
         torch.backends.cudnn.deterministic = True
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[POSITION_ADVISER] event=CUDNN_FLAGS_UNAVAILABLE op=train "
+            "error_type=%s (this torch build exposes no cudnn backend; training "
+            "proceeds, and CPU runs are unaffected)",
+            type(exc).__name__,
+        )
     if torch.cuda.is_available():
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 

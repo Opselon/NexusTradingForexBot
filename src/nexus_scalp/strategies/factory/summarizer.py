@@ -18,10 +18,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.strategies.factory.models import (
     GenerationSummary,
     StrategyFamily,
 )
+
+logger = get_logger("nexus_scalp.strategies.factory.summarizer")
 
 
 def _score_of(entry: dict[str, Any]) -> float:
@@ -146,7 +149,13 @@ def _structural_passed(candidate: dict[str, Any]) -> bool:
     try:
         parsed = _json.loads(text)
         return bool(parsed.get("passed")) if isinstance(parsed, dict) else False
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=VALIDATION_VERDICT_UNDECODABLE "
+            "op=verdict_passed error_type=%s (an undecodable verdict counts as "
+            "NOT passed, the conservative default)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -166,7 +175,14 @@ def memory_summary(
         if isinstance(raw, dict):
             try:
                 normalized_summaries.append(GenerationSummary.model_validate(raw))
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[STRATEGY_FACTORY] event=GENERATION_SUMMARY_REJECTED "
+                    "op=memory_summary error_type=%s (a summary that does not "
+                    "match the model is skipped; the other generations still "
+                    "feed the next planner prompt)",
+                    type(exc).__name__,
+                )
                 continue
     summaries = normalized_summaries
 

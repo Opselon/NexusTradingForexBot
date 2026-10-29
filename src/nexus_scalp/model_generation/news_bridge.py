@@ -34,6 +34,9 @@ import polars as pl
 from nexus_scalp.model_generation.models import NewsContextSchema, default_news_context_schema
 from nexus_scalp.news import db_analysis as db_analysis_module
 from nexus_scalp.news.models import NewsImpactHorizon
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.model_generation.news_bridge")
 
 #: NewsContextSchema field names (canonical order, from the model contract).
 _SCHEMA_FIELDS: tuple[str, ...] = (
@@ -436,7 +439,13 @@ def _parse_iso(value: Any) -> datetime | None:
         try:
             dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
             return dt.replace(tzinfo=UTC) if dt.tzinfo is None else dt.astimezone(UTC)
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS_BRIDGE] event=PUBLISHED_AT_UNPARSEABLE op=_parse_iso "
+                "error_type=%s (a row with an unparseable publication time "
+                "carries no time and is excluded from the news matrix)",
+                type(exc).__name__,
+            )
             return None
     return None
 

@@ -26,6 +26,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.strategies.factory.dsl import (
     RANDOM_SEED,
     SUPPORTED_TIMEFRAMES,
@@ -45,6 +46,8 @@ from nexus_scalp.strategies.factory.validators import (
     validate_features,
     validate_schema,
 )
+
+logger = get_logger("nexus_scalp.strategies.factory.evolution")
 
 #: Mutation action pool (spec 7). Each maps a DSL raw dict -> mutated raw dict.
 _MUTATION_ACTIONS = (
@@ -200,7 +203,13 @@ def mutate(
 
     try:
         dsl = _rebuild(raw)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=MUTATION_REBUILD_REJECTED op=mutate "
+            "error_type=%s (a mutated definition that fails the DSL rebuild is "
+            "discarded; the population simply gets no child from this draw)",
+            type(exc).__name__,
+        )
         return None
 
     # A mutation that produces no definition change is a NO-OP: reject it so
@@ -329,7 +338,13 @@ def crossover(
 
     try:
         dsl = _rebuild(child_raw)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=CROSSOVER_REBUILD_REJECTED op=crossover "
+            "error_type=%s (a crossover child that fails the DSL rebuild is "
+            "discarded; the parents stay in the population unchanged)",
+            type(exc).__name__,
+        )
         return None
 
     checks = [
@@ -394,7 +409,14 @@ def explore(
 
     try:
         dsl = _rebuild(raw)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=MUTATION_REBUILD_REJECTED "
+            "op=mutate_add_regime error_type=%s (a regime-enriched definition "
+            "that fails the DSL rebuild is discarded; the population simply "
+            "gets no child from this draw)",
+            type(exc).__name__,
+        )
         return None
 
     checks = [

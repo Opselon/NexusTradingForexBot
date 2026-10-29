@@ -146,8 +146,14 @@ class ModelRegistry:
                             "ALTER TABLE model_checkpoints ADD COLUMN "
                             "training_status TEXT DEFAULT 'NOT_TRAINED';"
                         )
-                    except sqlite3.OperationalError:
-                        pass
+                    except sqlite3.OperationalError as exc:
+                        logger.debug(
+                            "[MODEL_REGISTRY] event=MIGRATION_ADD_COLUMN_SKIPPED "
+                            "op=model_checkpoints_training_status error_type=%s "
+                            "(idempotent migration DDL: a duplicate column or a "
+                            "not-yet-created table is success)",
+                            type(exc).__name__,
+                        )
                     # Backfill the truthful state for legacy rows: a record with
                     # a completed fit carries epochs>0 and real losses. Rows
                     # with epochs=0 stay NOT_TRAINED, which is exactly the

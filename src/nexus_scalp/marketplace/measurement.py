@@ -10,8 +10,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.metrics import compute_backtest
 from nexus_scalp.research.models import BacktestResult, ResearchDataset, ResearchSample
+
+logger = get_logger("nexus_scalp.marketplace.measurement")
 
 
 @dataclass(frozen=True)
@@ -146,7 +149,14 @@ def backtest_metrics(
             dataset_id=dataset.dataset_id,
             assumptions=BacktestEngine._to_legacy(economic),
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[MARKETPLACE] event=BACKTEST_METRICS_UNAVAILABLE op=backtest_metrics "
+            "strategy_id=%s error_type=%s (a measurement that cannot be computed "
+            "is reported as absent; no metric is fabricated for the window)",
+            strategy_id,
+            type(exc).__name__,
+        )
         return None
 
 

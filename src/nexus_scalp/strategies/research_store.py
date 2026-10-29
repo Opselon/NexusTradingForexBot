@@ -256,7 +256,13 @@ def _json_parse(value: Any) -> Any:
         return {}
     try:
         return json.loads(text)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_RESEARCH] event=JSON_COLUMN_UNDECODABLE op=decode_json "
+            "error_type=%s (a corrupt JSON column reads as an empty mapping, "
+            "the documented decoder default)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -421,8 +427,14 @@ class StrategyResearchStore:
                         existing = _have_cols(conn, "factory_loop_state")
                     if col in existing:
                         continue
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[STRATEGY_RESEARCH] event=MIGRATION_EXISTING_COLUMNS_PROBE_SKIPPED "
+                        "op=factory_loop_state_add_column error_type=%s (column "
+                        "presence probe failed; the ADD COLUMN below is "
+                        "idempotent, so a pre-existing column is success)",
+                        type(exc).__name__,
+                    )
                 try:
                     self.driver.execute(
                         f"ALTER TABLE factory_loop_state ADD COLUMN {col} {col_def};",
@@ -760,7 +772,13 @@ class StrategyResearchStore:
             return {}
         try:
             parsed = json.loads(text)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_RESEARCH] event=JSON_COLUMN_UNDECODABLE "
+                "op=decode_loop_state error_type=%s (a corrupt loop-state "
+                "column reads as an empty mapping, the documented default)",
+                type(exc).__name__,
+            )
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
@@ -795,7 +813,13 @@ class StrategyResearchStore:
             raise ValueError(f"not a store table: {table}")
         try:
             return int(self.driver.scalar(f"SELECT COUNT(*) FROM {table}") or 0)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_RESEARCH] event=TABLE_COUNT_UNAVAILABLE op=table_count "
+                "error_type=%s (an absent or unreadable store table reports a "
+                "count of 0, the documented default)",
+                type(exc).__name__,
+            )
             return 0
 
     def close(self) -> None:

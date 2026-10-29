@@ -42,7 +42,13 @@ def _parse_ts(value: str | None) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(value).astimezone(UTC)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[INTELLIGENCE] event=LIFECYCLE_TS_UNPARSEABLE op=_parse_ts "
+            "error_type=%s (an unparseable event timestamp is treated as absent, "
+            "so the event keeps its order but carries no time)",
+            type(exc).__name__,
+        )
         return None
 
 

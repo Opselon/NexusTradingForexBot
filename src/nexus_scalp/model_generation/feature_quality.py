@@ -470,7 +470,13 @@ def load_feature_quality_report(path: str | Path) -> FeatureQualityReport | None
         return None
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[FEATURE_QUALITY] event=REPORT_UNDECODABLE op=read_feature_quality_report "
+            "error_type=%s (a corrupt report reads as absent, so the dataset is "
+            "never treated as quality-certified on unreadable evidence)",
+            type(exc).__name__,
+        )
         return None
     payload["config"] = payload.get("config") or {}
     return FeatureQualityReport(**payload)

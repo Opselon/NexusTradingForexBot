@@ -345,7 +345,14 @@ def _predict_probs(
 
     try:
         rt = LocalModelRuntime(store=store).load(mid)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[MODEL_GENERATION] event=RUNTIME_LOAD_FAILED op=benchmark model_id=%s "
+            "error_type=%s (a model that cannot be loaded is reported as "
+            "unbenchmarked; no metric is fabricated for it)",
+            mid,
+            type(exc).__name__,
+        )
         return None
     if not seq:
         feat_cols = [c for c in frame.columns if c.startswith("feat_")]
