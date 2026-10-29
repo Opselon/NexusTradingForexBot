@@ -30,6 +30,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.release.environment")
@@ -283,11 +284,10 @@ def _detect_mt5() -> tuple[bool, bool]:
                     p = Path(getattr(term_path, "path", "") or "")
                     if p.exists():
                         terminal = True
-    except Exception as exc:
-        logger.debug(
-            "[RELEASE-ENV] event=RELEASE_ENV_MT5_TERMINAL_PROBE_FAILED op=_detect_mt5 error_type=%s (the terminal is reported absent; MT5 checks then say not-installed)",
-            type(exc).__name__,
-        )
+    except Exception:
+        # Import/probe failure means only "not detected"; stay silent so
+        # --json commands keep stdout parseable (logging here would
+        # initialise the console handler onto stdout mid-command).
         pass
     return terminal, native_module
 

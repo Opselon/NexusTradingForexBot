@@ -876,12 +876,10 @@ class PostgreSQLDriver(DatabaseDriver):
             kwargs["sslmode"] = cfg.ssl_mode
         if cfg.command_timeout_sec:
             kwargs["options"] = f"-c statement_timeout={cfg.command_timeout_sec * 1000}"
-        # Log only the sanitized form (never the password).
-        import structlog
-
-        structlog.get_logger("nexus_scalp.database.drivers.postgres").debug(
-            "postgres connect", url=mask_url_password(url)
-        )
+        # Log only the sanitized form (never the password). Use the stdlib
+        # logger: structlog's unconfigured PrintLogger default writes to
+        # stdout, which polluted ``health --json`` (parseable output required).
+        _pg_probe_logger.debug("postgres connect url=%s", mask_url_password(url))
         return psycopg.connect(url, **kwargs)
 
     def closed(self) -> bool:  # pragma: no cover - thin passthrough
