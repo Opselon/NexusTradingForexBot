@@ -26,6 +26,9 @@ from typing import Any
 
 from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
 from nexus_scalp.release.metadata import get_build_info_file, get_version_info
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.versioning")
 
 #: Reported statuses (brief section 52).
 STATUS_CONSISTENT = "CONSISTENT"
@@ -41,7 +44,11 @@ def _liquidity_producer_available() -> bool:
         import nexus_scalp.features.liquidity_engine  # noqa: F401
 
         return True
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-VERSION] event=RELEASE_VERSION_LIQUIDITY_PRODUCER_UNAVAILABLE op=_liquidity_producer_available error_type=%s (the capability is reported as absent)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -129,7 +136,11 @@ def _read_build_info_dict() -> dict[str, Any]:
         return {}
     try:
         return json.loads(f.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-VERSION] event=RELEASE_VERSION_BUILD_INFO_UNREADABLE op=_read_build_info_dict error_type=%s (the version block reports no build-info fields)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -150,7 +161,11 @@ def _hash_web_dir(web_dir: Path | None) -> tuple[str, int]:
             try:
                 h.update(p.read_bytes())
                 count += 1
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-VERSION] event=RELEASE_VERSION_WEB_ASSET_HASH_FAILED op=_hash_web_dir error_type=%s (that asset is excluded from the served-bundle hash)",
+                    type(exc).__name__,
+                )
                 pass
     if count == 0:
         return "", 0
@@ -225,5 +240,9 @@ def default_db_versions_provider() -> dict[str, Any]:
                     "state": "UNKNOWN",
                 }
         return out
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-VERSION] event=RELEASE_VERSION_SCHEMA_INFO_UNAVAILABLE op=default_db_versions_provider error_type=%s (no per-domain migration state is reported)",
+            type(exc).__name__,
+        )
         return {}

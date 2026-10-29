@@ -26,6 +26,9 @@ from nexus_scalp.cli.styling import console
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.smoke.result_contract import human_summary
 from nexus_scalp.smoke.runner import run_smoke
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.smoke_commands")
 
 smoke_app = typer.Typer(
     name="smoke", help="Production E2E smoke (layered runtime verification).", add_completion=False
@@ -122,7 +125,11 @@ def _run_and_emit(*, tier: str, json_mode: bool, evidence: bool, report_path: st
             )
             report.artifacts.append(str(out_dir / "smoke_result.json"))
             data["artifacts"] = report.artifacts
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[CLI] event=CLI_SMOKE_RESULT_ARTIFACT_WRITE_FAILED op=_run_and_emit error_type=%s (the smoke result artifact is not written; the smoke verdict is unchanged)",
+                type(exc).__name__,
+            )
             pass
     if report_path:
         try:

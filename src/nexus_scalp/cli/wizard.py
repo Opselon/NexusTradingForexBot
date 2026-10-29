@@ -49,6 +49,9 @@ from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release.metadata import get_version_info
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.wizard")
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +245,11 @@ def _get_network_endpoints(port: int = 8080) -> list[str]:
         lan = _socket.gethostbyname(hostname)
         if lan and not lan.startswith("127.") and lan not in endpoints:
             endpoints.append(f"http://{lan}:{port}")
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI-WIZARD] event=CLI_WIZARD_LAN_ENDPOINT_PROBE_FAILED op=_get_network_endpoints error_type=%s (the LAN URL is not advertised; the loopback endpoints still work)",
+            type(exc).__name__,
+        )
         pass
     return endpoints
 
@@ -414,10 +421,18 @@ def _postgres_config_was_validated(row: Any, svc: Any = None) -> bool:
         if svc is not None:
             try:
                 return bool(svc.postgres_password_set())
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-WIZARD] event=CLI_WIZARD_POSTGRES_SECRET_PROBE_FAILED op=_postgres_config_was_validated error_type=%s (without a stored password the config is treated as unvalidated (the conservative answer))",
+                    type(exc).__name__,
+                )
                 pass
         return False
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI-WIZARD] event=CLI_WIZARD_POSTGRES_CONFIG_PARSE_FAILED op=_postgres_config_was_validated error_type=%s (an unreadable row is never trusted, so it cannot be treated as validated)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -447,7 +462,11 @@ def _persist_sqlite_choice(svc: Any) -> None:
                 "[dim]Cleared a stale database.postgresql_config row "
                 "(never validated, not chosen).[/dim]"
             )
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI-WIZARD] event=CLI_WIZARD_STALE_POSTGRES_ROW_CLEAR_FAILED op=_persist_sqlite_choice error_type=%s (the stale row is left in place; the explicit SQLite choice is still persisted)",
+            type(exc).__name__,
+        )
         pass
 
 
@@ -660,7 +679,11 @@ def run_first_run_database_choice(
                 reason="postgres_config_present_provider_row_absent",
             )
             return out
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI-WIZARD] event=CLI_WIZARD_POSTGRES_REPAIR_PROBE_FAILED op=run_first_run_database_choice error_type=%s (the repair probe did not apply; the normal first-run prompt continues)",
+            type(exc).__name__,
+        )
         pass
     if prompt_fn is None and not sys.stdin.isatty():
         # GATE 2 — CI / --json / piped stdin: defer, never hang a boot.
