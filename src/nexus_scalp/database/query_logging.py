@@ -42,6 +42,7 @@ masking discipline in the codebase, not two.
 
 from __future__ import annotations
 
+import logging
 import re
 import threading
 import time
@@ -53,6 +54,39 @@ from nexus_scalp.observability.logging import get_logger
 
 _persistence_state = threading.local()
 LOG_PERSISTENCE_ENABLED_SETTING_KEY = "database.log_persistence.enabled"
+
+#: Stdlib logger for this infrastructure module's OWN swallow diagnostics.
+#: Never the structlog ``logger`` below: a structlog record can carry bound
+#: context and reaches the app-wide DB log sink, so reporting "the query-log
+#: reporting itself failed" through it would re-enter the pipeline being
+#: reported. A plain stdlib logger that this module does not re-emit into
+#: cannot loop back.
+_infra_logger = logging.getLogger(__name__)
+
+
+def _note_swallowed(event: str, exc: BaseException, justification: str) -> None:
+    """DEBUG one swallowed failure inside the logging infrastructure itself.
+
+    Observability-only: called from handlers whose fallback value is the
+    contract, so it must never raise and never change behaviour. The record
+    carries ``type(exc).__name__`` only — no DSN, path, SQL or payload.
+    ``_log_guard`` breaks re-entrance if the diagnostics channel itself fails
+    from a logging-path thread.
+    """
+    if getattr(_persistence_state, "log_guard", False):
+        return
+    _persistence_state.log_guard = True
+    try:
+        _infra_logger.debug(
+            "[DB-QUERY-LOG] event=%s error_type=%s (%s)",
+            event,
+            type(exc).__name__,
+            justification,
+        )
+    except Exception:
+        return
+    finally:
+        _persistence_state.log_guard = False
 
 
 def _persistence_enabled() -> bool:
@@ -115,8 +149,17 @@ def _persist_event(level: str, context: dict[str, Any]) -> None:
             from nexus_scalp.database.log_store import _note_dropped
 
             _note_dropped(exc)
-        except Exception:
-            pass
+        except Exception as note_exc:
+            # The dropped-record counter itself failed: the drop has already
+            # been swallowed upstream, so this only preserves the fact that
+            # even the fallback bookkeeping is unavailable.
+            _note_swallowed(
+                "QUERY_LOG_DROP_COUNTER_FAILED",
+                note_exc,
+                "best-effort persist sink; _note_dropped is the fallback "
+                "bookkeeping and a counter fault must not raise on the "
+                "logging path",
+            )
     finally:
         _persistence_state.active = False
 
@@ -280,7 +323,15 @@ def mask_query_text(sql: Any) -> str:
             tail = masked[-(_MAX_SQL_LOG_CHARS // 3) :]
             masked = f"{head}…<truncated {len(sql) - len(head) - len(tail)} chars>…{tail}"
         return masked
-    except Exception:
+    except Exception as exc:
+        # Masking is best-effort by contract; the fixed placeholder keeps the
+        # statement from being logged at all rather than partially masked.
+        _note_swallowed(
+            "QUERY_LOG_MASK_FAILED",
+            exc,
+            "masking must never raise on the logging path; the statement is "
+            "reported as a fixed placeholder instead of an unmasked text",
+        )
         return "<statement masking failed>"
 
 
@@ -309,7 +360,14 @@ def placeholder_count(sql: Any) -> int:
         if pg:
             return pg
         return len(_QMARK_PLACEHOLDER.findall(sql))
-    except Exception:
+    except Exception as exc:
+        # A non-string or exotic object reached the counter; zero is the
+        # documented answer and the arity diagnosis degrades, not the query.
+        _note_swallowed(
+            "QUERY_LOG_PLACEHOLDER_COUNT_FAILED",
+            exc,
+            "diagnostic counter only; returning 0 never changes the statement that is executed",
+        )
         return 0
 
 
@@ -333,7 +391,15 @@ def arg_count(args: Any) -> int:
             # executemany: count the first parameter row.
             return len(first)
         return n
-    except Exception:
+    except Exception as exc:
+        # An unindexable/unmeasurable parameter container; 0 is the
+        # documented answer and only the arity diagnosis degrades.
+        _note_swallowed(
+            "QUERY_LOG_ARG_COUNT_FAILED",
+            exc,
+            "diagnostic counter only; the bound values are never rendered and "
+            "the executed statement is unchanged",
+        )
         return 0
 
 
@@ -345,7 +411,15 @@ def _full_error(exc: BaseException) -> str:
         if not msg:
             return name
         return f"{name}: {msg}"
-    except Exception:
+    except Exception as render_exc:
+        # ``__str__`` on a hostile exception object raised; the type name is
+        # still useful on its own, so report that the message was lost.
+        _note_swallowed(
+            "QUERY_LOG_ERROR_RENDER_FAILED",
+            render_exc,
+            "a failure rendering the exception message must not hide the "
+            "original error; only its text is lost",
+        )
         return "<error rendering failed>"
 
 
@@ -353,11 +427,19 @@ def _log(fn: Callable[..., None], msg: str, *args: Any, **kwargs: Any) -> None:
     """Emit a log record; a logging-path failure never propagates."""
     try:
         fn(msg, *args, **kwargs)
-    except Exception:
+    except Exception as exc:
         try:
             logger.debug("query logging path failed; record dropped")
-        except Exception:
-            pass
+        except Exception as fallback_exc:
+            # Both the structured record AND its stdlib fallback failed: the
+            # record is dropped by contract, but the drop stays traceable on
+            # the infrastructure logger (guard prevents any re-entry loop).
+            _note_swallowed(
+                "QUERY_LOG_EMIT_FAILED",
+                fallback_exc if fallback_exc is not exc else exc,
+                "a logging-path failure must never become the caller's "
+                "failure; only the diagnostic record is lost",
+            )
 
 
 def log_query_failure(
@@ -486,8 +568,16 @@ class QueryTimer:
     def __enter__(self) -> QueryTimer:
         try:
             self.start = time.monotonic()
-        except Exception:
+        except Exception as exc:
+            # No clock sample: the slow-query WARNING is skipped for this
+            # statement. The statement itself is unaffected.
             self.start = None
+            _note_swallowed(
+                "QUERY_LOG_TIMER_START_FAILED",
+                exc,
+                "timing is best-effort observability; an unmeasured statement "
+                "still executes and only its duration is lost",
+            )
         return self
 
     def __exit__(
@@ -500,7 +590,15 @@ class QueryTimer:
             return None
         try:
             elapsed = (time.monotonic() - self.start) * 1000.0
-        except Exception:
+        except Exception as timer_exc:
+            # The elapsed sample is unusable: no slow-query WARNING for this
+            # statement. The statement's outcome is untouched.
+            _note_swallowed(
+                "QUERY_LOG_TIMER_STOP_FAILED",
+                timer_exc,
+                "timing is best-effort observability; only the slow-query "
+                "duration is lost, never the query result",
+            )
             return None
         self.duration_ms = elapsed
         if exc_type is None:
@@ -602,7 +700,15 @@ class DegradedReadTracker:
                 total = state.total
                 consecutive = state.consecutive
                 emitted = state.emitted
-        except Exception:
+        except Exception as exc:
+            # Bookkeeping fault: this degradation is not counted or emitted.
+            # The read already returned its documented default upstream.
+            _note_swallowed(
+                "QUERY_LOG_DEGRADED_NOTE_FAILED",
+                exc,
+                "degraded-read bookkeeping is a logging path; its fault must "
+                "not turn a degraded read into a crash",
+            )
             return
 
         context = {
@@ -684,7 +790,14 @@ class DegradedReadTracker:
                     if (not domain or k[0] == domain) and (not reason or k[1] == reason)
                 ]:
                     self._states.pop(key, None)
-        except Exception:
+        except Exception as exc:
+            # Reset fault: stale bookkeeping stays; the next note() re-counts
+            # it. Nothing is served differently.
+            _note_swallowed(
+                "QUERY_LOG_DEGRADED_RESET_FAILED",
+                exc,
+                "recovery bookkeeping only; a stale counter never changes what a read returns",
+            )
             return
 
     def snapshot(self) -> dict[str, Any]:
@@ -699,7 +812,15 @@ class DegradedReadTracker:
                     }
                     for (d, r), s in self._states.items()
                 }
-        except Exception:
+        except Exception as exc:
+            # The health surface reports "no degradations" for this snapshot;
+            # serving it a partial/raising view would be worse.
+            _note_swallowed(
+                "QUERY_LOG_DEGRADED_SNAPSHOT_FAILED",
+                exc,
+                "read-only health view; an empty snapshot is the documented "
+                "degradation and no data path depends on it",
+            )
             return {}
 
 
@@ -733,16 +854,31 @@ class _QueryObservabilityCounters:
         try:
             with self.lock:
                 self.errors += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            # One statistic not incremented on a path that already failed;
+            # the ERROR record itself was still emitted by the caller.
+            _note_swallowed(
+                "QUERY_LOG_NOTE_ERROR_FAILED",
+                exc,
+                "counter update only; the error record is emitted independently "
+                "and no behaviour depends on the tally",
+            )
+            return
 
     def note_slow(self) -> None:
         try:
             with self.lock:
                 self.warnings += 1
                 self.slow_queries += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            # Same as note_error: the slow-query WARNING is already on the wire.
+            _note_swallowed(
+                "QUERY_LOG_NOTE_SLOW_FAILED",
+                exc,
+                "counter update only; the slow-query WARNING is emitted "
+                "independently and no behaviour depends on the tally",
+            )
+            return
 
     def snapshot(self) -> dict[str, Any]:
         """Read-only view (never raises; a health surface must not fail)."""
@@ -754,14 +890,28 @@ class _QueryObservabilityCounters:
                     "slow_queries": self.slow_queries,
                     "degraded_reads": dict(self._degraded_snapshot()),
                 }
-        except Exception:
+        except Exception as exc:
+            # Health surface: an empty snapshot is the documented degradation.
+            _note_swallowed(
+                "QUERY_LOG_OBSERVABILITY_SNAPSHOT_FAILED",
+                exc,
+                "read-only health view; an empty snapshot is the documented "
+                "degradation and no data path depends on it",
+            )
             return {}
 
     @staticmethod
     def _degraded_snapshot() -> dict[str, Any]:
         try:
             return degraded_reads.snapshot()
-        except Exception:
+        except Exception as exc:
+            # Nested part of the same health view: report "no degradations".
+            _note_swallowed(
+                "QUERY_LOG_DEGRADED_SNAPSHOT_FAILED",
+                exc,
+                "nested read-only health view; the parent snapshot is already "
+                "degraded to an empty mapping",
+            )
             return {}
 
 
@@ -772,7 +922,14 @@ def query_observability_snapshot() -> dict[str, Any]:
     """Public read-only accessor for health/diagnostics surfaces."""
     try:
         return query_observability.snapshot()
-    except Exception:
+    except Exception as exc:
+        # Public accessor used by health/diagnostics UIs; an empty mapping is
+        # the documented answer when the tally cannot be read.
+        _note_swallowed(
+            "QUERY_LOG_OBSERVABILITY_ACCESSOR_FAILED",
+            exc,
+            "read-only diagnostics accessor; an empty mapping is the documented degradation",
+        )
         return {}
 
 
@@ -938,7 +1095,14 @@ def query_metrics_snapshot() -> dict[str, Any]:
     """Public read-only accessor for diagnostics/profiling surfaces."""
     try:
         return query_metrics.snapshot()
-    except Exception:
+    except Exception as exc:
+        # Read-only profiling accessor: the empty profile is the documented
+        # answer and the next statement re-accumulates normally.
+        _note_swallowed(
+            "QUERY_LOG_METRICS_ACCESSOR_FAILED",
+            exc,
+            "read-only profiling accessor; the empty profile is the documented degradation",
+        )
         return {"enabled": False, "queries": [], "rankings": {}}
 
 
@@ -984,8 +1148,15 @@ class QueryMetricsRecorder:
     def __enter__(self) -> QueryMetricsRecorder:
         try:
             self.start = time.monotonic()
-        except Exception:
+        except Exception as exc:
+            # No clock sample: this statement is not profiled. It still runs.
             self.start = None
+            _note_swallowed(
+                "QUERY_LOG_METRICS_TIMER_START_FAILED",
+                exc,
+                "profiling is opt-in observability; an unmeasured statement "
+                "still executes and only its profile sample is lost",
+            )
         return self
 
     def __exit__(
@@ -998,7 +1169,14 @@ class QueryMetricsRecorder:
             return None
         try:
             elapsed = (time.monotonic() - self.start) * 1000.0
-        except Exception:
+        except Exception as timer_exc:
+            # Same as QueryTimer.__exit__: only the profile sample is lost.
+            _note_swallowed(
+                "QUERY_LOG_METRICS_TIMER_STOP_FAILED",
+                timer_exc,
+                "profiling is opt-in observability; only the sample is lost, "
+                "never the query result",
+            )
             return None
         self.duration_ms = elapsed
         try:
@@ -1012,7 +1190,15 @@ class QueryMetricsRecorder:
                 sql_shape=self._sql,
                 error=exc_type is not None,
             )
-        except Exception:
+        except Exception as record_exc:
+            # The recorder contract is "never raises"; the profile loses this
+            # one sample and the caller's exception propagates unchanged.
+            _note_swallowed(
+                "QUERY_LOG_METRICS_RECORD_FAILED",
+                record_exc,
+                "opt-in profiling only; returning None from __exit__ keeps the "
+                "caller's exception contract unchanged",
+            )
             return None
         return None
 

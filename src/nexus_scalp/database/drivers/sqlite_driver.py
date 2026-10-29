@@ -19,6 +19,7 @@ SQLite-specific behaviors are isolated HERE, by contract:
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 from collections.abc import Iterable, Sequence
@@ -30,6 +31,8 @@ from nexus_scalp.database.drivers._sql_guard import (
 )
 from nexus_scalp.database.drivers.base import DatabaseDriver
 from nexus_scalp.database.query_logging import QueryMetricsRecorder, log_query_failure
+
+logger = logging.getLogger(__name__)
 
 
 def _log_sqlite_failure(operation: str, exc: BaseException, sql: Any, args: Any) -> None:
@@ -52,8 +55,25 @@ def _log_sqlite_failure(operation: str, exc: BaseException, sql: Any, args: Any)
             domain="sqlite",
             kind="write" if operation.startswith("execute") else "read",
         )
-    except Exception:
-        pass
+    except Exception as log_exc:
+        # The structured failure report itself failed (the same stdlib
+        # fallback discipline the PostgreSQL driver uses): the original
+        # SQLite error still reaches the caller, but the log store would
+        # otherwise never hear about it. No SQL text, no bound values.
+        try:
+            logger.error(
+                "SQLITE_DRIVER event=SQLITE_DRIVER_FAILURE_REPORT_FAILED "
+                "op=%s error_type=%s log_error_type=%s (the structured failure "
+                "report did not reach the log store; the failing SQL text is "
+                "masked and never logged here)",
+                operation,
+                type(exc).__name__,
+                type(log_exc).__name__,
+            )
+        except Exception:
+            # A logging-path failure must never become the caller's failure:
+            # the driver error already propagates unchanged.
+            return
 
 
 #: Case-insensitive map: SQLite type name -> portable logical type.
@@ -446,7 +466,15 @@ class SQLiteDriver(DatabaseDriver):
             return None
         try:
             return os.path.getsize(self.connect_path)
-        except OSError:
+        except OSError as exc:
+            # Health-surface measurement only: None is the documented
+            # "size unavailable" answer (the file may not exist yet).
+            logger.debug(
+                "SQLITE_DRIVER event=SQLITE_DRIVER_SIZE_PROBE_FAILED "
+                "error_type=%s (database-size measurement is diagnostics-only; "
+                "None is the documented answer and no data path depends on it)",
+                type(exc).__name__,
+            )
             return None
 
     def table_count(self, conn: Any = None) -> int:

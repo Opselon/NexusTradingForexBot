@@ -32,9 +32,11 @@ nothing — INV-001):
 
 from __future__ import annotations
 
+import logging
 import sys
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
@@ -697,3 +699,123 @@ def test_query_metrics_bounded_query_name_cardinality() -> None:
             pass
     snap = metrics.snapshot()
     assert len(snap["queries"]) <= 8
+
+
+# ---------------------------------------------------------------------------
+# (9) infrastructure swallows are observable WITHOUT re-entering the pipeline
+# ---------------------------------------------------------------------------
+
+
+class _ProbeHandler(logging.Handler):
+    """Captures stdlib records emitted by the query-logging infrastructure."""
+
+    def __init__(self) -> None:
+        super().__init__(level=logging.DEBUG)
+        self.messages: list[str] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.messages.append(record.getMessage())
+
+
+def test_infra_swallow_uses_a_stdlib_logger_that_cannot_reenter_pipeline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The one new record shape for infrastructure swallows.
+
+    ``_note_swallowed`` must go to the module's stdlib logger (never the
+    structlog ``logger``, whose records reach the DB log sink and would
+    recurse into the very pipeline being reported).
+    """
+    probe = _ProbeHandler()
+    infra = logging.getLogger("nexus_scalp.database.query_logging")
+    infra.addHandler(probe)
+    old_level = infra.level
+    infra.setLevel(logging.DEBUG)
+    try:
+        assert ql._infra_logger is not ql.logger
+        ql._note_swallowed("PROBE_EVENT", ValueError("boom"), "unit-test justification")
+    finally:
+        infra.removeHandler(probe)
+        infra.setLevel(old_level)
+    assert any(
+        "[DB-QUERY-LOG] event=PROBE_EVENT error_type=ValueError (unit-test justification)" in m
+        for m in probe.messages
+    )
+
+
+def test_infra_swallow_logs_only_the_exception_type(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No message, path or DSN may reach the infrastructure record."""
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        ql, "_infra_logger", SimpleNamespace(debug=lambda *a, **k: seen.append((a, k)))
+    )
+    ql._note_swallowed("PROBE_EVENT", RuntimeError("secret-like value P@ss"), "why")
+    rendered = str(seen)
+    assert "RuntimeError" in rendered
+    assert "P@ss" not in rendered and "secret-like" not in rendered
+
+
+def test_infra_swallow_is_reentrancy_guarded(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A fault while reporting must not recurse or raise."""
+    calls: list[int] = []
+
+    def exploding_debug(*a: object, **k: object) -> None:
+        calls.append(1)
+        raise RuntimeError("diagnostics channel on fire")
+
+    monkeypatch.setattr(ql, "_infra_logger", SimpleNamespace(debug=exploding_debug))
+    ql._note_swallowed("PROBE_EVENT", ValueError("x"), "why")  # must not raise
+    assert len(calls) == 1
+    assert not getattr(ql._persistence_state, "log_guard", False)  # guard released
+
+
+def test_persist_event_drop_counter_failure_is_observable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ``except: pass`` around ``_note_dropped`` now emits a DEBUG record."""
+
+    class _BadStore:
+        def __init__(self) -> None:
+            raise RuntimeError("store unavailable")
+
+    monkeypatch.setattr("nexus_scalp.database.log_store.DatabaseLogStore", _BadStore)
+
+    def bad_note(exc: object = None) -> None:
+        raise RuntimeError("counter on fire")
+
+    import nexus_scalp.database.log_store as ls
+
+    monkeypatch.setattr(ls, "_note_dropped", bad_note)
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        ql, "_infra_logger", SimpleNamespace(debug=lambda *a, **k: seen.append((a, k)))
+    )
+    ql._persist_event("ERROR", {"operation": "op"})  # must not raise
+    assert any("QUERY_LOG_DROP_COUNTER_FAILED" in str(a) for a, _k in seen)
+
+
+def test_mask_failure_is_observable_and_still_returns_placeholder(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple] = []
+    monkeypatch.setattr(
+        ql, "_infra_logger", SimpleNamespace(debug=lambda *a, **k: seen.append((a, k)))
+    )
+    monkeypatch.setattr(ql, "_mask_userinfo", lambda _t: (_ for _ in ()).throw(ValueError("x")))
+    assert ql.mask_query_text("SELECT 1") == "<statement masking failed>"
+    assert any("QUERY_LOG_MASK_FAILED" in str(a) for a, _k in seen)
+
+
+def test_emit_failure_falls_back_to_the_infra_logger(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seen: list[tuple] = []
+    monkeypatch.setattr(ql, "logger", _Boom())
+    monkeypatch.setattr(
+        ql, "_infra_logger", SimpleNamespace(debug=lambda *a, **k: seen.append((a, k)))
+    )
+    ql._log(lambda *a, **k: None, "x")  # direct call is a no-op
+    ql.log_query_failure(operation="op", exc=ValueError("x"), sql="SELECT 1")
+    assert any("QUERY_LOG_EMIT_FAILED" in str(a) for a, _k in seen)

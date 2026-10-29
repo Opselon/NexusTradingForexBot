@@ -62,11 +62,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Iterable, Sequence
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.drivers.base import DatabaseDriver
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "DedupGuard",
@@ -258,7 +261,18 @@ class DedupGuard:
         try:
             cols = self.driver.table_columns(self.table, conn=conn)
             return [str(c["name"]) for c in cols if c.get("pk")]
-        except Exception:
+        except Exception as exc:
+            # Conflict-target discovery only: an empty PK list makes the
+            # caller fall through to the UNIQUE lookup and then to its
+            # documented "unresolved" target. The INSERT is unchanged.
+            logger.debug(
+                "[DB-DEDUP] event=DEDUP_GUARD_PK_LOOKUP_FAILED table=%s "
+                "error_type=%s (the table's primary key could not be read; "
+                "the guard falls through to its UNIQUE-constraint lookup and "
+                "then to the caller's declared conflict target)",
+                self.table,
+                type(exc).__name__,
+            )
             return []
 
     def _unique_columns(self, conn: Any) -> list[str]:
@@ -280,7 +294,17 @@ class DedupGuard:
                 (self.table,),
                 conn=conn,
             )
-        except Exception:
+        except Exception as exc:
+            # Same seam: no UNIQUE target means the guard reports "unresolved"
+            # and the caller keeps its explicit conflict_target / plain insert.
+            logger.debug(
+                "[DB-DEDUP] event=DEDUP_GUARD_UNIQUE_LOOKUP_FAILED table=%s "
+                "error_type=%s (UNIQUE-constraint discovery failed; the guard "
+                "reports an unresolved target and the caller's declared "
+                "conflict target — or its plain insert — is used unchanged)",
+                self.table,
+                type(exc).__name__,
+            )
             return []
         cols = [str(r["column_name"]) for r in rows if r.get("column_name")]
         return cols[:1]

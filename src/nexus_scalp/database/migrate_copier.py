@@ -19,12 +19,15 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
 from nexus_scalp.database.drivers import get_driver
+
+logger = logging.getLogger(__name__)
 
 #: Checkpoint table on the PostgreSQL destination (kept out of the app schema
 #: by its prefix; the migrator owns it exclusively).
@@ -74,7 +77,16 @@ def load_checkpoints(pg_driver: Any) -> dict[str, dict[str, Any]]:
     """Read existing checkpoint rows (for resume)."""
     try:
         rows = pg_driver.query(f"SELECT * FROM {CHECKPOINT_TABLE}")
-    except Exception:
+    except Exception as exc:
+        # Resume bookkeeping only: an unreadable checkpoint table (first run,
+        # table not created yet) means "start from the beginning" — an empty
+        # mapping, not a failed migration.
+        logger.debug(
+            "[DB-MIGRATE] event=MIGRATE_COPIER_CHECKPOINT_READ_FAILED "
+            "error_type=%s (resume checkpoints are best-effort; an unreadable "
+            "checkpoint table means the migration starts from the first row)",
+            type(exc).__name__,
+        )
         return {}
     out: dict[str, dict[str, Any]] = {}
     for r in rows:

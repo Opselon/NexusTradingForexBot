@@ -349,7 +349,18 @@ def ensure_read_plane(domain: str = AUDIT_DOMAIN, dsn: str | None = None) -> Any
     if not dsn:
         try:
             dsn = domain_dsn(domain)
-        except Exception:
+        except Exception as exc:
+            # No resolvable DSN: the caller's documented None means "no read
+            # plane for this domain", which the degraded-read tracker reports.
+            # The DSN itself (and any credential in it) is never logged.
+            logger.debug(
+                "[DB-FABRIC] event=OPS_READ_PLANE_DSN_RESOLVE_FAILED "
+                "domain=%s error_type=%s (no resolvable DSN for this domain; "
+                "the read plane is left unregistered and reads take the "
+                "documented degraded path)",
+                domain,
+                type(exc).__name__,
+            )
             return None
     try:
         from nexus_scalp.database.fabric.pg_planes import PgReadPlane, PoolLimits
