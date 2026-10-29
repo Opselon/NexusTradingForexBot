@@ -3868,7 +3868,7 @@ class LiveEngine:
             self._shadow_recorder_instance = eng
         return eng
 
-    def _build_freshness_snapshot(self):  # type: ignore[no-untyped-def]
+    def _build_freshness_snapshot(self, *, decision_ts: datetime | None = None):  # type: ignore[no-untyped-def]
         from nexus_scalp.application.live_freshness import LiveFreshnessSnapshot
 
         return LiveFreshnessSnapshot(
@@ -3876,7 +3876,9 @@ class LiveEngine:
             last_tick_timestamp=self._last_tick_timestamp,
             last_feature_update=self.last_feature_update,
             last_inference_timestamp=self.last_inference_timestamp,
-            last_decision_timestamp=self.last_decision_timestamp,
+            last_decision_timestamp=(
+                decision_ts if decision_ts is not None else self.last_decision_timestamp
+            ),
             tick_sequence=self._tick_sequence,
             feature_sequence=self._feature_sequence,
             inference_sequence=self._inference_sequence,
@@ -3901,20 +3903,29 @@ class LiveEngine:
 
         return LiveFreshnessService.stage_freshness(stamp, max_age_sec)
 
-    def compute_live_freshness(self) -> dict[str, Any]:
+    def compute_live_freshness(self, *, decision_ts: datetime | None = None) -> dict[str, Any]:
         from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        snap = self._build_freshness_snapshot()
+        snap = self._build_freshness_snapshot(decision_ts=decision_ts)
         fresh = LiveFreshnessService().compute_freshness(snap)
         if fresh.get("overall") == "STALE":
             self._stale_state_detected_total += 1
             fresh["telemetry"]["stale_state_detected_total"] = self._stale_state_detected_total
         return fresh
 
-    def live_freshness_gate(self, proposal: Any) -> tuple[Any, bool]:
+    def live_freshness_gate(
+        self, proposal: Any, *, decision_ts: datetime | None = None
+    ) -> tuple[Any, bool]:
+        """Downgrade a proposal to NO_TRADE when the intelligence chain is frozen.
+
+        ``decision_ts`` lets the live path supply the CURRENT tick's local
+        decision timestamp. The gate runs before the freshness instrumentation
+        block refreshes ``last_decision_timestamp``, so without it the gate
+        judged this tick's proposal against the PREVIOUS cycle's stamps.
+        """
         from nexus_scalp.application.live_freshness import LiveFreshnessService
 
-        fresh = self.compute_live_freshness()
+        fresh = self.compute_live_freshness(decision_ts=decision_ts)
         if fresh.get("overall") != "STALE":
             return proposal, False
         self._stale_state_detected_total += 1
