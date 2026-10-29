@@ -64,7 +64,13 @@ def _tr_engine_mode(om: Any) -> str | None:
     """
     try:
         mode = getattr(getattr(getattr(om, "config", None), "execution", None), "mode", None)
-    except Exception:
+    except Exception as _mode_err:
+        logger.debug(
+            "[LOG_APPLICATION] event=ENGINE_MODE_UNREADABLE error_type=%s "
+            "(execution config probe raised; the contract field stays absent "
+            "and the UI renders UNKNOWN instead of a guessed mode)",
+            type(_mode_err).__name__,
+        )
         return None
     if mode is None:
         return None
@@ -76,7 +82,13 @@ def _tr_account_freshness(om: Any) -> str | None:
     gate consumed (§40). Absent on any engine that never classified it."""
     try:
         value = getattr(om, "_account_freshness", None)
-    except Exception:
+    except Exception as _fs_err:
+        logger.debug(
+            "[LOG_APPLICATION] event=ACCOUNT_FRESHNESS_UNREADABLE error_type=%s "
+            "(account-freshness probe raised; the field stays absent rather "
+            "than claiming a freshness word the gate never produced)",
+            type(_fs_err).__name__,
+        )
         return None
     if value is None:
         return None
@@ -165,7 +177,13 @@ def _tr_execution_id(proposal: Any) -> str | None:
     """The proposal's own EXEC id — the trace's canonical decision id."""
     try:
         eid = getattr(proposal, "execution_id", None)
-    except Exception:
+    except Exception as _eid_err:
+        logger.debug(
+            "[LOG_APPLICATION] event=EXECUTION_ID_UNREADABLE error_type=%s "
+            "(proposal probe raised; the trace falls back to its own "
+            "correlation id instead of inventing a decision id)",
+            type(_eid_err).__name__,
+        )
         return None
     return str(eid) or None
 
