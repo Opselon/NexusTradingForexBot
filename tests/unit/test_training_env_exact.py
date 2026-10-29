@@ -242,7 +242,9 @@ def test_install_includes_locked_application_stack(monkeypatch, tmp_path):
     # dependency bump into a red CI run (PR #696: pydantic 2.14.1 -> 2.14.2).
     contract_pins = {r.partition("==")[0]: r for r in manager.contract["runtime"]["packages"]}
     for name in ("structlog", "pydantic", "polars"):
-        assert contract_pins[name] in app, f"contract pin {contract_pins[name]!r} missing from pip args"
+        assert contract_pins[name] in app, (
+            f"contract pin {contract_pins[name]!r} missing from pip args"
+        )
     assert "numpy==2.4.6 ; python_full_version < '3.12'" in app
     lock = (Path(__file__).parents[2] / "requirements.lock").read_text().lower()
     for requirement in manager.contract["runtime"]["packages"]:
