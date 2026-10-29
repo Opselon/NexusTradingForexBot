@@ -61,6 +61,25 @@ if TYPE_CHECKING:
 
 logger = get_logger("nexus_scalp.application.shutdown")
 
+
+def _log_ctrl_failure(exc_name: str) -> None:
+    """Best-effort shutdown-path record that can never itself break shutdown.
+
+    Called from the Windows console-ctrl handler, which may run while the
+    interpreter is already tearing down (handlers closed, modules gone).
+    ``contextlib.suppress`` rolls back every exception raised INSIDE the
+    ``with`` block — including the cancellation injected at the suppressed
+    ``logger.debug(...)`` call.
+    """
+    with contextlib.suppress(Exception):
+        logger.debug(
+            "[SHUTDOWN] event=CTRL_HANDLER_FAILED error_type=%s (the "
+            "console-ctrl schedule/drain raised; returning False lets the "
+            "default handler proceed)",
+            exc_name,
+        )
+
+
 # Phases are monotonic: DRAIN -> CLOSED. A CLOSED supervisor answers every
 # later request with the recorded outcome instead of re-running teardown.
 PHASE_DRAIN = "DRAIN"
@@ -334,12 +353,18 @@ class ShutdownSupervisor:
         handler_type = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)
 
         def _handler(ctrl: int) -> int:
-            try:
-                schedule(ctrl_kind)
-                # Give the drain a bounded window before Windows kills us.
-                self._drain_done.wait(timeout=self.DEFAULT_TIMEOUT_SEC)
-            except BaseException:
-                pass
+            # The handler runs on the OS ctrl thread, possibly while the
+            # interpreter is already shutting down. ``suppress`` rolls back
+            # EVERY exception raised inside the block — including logger
+            # failures and CancelledError — so observability can never abort
+            # the console-close drain, and ``return False`` still always runs.
+            with contextlib.suppress(BaseException):
+                try:
+                    schedule(ctrl_kind)
+                    # Give the drain a bounded window before Windows kills us.
+                    self._drain_done.wait(timeout=self.DEFAULT_TIMEOUT_SEC)
+                except Exception as _ctrl_err:
+                    _log_ctrl_failure(type(_ctrl_err).__name__)
             return False  # let the default handler proceed after the drain
 
         try:

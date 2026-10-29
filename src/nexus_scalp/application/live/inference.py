@@ -52,7 +52,13 @@ def _tr_engine_mode(engine: Any) -> str | None:
     """
     try:
         mode = getattr(getattr(getattr(engine, "config", None), "execution", None), "mode", None)
-    except Exception:
+    except Exception as _mode_err:
+        logger.debug(
+            "[LOG_APPLICATION] event=ENGINE_MODE_UNREADABLE error_type=%s "
+            "(execution config probe raised; the contract field stays absent "
+            "and the UI renders UNKNOWN instead of a guessed mode)",
+            type(_mode_err).__name__,
+        )
         return None
     if mode is None:
         return None
@@ -464,10 +470,23 @@ class InferenceService:
                     from nexus_scalp.features.schema_contract import feature_schema_hash
 
                     _d["schema_hash"] = feature_schema_hash()
-                except Exception:
-                    pass
-            except Exception:
-                pass  # never fail the emit over a provenance field
+                except Exception as _hash_err:
+                    logger.debug(
+                        "[LOG_APPLICATION] event=SCHEMA_HASH_UNAVAILABLE "
+                        "error_type=%s (schema contract could not be hashed; "
+                        "the trace omits schema_hash rather than stamping a "
+                        "hash the runtime never computed)",
+                        type(_hash_err).__name__,
+                    )
+            except Exception as _prov_err:
+                # never fail the emit over a provenance field
+                logger.debug(
+                    "[LOG_APPLICATION] event=PROVENANCE_FIELDS_UNAVAILABLE "
+                    "error_type=%s (bundle provenance probe raised; the "
+                    "decision trace is emitted with fewer provenance fields, "
+                    "never without the decision)",
+                    type(_prov_err).__name__,
+                )
             # DECISION-TRACE frozen v2 contract fields (only REAL facts; every
             # one is a getattr on the runtime's own objects, and any that is
             # absent stays absent — no placeholder identity, §60): the
