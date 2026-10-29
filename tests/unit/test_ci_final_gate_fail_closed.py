@@ -36,6 +36,7 @@ RESULTS = REPO / "scripts" / "ci" / "make_ci_results.py"
 CHECKS = (
     "ruff_lint",
     "ruff_format",
+    "anti_crash",
     "mypy",
     "pytest",
     "smoke",
@@ -300,6 +301,7 @@ def test_classify_gate_covers_all_downstream_checks(tmp_path: Path) -> None:
     assert r.returncode == 1
     assert "ruff_format=failed" in r.stdout
     # All downstream checks are blocked:
+    assert "anti_crash=blocked" in r.stdout
     assert "mypy=blocked" in r.stdout
     assert "pytest=blocked" in r.stdout
     assert "smoke=blocked" in r.stdout

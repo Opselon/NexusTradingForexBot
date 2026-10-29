@@ -32,6 +32,10 @@ import time
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.web.go_api_bootstrap")
+
 # ---- Layout ---------------------------------------------------------- #
 REPO_ROOT = Path(__file__).resolve().parents[3]
 GO_API_DIR = REPO_ROOT / "go-api"
@@ -139,7 +143,12 @@ def _source_hash() -> str:
             rel = f.relative_to(GO_API_DIR).as_posix()
             h.update(rel.encode())
             h.update(f.read_bytes())
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_SOURCE_HASH_FILE_SKIPPED error_type=%s "
+                "(unreadable file omitted from the build-cache fingerprint)",
+                type(exc).__name__,
+            )
             continue
     return h.hexdigest()
 
@@ -178,7 +187,12 @@ def resolve_go_api_binary() -> Path | None:
         try:
             if cand.is_file():
                 return cand
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_SHIPPED_BINARY_PROBE_FAILED error_type=%s "
+                "(candidate skipped; the remaining candidates are still probed)",
+                type(exc).__name__,
+            )
             continue
     return None
 
@@ -216,8 +230,12 @@ def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool,
             if stamp.read_text(encoding="utf-8").strip() == want and bin_path.is_file():
                 _log("go api build cache hit, skipping compile")
                 return True, str(bin_path)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_BUILD_STAMP_UNREADABLE error_type=%s "
+                "(cache miss; the binary is rebuilt)",
+                type(exc).__name__,
+            )
 
     env = dict(os.environ)
     # Isolated module cache keeps a concurrent `go clean` in another
@@ -247,8 +265,13 @@ def build_go_api(go_exe: str | None = None, timeout_s: int = 300) -> tuple[bool,
 
     try:
         stamp.write_text(want, encoding="utf-8")
-    except OSError:
-        pass  # caching is best-effort; the binary itself is valid
+    except OSError as exc:
+        # caching is best-effort; the binary itself is valid
+        logger.debug(
+            "[GO-API] event=GO_API_BUILD_STAMP_WRITE_FAILED error_type=%s "
+            "(caching is best-effort; the binary itself is valid)",
+            type(exc).__name__,
+        )
     return True, str(bin_path)
 
 
@@ -259,7 +282,12 @@ def _port_in_use(host: str, port: int) -> bool:
     probe.settimeout(0.4)
     try:
         return probe.connect_ex((host, port)) == 0
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[GO-API] event=GO_API_PORT_PROBE_FAILED error_type=%s "
+            "(probe reported unusable; the port is treated as free)",
+            type(exc).__name__,
+        )
         return False
     finally:
         probe.close()
@@ -357,10 +385,18 @@ class GoApiSupervisor:
                 _force_kill(proc.pid)
                 try:
                     proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
-        except Exception:
-            pass
+                except subprocess.TimeoutExpired as exc:
+                    logger.debug(
+                        "[GO-API] event=GO_API_FORCE_KILL_TIMEOUT error_type=%s "
+                        "(shutdown continues; the child reference is dropped)",
+                        type(exc).__name__,
+                    )
+        except Exception as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_STOP_FAILED error_type=%s "
+                "(shutdown continues; the child reference is dropped)",
+                type(exc).__name__,
+            )
         finally:
             self._proc = None
 
@@ -426,7 +462,12 @@ def _creation_flags() -> int:
         return 0
     try:
         return 0x00000200  # CREATE_NEW_PROCESS_GROUP
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[GO-API] event=GO_API_CREATION_FLAGS_UNAVAILABLE error_type=%s "
+            "(non-Windows path: zero flags)",
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -442,15 +483,23 @@ def _force_kill(pid: int | None) -> None:
                 timeout=10,
                 check=False,
             )
-        except (OSError, subprocess.SubprocessError):
-            pass
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_TASKKILL_FAILED error_type=%s "
+                "(the child is already being discarded)",
+                type(exc).__name__,
+            )
     else:
         import signal
 
         try:
             os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "[GO-API] event=GO_API_SIGKILL_FAILED error_type=%s "
+                "(the child is already being discarded)",
+                type(exc).__name__,
+            )
 
 
 # ---- Public entrypoint ----------------------------------------------- #

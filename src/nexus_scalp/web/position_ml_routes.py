@@ -226,5 +226,10 @@ def _param_count() -> int | None:
         if model is None:
             return None
         return sum(p.numel() for p in model.parameters())
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[POSITION-ML] event=POSITION_ML_PARAM_COUNT_UNAVAILABLE "
+            "error_type=%s (parameter count rendered as unknown)",
+            type(exc).__name__,
+        )
         return None

@@ -25,6 +25,10 @@ from datetime import UTC, datetime, timedelta
 from enum import StrEnum  # py 3.11
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.market_data.paper_stress")
+
 # ---------------------------------------------------------------------------
 # Regime
 # ---------------------------------------------------------------------------
@@ -79,8 +83,14 @@ def _seed_price(symbol: str, fallback: float | None = None) -> float:
     if raw:
         try:
             return float(raw)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[MARKET_DATA] event=PAPER_SEED_ENV_UNPARSEABLE op=_seed_price "
+                "symbol=%s error_type=%s (a malformed seed override is ignored; "
+                "the built-in default price for the symbol is used instead)",
+                u,
+                type(exc).__name__,
+            )
     if u in _DEFAULT_START_PRICE:
         return _DEFAULT_START_PRICE[u]
     if fallback is not None:
@@ -184,16 +194,27 @@ def _effective_spread_scale(adapter: Any | None = None) -> float:
         if v is not None:
             try:
                 return float(v)
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[MARKET_DATA] event=PAPER_SPREAD_OVERRIDE_UNPARSEABLE "
+                    "op=_effective_spread_scale error_type=%s (a non-numeric "
+                    "adapter override is ignored and the env/default chain is "
+                    "used instead)",
+                    type(exc).__name__,
+                )
     raw = os.environ.get("NEXUS_PAPER_SPREAD_SCALE", "").strip()
     if raw:
         try:
             s = float(raw)
             # clamp to avoid pathological values
             return max(0.1, min(s, 10.0))
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[MARKET_DATA] event=PAPER_SPREAD_ENV_UNPARSEABLE "
+                "op=_effective_spread_scale error_type=%s (a malformed scale "
+                "override is ignored and the neutral scale 1.0 is used)",
+                type(exc).__name__,
+            )
     return 1.0
 
 

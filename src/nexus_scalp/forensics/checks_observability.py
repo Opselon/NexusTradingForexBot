@@ -17,6 +17,7 @@ new check families that belong to another domain module.
 
 from __future__ import annotations
 
+import logging
 import threading
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,8 @@ from nexus_scalp.forensics.models import (
     CheckResult,
     HealthStatus,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def check_database_integrity(db_paths: dict[str, Path] | None = None) -> CheckResult:
@@ -248,7 +251,13 @@ def check_silent_fallback(log_dir: Path | None = None) -> CheckResult:
                         hits.append(f"{f.name}: {line.strip()[:120]}")
                         if len(hits) >= 12:
                             break
-        except OSError:
+        except OSError as exc:
+            # one unreadable log file removes that file's evidence only
+            _log.debug(
+                "[FORENSIC] event=LOG_SCAN_FILE_SKIPPED op=check_log_scan "
+                "error_type=%s (unreadable log row skipped)",
+                type(exc).__name__,
+            )
             continue
         if len(hits) >= 12:
             break
@@ -304,7 +313,13 @@ def check_chart_semantic_health(bars: list[dict[str, Any]] | None = None) -> Che
                 if not (l <= o <= h and l <= c <= h):
                     problems.append(f"OHLC violation at {b.get('timestamp')}")
                     break
-            except TypeError:
+            except TypeError as exc:
+                # malformed quote fields drop that bar from the OHLC sweep
+                _log.debug(
+                    "[FORENSIC] event=OHLC_BAR_SKIPPED op=check_ohlc error_type=%s "
+                    "(non-numeric bar fields cannot make the sweep fail)",
+                    type(exc).__name__,
+                )
                 continue
         if problems:
             return CheckResult(

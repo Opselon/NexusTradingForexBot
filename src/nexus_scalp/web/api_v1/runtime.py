@@ -10,7 +10,10 @@ from typing import Any
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.api_v1.common import engine_or_503, fail, get_engine, ok, utc_now_iso
+
+logger = get_logger("nexus_scalp.web.api_v1.runtime")
 
 router = APIRouter(prefix="/api/v1/runtime", tags=["runtime"])
 
@@ -115,7 +118,12 @@ def _current_mode(request: Request) -> str | None:
         return None
     try:
         return engine.config.execution.mode.value  # type: ignore[union-attr]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[WEB-API-V1] event=WEB_API_V1_RUNTIME_MODE_UNREADABLE "
+            "error_type=%s (transition reports no current mode)",
+            type(exc).__name__,
+        )
         return None
 
 

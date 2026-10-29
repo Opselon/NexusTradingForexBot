@@ -889,7 +889,14 @@ def load_certificate(bundle_dir: str | Path, model_id: str) -> ModelCertificate 
         return None
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[CERTIFICATION] event=CERTIFICATE_UNDECODABLE op=load_certificate "
+            "model_id=%s error_type=%s (a corrupt certificate reads as absent, "
+            "so the model is never treated as certified on unreadable evidence)",
+            model_id,
+            type(exc).__name__,
+        )
         return None
     payload["config"] = payload.get("config") or {}
     return ModelCertificate(**payload)

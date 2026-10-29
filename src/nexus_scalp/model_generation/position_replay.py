@@ -566,8 +566,14 @@ def resolve_primary_model_bundle(
             if active and Path(active.weights_path).exists():
                 p_model = Path(active.weights_path)
                 dimension = active.dimension
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[POSITION_REPLAY] event=REGISTRY_BUNDLE_PROBE_SKIPPED "
+                "op=resolve_primary_model_bundle error_type=%s (the model "
+                "registry could not be consulted, so the explicit path — or the "
+                "deterministic canonical ScalpNet fallback — is used)",
+                type(exc).__name__,
+            )
 
     scaler_mean: np.ndarray | None = None
     scaler_std: np.ndarray | None = None

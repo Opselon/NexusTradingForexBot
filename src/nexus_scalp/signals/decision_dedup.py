@@ -60,6 +60,10 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.signals.decision_dedup")
+
 # ---------------------------------------------------------------------------
 # Tuning constants
 # ---------------------------------------------------------------------------
@@ -100,6 +104,13 @@ def _is_actionable(proposal: Any) -> bool:
     try:
         action = proposal.action
     except AttributeError:
+        # Expected control flow: a proposal without an action field is not a
+        # trade intent, so there is nothing to fingerprint.
+        logger.debug(
+            "[SIGNALS] event=PROPOSAL_ACTION_ABSENT op=is_actionable "
+            "error_type=AttributeError (a proposal with no action field is not "
+            "an executable intent, so it cannot be a duplicate)"
+        )
         return False
     action_val = getattr(action, "value", str(action))
     if action_val in _NON_ACTIONABLE_STAGES:
@@ -387,12 +398,25 @@ class ReplayDecisionDedup:
             return ""
         try:
             tickets = order_manager.get_active_live_tickets()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[SIGNALS] event=LIVE_TICKETS_UNAVAILABLE op=_fingerprint "
+                "error_type=%s (without the live ticket list the open-state part "
+                "of the fingerprint is empty; the remaining fingerprint inputs "
+                "still detect duplicates)",
+                type(exc).__name__,
+            )
             return ""
         parts: list[str] = []
         for t in tickets or []:
             try:
                 parts.append(f"{int(t.get('ticket', 0) or 0)}:{t.get('type', '') or ''!s}")
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[SIGNALS] event=TICKET_PART_SKIPPED op=_fingerprint "
+                    "error_type=%s (one malformed ticket entry is skipped; the "
+                    "other open tickets still shape the fingerprint)",
+                    type(exc).__name__,
+                )
                 continue
         return ",".join(sorted(parts))

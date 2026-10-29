@@ -438,12 +438,25 @@ class CandleIntelStore:
                     ):
                         try:
                             probe_cur.execute(f"DROP TABLE IF EXISTS {_tbl}")
-                        except Exception:
-                            pass
+                        except Exception as exc:
+                            logger.debug(
+                                "[CANDLE_INTEL] event=SCHEMA_HEAL_DROP_SKIPPED "
+                                "op=_init_schema error_type=%s (IF EXISTS drop "
+                                "on a same-named view or locked table is success "
+                                "for the heal; the schema bootstrap below still "
+                                "recreates what is missing)",
+                                type(exc).__name__,
+                            )
                     try:
                         self._conn.commit()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug(
+                            "[CANDLE_INTEL] event=SCHEMA_HEAL_COMMIT_SKIPPED "
+                            "op=_init_schema error_type=%s (the heal's commit "
+                            "did not apply; the reader connection discards the "
+                            "uncommitted probe work and the next write commits)",
+                            type(exc).__name__,
+                        )
         if self._config.is_sqlite:
             # SQLite: schema bootstrap on the reader connection is safe — the
             # worker uses the same DB file and WAL allows concurrent access.
@@ -614,7 +627,13 @@ class CandleIntelStore:
         accepted (queue not full). NEVER touches disk on the caller's thread."""
         try:
             self._write_queue.put_nowait((table, cols, values))
-        except queue.Full:
+        except queue.Full as exc:
+            logger.debug(
+                "[CANDLE_INTEL] event=WRITE_QUEUE_FULL_DROP op=enqueue "
+                "error_type=%s (the bounded write queue is saturated; the row "
+                "is reported as NOT accepted and only the RAM ring mirrors it)",
+                type(exc).__name__,
+            )
             return False
         # Mirror into the ring for instant reads.
         with contextlib.suppress(Exception):
@@ -725,7 +744,13 @@ class CandleIntelStore:
                 self._reader_conn.execute("PRAGMA page_count").fetchone()[0]
                 * self._reader_conn.execute("PRAGMA page_size").fetchone()[0]
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[CANDLE_INTEL] event=DB_SIZE_UNAVAILABLE op=db_size error_type=%s "
+                "(an unreadable size probe reports 0 bytes; it is telemetry only "
+                "and drives no retention decision)",
+                type(exc).__name__,
+            )
             return 0
 
     def integrity_ok(self) -> bool:
@@ -734,7 +759,13 @@ class CandleIntelStore:
                 return self._driver.ping()
             row = self._reader_conn.execute("PRAGMA integrity_check").fetchone()
             return bool(row and row[0] == "ok")
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[CANDLE_INTEL] event=INTEGRITY_PROBE_FAILED op=integrity_ok "
+                "error_type=%s (a failed probe reports NOT ok, the conservative "
+                "default; no data is touched)",
+                type(exc).__name__,
+            )
             return False
 
     # ------------------------------------------------------------------
@@ -862,8 +893,14 @@ class _PooledReadConnection:
             live = get_domain_backend("candle_intel", readonly=True)
             if live is not None:
                 return live
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[CANDLE_INTEL] event=READ_BACKEND_REFRESH_SKIPPED "
+                "op=_resolve_backend error_type=%s (fabric read-plane refresh "
+                "failed; the store keeps its existing backend when the pool is "
+                "still open, otherwise reports no read backend)",
+                type(exc).__name__,
+            )
         return backend if not _pool_is_closed(backend) else None
 
     def query(self, sql: str, args: Any = ()) -> list[dict[str, Any]]:

@@ -779,7 +779,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         try:
             getattr(obj, name)
             return True
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[WEB-HEALTH] event=WEB_HEALTH_ATTR_PROBE_FAILED attr=%s "
+                "error_type=%s (missing attr counted as unhealthy)",
+                name,
+                type(exc).__name__,
+            )
             return False
 
     def _call_ok(obj: Any, name: str) -> bool:
@@ -787,7 +793,13 @@ def create_app(engine_ref: Any = None) -> FastAPI:
         try:
             getattr(obj, name)()
             return True
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[WEB-HEALTH] event=WEB_HEALTH_CALL_PROBE_FAILED attr=%s "
+                "error_type=%s (raising call counted as unhealthy)",
+                name,
+                type(exc).__name__,
+            )
             return False
 
     def _worker_recent_success(reg: dict[str, Any]) -> bool:

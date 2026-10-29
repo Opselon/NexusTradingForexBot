@@ -162,7 +162,13 @@ class FeatureDriftBreaker:
         """Feeds one live 70D vector; invalid input is fail-inert."""
         try:
             return self.monitor.update(vector70)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RISK] event=DRIFT_UPDATE_FAILED op=update error_type=%s (a "
+                "vector the monitor rejects is fail-INERT: no breaker trip and "
+                "no state change, matching the documented contract)",
+                type(exc).__name__,
+            )
             return False
 
 

@@ -766,8 +766,14 @@ class AuditWritePlane:
                     else:
                         query_tuple = q.get(timeout=self._flush_interval)
                     batch.append(query_tuple)
-            except _stdlib_queue.Empty:
-                pass
+            except _stdlib_queue.Empty as exc:
+                # Idle pass: q.get(timeout=...) expired with nothing queued.
+                # Expected whenever the writer outpaces producers, so debug.
+                logger.debug(
+                    "event=AUDIT_WRITER_IDLE_TIMEOUT error_type=%s "
+                    "(queue idle for the flush interval; nothing to write)",
+                    type(exc).__name__,
+                )
 
             if not batch:
                 # Idle pass: the writer has capacity again, so recover rows

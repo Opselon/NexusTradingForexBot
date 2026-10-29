@@ -268,7 +268,13 @@ def _load_lineage(raw: Any) -> list[str]:
             decoded = json.loads(raw)
             if isinstance(decoded, list):
                 return [str(x) for x in decoded if x]
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=LINEAGE_LIST_UNDECODABLE op=parse_lineage_sources "
+                "error_type=%s (a corrupt lineage source list projects as no "
+                "sources, the documented default)",
+                type(exc).__name__,
+            )
             return []
     return []
 
@@ -279,7 +285,13 @@ def _safe_loads(raw: Any) -> Any:
     if isinstance(raw, str) and raw.strip():
         try:
             return json.loads(raw)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=LINEAGE_JSON_UNDECODABLE op=safe_loads "
+                "error_type=%s (an undecodable lineage column projects as an "
+                "empty mapping, the documented default)",
+                type(exc).__name__,
+            )
             return {}
     return {}
 
@@ -287,5 +299,11 @@ def _safe_loads(raw: Any) -> Any:
 def _parse_or_none(value: Any) -> datetime | None:
     try:
         return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RESEARCH] event=LINEAGE_TS_UNPARSEABLE op=parse_or_none "
+            "error_type=%s (an unparseable lineage timestamp is treated as "
+            "absent, so the event keeps its position but carries no time)",
+            type(exc).__name__,
+        )
         return None

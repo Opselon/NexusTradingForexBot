@@ -17,6 +17,7 @@ new check families that belong to another domain module.
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -35,6 +36,8 @@ from nexus_scalp.forensics.models import (
     CheckResult,
     HealthStatus,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def check_dataset_manifest_health(dataset_root: Path | None = None) -> CheckResult:
@@ -531,8 +534,14 @@ def check_queue_growth() -> CheckResult:
             qs = int(hs.get("queue_size") or 0)
             if qs >= 80:
                 problems.append(f"telegram queue {qs} (capacity ~100) — sustained growth")
-    except Exception:
-        pass
+    except Exception as exc:
+        # the check falls back to "queues bounded" — log the lost evidence so
+        # a degraded read is not mistaken for a passing check
+        _log.warning(
+            "[FORENSIC] event=QUEUE_GROWTH_PROBE_FAILED op=check_queue_growth "
+            "error_type=%s (queue snapshot unavailable; bounded verdict assumed)",
+            type(exc).__name__,
+        )
     if problems:
         return CheckResult(
             "CHECK-GRW-02",

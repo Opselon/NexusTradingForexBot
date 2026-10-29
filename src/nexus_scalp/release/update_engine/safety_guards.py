@@ -10,6 +10,9 @@ import time
 from pathlib import Path
 
 from nexus_scalp.release.update_engine.pidfile_lock import _pid_alive
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.update_engine.safety_guards")
 
 
 class EngineGuard:
@@ -44,7 +47,11 @@ class EngineGuard:
         try:
             m = re.search(r"(?m)^\s*mode\s*:\s*(\S+)", self.config_path.read_text(encoding="utf-8"))
             return m.group(1).upper() if m else None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_SAFETY_CONFIG_MODE_UNREADABLE op=engine_state error_type=%s (the mode is unknown, so the engine is not treated as LIVE (allowed))",
+                type(exc).__name__,
+            )
             return None
 
     def assert_safe_to_update(self, *, live_policy: str = "BLOCK") -> None:
@@ -96,7 +103,11 @@ class QuiesceProtocol:
         else:
             try:
                 os.kill(pid, 15)
-            except ProcessLookupError:
+            except ProcessLookupError as exc:
+                logger.debug(
+                    "[UPDATE] event=UPDATE_SAFETY_PID_ALREADY_GONE op=stop_engine error_type=%s (the process exited before the signal; the wait loop continues)",
+                    type(exc).__name__,
+                )
                 pass
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline:

@@ -534,6 +534,11 @@ def _parse_dt(value: Any):
     if isinstance(value, str) and value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS] event=TIMESTAMP_UNPARSEABLE op=_parse_dt error_type=%s "
+                "(article timestamp omitted)",
+                type(exc).__name__,
+            )
             return None
     return None

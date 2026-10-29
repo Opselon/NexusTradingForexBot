@@ -172,15 +172,27 @@ def ensure_factory_context_columns(conn: sqlite3.Connection) -> None:
             conn, "factory_candidates"
         ):
             return
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=MIGRATION_EXISTING_COLUMNS_PROBE_SKIPPED "
+            "op=factory_candidates_context_matrices error_type=%s (column "
+            "presence probe failed; the ADD COLUMN below is idempotent, so a "
+            "pre-existing column is success)",
+            type(exc).__name__,
+        )
     try:
         conn.execute(
             f"ALTER TABLE factory_candidates ADD COLUMN {CONTEXT_MATRICES_COLUMN} "
             "TEXT DEFAULT '{}';"
         )
-    except Exception:
-        pass  # column already exists (race) or table not created yet
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=MIGRATION_ADD_COLUMN_SKIPPED "
+            "op=factory_candidates_context_matrices error_type=%s (idempotent "
+            "migration DDL: a duplicate column or a not-yet-created table is "
+            "success)",
+            type(exc).__name__,
+        )
 
 
 def _json(value: Any) -> str:
@@ -839,8 +851,14 @@ def sweep_stale_generations(
                         "created_at": now.isoformat(),
                     },
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[STRATEGY_FACTORY] event=GENERATION_SWEEP_RECORD_SKIPPED "
+                    "op=sweep_stale_generations error_type=%s (the sweep record "
+                    "for this generation did not persist; the sweep still "
+                    "reports and resets the generation next round)",
+                    type(exc).__name__,
+                )
     if swept:
         logger.info(
             "[STRATEGY_FACTORY] event=GENERATION_SWEPT swept=%d ids=%s",
@@ -1276,7 +1294,13 @@ def _decode_structural(raw: Any) -> dict[str, Any] | None:
         return None
     try:
         parsed = json.loads(text_val)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=JSON_COLUMN_UNDECODABLE op=decode_optional "
+            "error_type=%s (a corrupt NULL-able JSON column reads as absent, "
+            "the documented decoder default)",
+            type(exc).__name__,
+        )
         return None
     return parsed if isinstance(parsed, dict) else None
 
@@ -1288,7 +1312,13 @@ def _decode_checkpoint(raw: Any) -> dict[str, Any]:
         return {}
     try:
         parsed = json.loads(text)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_FACTORY] event=JSON_COLUMN_UNDECODABLE op=decode_checkpoint "
+            "error_type=%s (a corrupt checkpoint column reads as an empty "
+            "mapping, the documented decoder default)",
+            type(exc).__name__,
+        )
         return {}
     return parsed if isinstance(parsed, dict) else {}
 

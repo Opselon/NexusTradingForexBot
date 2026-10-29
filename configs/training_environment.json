@@ -29,17 +29,17 @@
     "index_url": "https://pypi.org/simple",
     "packages": [
       "structlog==26.1.0",
-      "pydantic==2.14.1",
-      "pydantic-core==2.50.1",
-      "pydantic-settings==2.16.1",
+      "pydantic==2.14.2",
+      "pydantic-core==2.50.2",
+      "pydantic-settings==2.16.2",
       "PyYAML==6.0.3",
       "python-dotenv==1.2.4",
       "annotated-types==0.8.0",
       "typing-extensions==4.16.0",
       "numpy==2.4.6 ; python_full_version < '3.12'",
       "numpy==2.5.4 ; python_full_version >= '3.12'",
-      "polars==2.0.0",
-      "polars-runtime-32==2.0.0"
+      "polars==2.1.0",
+      "polars-runtime-32==2.1.0"
     ]
   },
   "smoke": {

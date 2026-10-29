@@ -340,7 +340,14 @@ def _to_telemetry(raw: dict[str, Any]) -> TelemetryEvent | None:
             if source in EventSource._value2member_map_
             else EventSource.TELEMETRY,
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[INCIDENTS] event=TELEMETRY_EVENT_UNMAPPABLE "
+            "op=telemetry_event_from_row error_type=%s (a malformed telemetry "
+            "row yields no event; the worker skips that row and keeps consuming "
+            "the stream)",
+            type(exc).__name__,
+        )
         return None
 
 

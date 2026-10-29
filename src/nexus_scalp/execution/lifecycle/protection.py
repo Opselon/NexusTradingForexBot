@@ -423,8 +423,15 @@ class ProtectionEngine:
                         reason=plan.reason,
                         reply_to_message_id=self.om._order_message_ids.get(pos.ticket),
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "[PROTECTION] event=PARTIAL_DE_RISK_NOTIFY_SKIPPED "
+                        "op=_apply_exit_plan ticket=#%s error_type=%s (the "
+                        "operator notification failed; the plan is still applied "
+                        "and the stop change remains in force)",
+                        pos.ticket,
+                        type(exc).__name__,
+                    )
         else:
             atr_threshold_usd = self.om._atr_profit_threshold_usd(pos.volume, symbol_info, atr)
             # AGENT4-SPRINT: R-anchored trigger floor — the flat $15 threshold
@@ -622,7 +629,15 @@ class ProtectionEngine:
                     take_profit=pos.tp,
                 )
             )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[PROTECTION] event=PROFIT_GIVEBACK_MODIFY_FAILED "
+                "op=_volatility_giveback_tighten ticket=#%s error_type=%s (the "
+                "broker modify raised; the tighten is reported as NOT applied and "
+                "the existing stop stays untouched)",
+                pos.ticket,
+                type(exc).__name__,
+            )
             return False
         if success:
             self.om._sl_modified_flags[pos.ticket] = True

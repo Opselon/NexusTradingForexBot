@@ -21,9 +21,12 @@ consumers must reject unknown major versions instead of guessing.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 TRACE_SCHEMA_VERSION = 1
 
@@ -129,7 +132,12 @@ def compute_duration_ms(started_at: Any, completed_at: Any) -> int | None:
         b = datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
         delta = (b - a).total_seconds()
         return round(delta * 1000) if delta >= 0 else None
-    except Exception:
+    except Exception as exc:
+        _log.debug(
+            "[TRACE] event=DURATION_UNCOMPUTABLE op=compute_duration_ms "
+            "error_type=%s (duration omitted, never extrapolated)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -222,8 +230,12 @@ def sanitize_detail(value: Any, _depth: int = 0) -> Any:
         if hasattr(value, "item"):  # numpy scalar
             try:
                 return sanitize_detail(value.item(), _depth + 1)
-            except Exception:
-                pass
+            except Exception as exc:
+                _log.debug(
+                    "[TRACE] event=DETAIL_SCALAR_COERCE_FAILED op=sanitize_detail "
+                    "error_type=%s (value rendered as its repr string)",
+                    type(exc).__name__,
+                )
         return sanitize_detail(str(value), _depth + 1)
     except Exception:
         return "<unserializable>"
