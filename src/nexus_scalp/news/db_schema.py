@@ -303,7 +303,12 @@ def _column_names(conn: Any, table: str) -> list[str]:
     if hasattr(conn, "execute") and not _is_pg_conn(conn):
         try:
             return [str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS_DB] event=SCHEMA_COLUMNS_UNAVAILABLE op=_column_names "
+                "dialect=sqlite error_type=%s (no columns reported)",
+                type(exc).__name__,
+            )
             return []
     try:
         rows = conn.execute(
@@ -313,7 +318,12 @@ def _column_names(conn: Any, table: str) -> list[str]:
             (table,),
         ).fetchall()
         return [str(r[0]) for r in rows]
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[NEWS_DB] event=SCHEMA_COLUMNS_UNAVAILABLE op=_column_names "
+            "dialect=pg error_type=%s (no columns reported)",
+            type(exc).__name__,
+        )
         return []
 
 

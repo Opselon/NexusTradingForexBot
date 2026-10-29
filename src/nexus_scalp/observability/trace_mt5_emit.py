@@ -76,10 +76,13 @@ published helper, never emit a field that is not in
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Mapping
 from time import perf_counter_ns
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Frozen contract v2 field names this seam may produce. Mirrors the optional
 # causal fields of ``trace_contract.TraceEvent`` (trace_contract.py:274-295);
@@ -165,7 +168,12 @@ def _as_text(value: Any) -> str | None:
         return None
     try:
         text = str(value).strip()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=MT5_EVIDENCE_TEXT_COERCE_FAILED op=_as_text "
+            "error_type=%s (field omitted from the evidence dict)",
+            type(exc).__name__,
+        )
         return None
     return text or None
 
@@ -187,7 +195,12 @@ def _as_int(value: Any) -> int | None:
             return int(value)
         text = str(value).strip()
         return int(text) if text else None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=MT5_EVIDENCE_INT_COERCE_FAILED op=_as_int "
+            "error_type=%s (field omitted, never 0-filled)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -204,7 +217,12 @@ def _duration_ms_from(started_ns: Any) -> int | None:
         return None
     try:
         elapsed = (perf_counter_ns() - started) // 1_000_000
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=MT5_EVIDENCE_DURATION_FAILED op=_duration_ms_from "
+            "error_type=%s (span omitted, never extrapolated)",
+            type(exc).__name__,
+        )
         return None
     return elapsed if elapsed >= 0 else None
 
@@ -221,7 +239,12 @@ def _clean(value: dict[str, Any]) -> dict[str, Any]:
             and v is not None
             and not (isinstance(v, str | dict) and not v)
         }
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=MT5_EVIDENCE_CLEAN_FAILED op=_clean error_type=%s "
+            "(no evidence fields emitted)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -287,7 +310,12 @@ def extract_external_request_summary(
         if ec:
             out["error_code"] = ec
         return out
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=MT5_EVIDENCE_BUILD_FAILED op=_base_evidence error_type=%s "
+            "(no evidence fields emitted)",
+            type(exc).__name__,
+        )
         return {}
 
 

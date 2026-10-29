@@ -18,6 +18,7 @@ new check families that belong to another domain module.
 from __future__ import annotations
 
 import contextlib
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -38,6 +39,8 @@ from nexus_scalp.forensics.models import (
 from nexus_scalp.forensics.references import (
     FEATURE_REFERENCES,
 )
+
+_log = logging.getLogger(__name__)
 
 
 def check_news_health(news_path: Path | None = None) -> CheckResult:
@@ -288,8 +291,13 @@ def check_telegram_delivery() -> CheckResult:
     """§32: notifier configuration + worker + queue + send counts (read-only)."""
     try:
         pass
-    except Exception:
-        pass  # type: ignore[assignment]
+    except Exception as exc:
+        _log.debug(
+            "[FORENSIC] event=TELEGRAM_DELIVERY_NOOP_PROBE_FAILED "
+            "op=check_telegram_delivery error_type=%s "
+            "(empty probe body cannot raise; evidence collection continues)",
+            type(exc).__name__,
+        )
     try:
         from nexus_scalp.settings import load_settings_service  # type: ignore[import-not-found]
 

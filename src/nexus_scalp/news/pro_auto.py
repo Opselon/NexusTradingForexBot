@@ -210,13 +210,23 @@ def _resolve_settings_service(engine: Any | None, settings_service: Any | None) 
             svc = getattr(obj, "settings_service", None)
             if svc is not None:
                 return svc
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS] event=SETTINGS_SERVICE_CANDIDATE_FAILED "
+                "op=_resolve_settings_service error_type=%s (next candidate tried)",
+                type(exc).__name__,
+            )
             continue
     try:
         from nexus_scalp.settings import load_settings_service
 
         return load_settings_service()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[NEWS] event=SETTINGS_SERVICE_UNAVAILABLE "
+            "op=_resolve_settings_service error_type=%s (caller runs without settings)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -240,7 +250,12 @@ def _parse_dt(value: Any) -> Any:
     if isinstance(value, str) and value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS_PRO] event=TIMESTAMP_UNPARSEABLE op=_parse_dt error_type=%s "
+                "(row timestamp omitted)",
+                type(exc).__name__,
+            )
             return None
     return value
 
@@ -620,8 +635,12 @@ def run_pro_auto_analysis_for_article(
                         completion_tokens=int(getattr(_usage, "completion_tokens", 0) or 0),
                         success=llm_json is not None,
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[NEWS_PRO] event=LLM_BUDGET_COMMIT_FAILED op=analyze "
+                        "error_type=%s (usage slot released without counters)",
+                        type(exc).__name__,
+                    )
 
     # Deterministic path ALWAYS runs so variables are accurate
     # Use engine pipeline when available for full persistence; otherwise insert directly
@@ -792,8 +811,12 @@ def run_pro_auto_analysis_for_article(
                             "msg": f"LLM junk soft-marked IRRELEVANT: {_junk_reason}",
                         }
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[NEWS_PRO] event=LLM_JUNK_SOFTMARK_FAILED op=analyze "
+                        "error_type=%s (article keeps its current status)",
+                        type(exc).__name__,
+                    )
 
     # Deterministic analysis persistence — always accurate variables
     # Prefer the real pipeline (entities/topics/impacts/consensus)
