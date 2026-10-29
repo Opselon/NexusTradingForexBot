@@ -107,6 +107,10 @@ class Report:
 
 
 def _tracked_files(repo: Path) -> list[Path]:
+    if not (repo / ".git").exists():
+        # Materialized tree without git metadata (e.g. ``git archive`` in a
+        # test fixture): walk the filesystem instead of failing the stage.
+        return _walk_files(repo)
     result = subprocess.run(
         ["git", "ls-files", "-z"],
         cwd=repo,
@@ -119,6 +123,20 @@ def _tracked_files(repo: Path) -> list[Path]:
     for chunk in out.split("\0"):
         if chunk:
             files.append(repo / chunk)
+    return files
+
+
+_SKIP_DIRS = {".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".venv", "node_modules"}
+
+
+def _walk_files(repo: Path) -> list[Path]:
+    files: list[Path] = []
+    for path in repo.rglob("*"):
+        if not path.is_file():
+            continue
+        if _SKIP_DIRS & set(path.relative_to(repo).parts[:-1]):
+            continue
+        files.append(path)
     return files
 
 
