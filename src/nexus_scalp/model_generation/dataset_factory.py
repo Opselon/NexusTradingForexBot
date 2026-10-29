@@ -155,7 +155,13 @@ def _news_digest(news_frame: pl.DataFrame | None) -> dict[str, Any] | None:
             "range": {"start": t_start, "end": t_end},
             "content_hash": content_hash,
         }
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[DATASET_FACTORY] event=NEWS_DIGEST_SKIPPED op=_news_digest "
+            "error_type=%s (the news provenance digest could not be built, so "
+            "the manifest records NO news context rather than a wrong hash)",
+            type(exc).__name__,
+        )
         return None
 
 

@@ -628,7 +628,13 @@ class ModelGovernanceEngine:
             return {}
         try:
             return self.store.summary()
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[GOVERNANCE] event=GOVERNANCE_SUMMARY_UNAVAILABLE op=summary "
+                "error_type=%s (the status view reports NO governance summary "
+                "rather than stale or partial counts)",
+                type(exc).__name__,
+            )
             return {}
 
     # ------------------------------------------------------------------
@@ -763,7 +769,14 @@ class ModelGovernanceEngine:
                 }
             finally:
                 conn.close()
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[GOVERNANCE] event=CHAMPION_IDENTITY_UNAVAILABLE "
+                "op=_current_champion_identity error_type=%s (the registry could "
+                "not be read; the status view reports NO champion rather than a "
+                "guessed one)",
+                type(exc).__name__,
+            )
             return None
 
     @staticmethod

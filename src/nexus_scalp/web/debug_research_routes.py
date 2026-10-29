@@ -501,8 +501,12 @@ def register_debug_research_routes(
                     from nexus_scalp.execution.lifecycle.dispatch import _om_dispatch_symbols
 
                     hard_max = float(_om_dispatch_symbols()[0])
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[DEBUG-RESEARCH] event=DEBUG_RESEARCH_ORDER_MGMT_CLAMP_UNREADABLE "
+                        "error_type=%s (hard max stays at the documented 10.0)",
+                        type(exc).__name__,
+                    )
                 # HEALTH-SAFETY-STATE: the CANONICAL persisted safety state
                 # (RUNNING/HALTED/KILL_SWITCH) plus the session-local DEGRADED
                 # derivation. "Risk engine healthy" (clamps armed, kill switch

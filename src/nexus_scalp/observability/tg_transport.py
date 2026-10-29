@@ -304,8 +304,12 @@ class TransportMixin(_TelegramCoreProto):
         try:
             if outcome.get("http_status") == 401 or outcome.get("telegram_error_code") == 401:
                 self._auth_dead = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[TELEGRAM] event=AUTH_DEAD_MARK_FAILED op=send error_type=%s "
+                "(401 latch not set; outcome still returned unchanged)",
+                type(exc).__name__,
+            )
         if outcome.get("ok") is True:
             # Register the dedup signature ONLY on a confirmed delivery:
             # a failed send (timeout/5xx) never registers, so a retry is
@@ -379,8 +383,12 @@ class TransportMixin(_TelegramCoreProto):
             if exc.code == 401:
                 try:
                     self._auth_dead = True
-                except Exception:
-                    pass
+                except Exception as _mark_exc:
+                    logger.debug(
+                        "[TELEGRAM] event=AUTH_DEAD_MARK_FAILED op=_classify "
+                        "error_type=%s (401 latch not set; category unchanged)",
+                        type(_mark_exc).__name__,
+                    )
             return cat, retry
         if isinstance(exc, _TIMEOUT_ERRORS):
             if self._last_dns_poisoned:

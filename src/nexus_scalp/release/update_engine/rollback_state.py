@@ -24,6 +24,9 @@ from nexus_scalp.release.update_engine.constants import (
 from nexus_scalp.release.update_engine.safety_guards import (
     UpdateBlockedError,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.update_engine.rollback_state")
 
 #: Restore-time integrity verdicts (BUG-263).  A snapshot is UNTRUSTED until
 #: its embedded release-manifest.json re-verifies; refusal never touches the
@@ -40,7 +43,11 @@ def _log_restore(event: str, msg: str, *args: Any) -> None:
         import logging
 
         logging.getLogger("nexus_scalp.release.rollback").warning(event + " " + msg, *args)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[UPDATE] event=UPDATE_ROLLBACK_LOG_EMIT_FAILED op=_log_restore error_type=%s (the restore log record is dropped; rollback continues)",
+            type(exc).__name__,
+        )
         pass
 
 
@@ -338,7 +345,11 @@ class ReleaseLocalState:
     def read(self) -> dict[str, Any]:
         try:
             return json.loads(self.path.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_ROLLBACK_STATE_UNREADABLE op=RollbackRecord.read error_type=%s (no recorded state is reported; verification treats it as missing)",
+                type(exc).__name__,
+            )
             return {}
 
     def verify_against(self, version: str | None = None) -> dict[str, Any]:

@@ -26,6 +26,9 @@ from typing import Any
 
 from nexus_scalp.incidents.models import Incident
 from nexus_scalp.incidents.store import IncidentStore
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.incidents.trace_lineage")
 
 
 def _connect(db_path: str) -> sqlite3.Connection:
@@ -37,7 +40,13 @@ def _connect(db_path: str) -> sqlite3.Connection:
 def _rows(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
     try:
         return [dict(r) for r in conn.execute(sql, args).fetchall()]
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        logger.debug(
+            "[INCIDENTS] event=LINEAGE_ROWS_UNAVAILABLE op=_rows error_type=%s "
+            "(a failed lineage read returns no rows, the documented default; "
+            "the lineage view reports an empty hop list)",
+            type(exc).__name__,
+        )
         return []
 
 

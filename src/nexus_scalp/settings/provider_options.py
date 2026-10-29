@@ -135,8 +135,14 @@ def _read_row() -> dict[str, Any]:
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[PROVIDER_OPTIONS] event=DB_CLOSE_SKIPPED op=read_options "
+                    "error_type=%s (closing a read-only handle failed; the read "
+                    "result is already returned and the handle is released at "
+                    "interpreter exit)",
+                    type(exc).__name__,
+                )
 
 
 def _known_domain_db_names() -> list[str]:
@@ -276,8 +282,13 @@ def write_options(payload: dict[str, Any], domain: str = "audit") -> dict[str, A
         if db is not None:
             try:
                 db.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[PROVIDER_OPTIONS] event=DB_CLOSE_SKIPPED op=write_options "
+                    "error_type=%s (closing the write handle failed AFTER the "
+                    "commit; the persisted keys below are the committed truth)",
+                    type(exc).__name__,
+                )
 
     persisted = sorted(key for key in OPTION_KEYS if key in payload)
     logger.info("[PROVIDER_OPTIONS] persisted additive keys=%s", persisted)

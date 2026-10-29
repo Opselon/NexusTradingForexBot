@@ -195,7 +195,14 @@ def _rows_to_evidence(rows: list[dict[str, Any]], fingerprint: str) -> list[dict
         # E5 duplicate defense at read time (defense in depth)
         try:
             rec = json.loads(row.get("payload") or "{}")
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[MODEL_LIFECYCLE] event=CALIBRATION_ROW_UNDECODABLE "
+                "op=_filter_rows error_type=%s (one decision row with a corrupt "
+                "payload cannot prove its artifact identity, so it is excluded "
+                "from the calibration sample set)",
+                type(exc).__name__,
+            )
             continue
         key = str(rec.get("idempotency_key", ""))
         if key in seen_keys:

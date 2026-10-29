@@ -95,8 +95,15 @@ class ModelBundleStore:
                         f"({models_root}): {target}. Point the test config's "
                         "model.model_artifact_path at an isolated tmp path."
                     )
-            except ImportError:
-                pass
+            except ImportError as _paths_err:
+                # No release.paths module => no governed tree to compare
+                # against; the guard cannot refuse and the write proceeds.
+                logger.warning(
+                    "[MODEL_ARTIFACT] event=GOVERNED_TREE_PROBE_SKIPPED "
+                    "error_type=%s (release.paths unavailable; the force-fresh "
+                    "production-tree guard cannot evaluate this target)",
+                    type(_paths_err).__name__,
+                )
         except RuntimeError:
             raise
         except Exception:  # guard must never mask unrelated surfaces

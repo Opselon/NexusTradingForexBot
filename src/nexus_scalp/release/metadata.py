@@ -23,6 +23,9 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import Any
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.metadata")
 
 PRODUCT_NAME = "NexusScalpEngine"
 PRODUCT_DISPLAY = "Nexus Trading Forex Bot"
@@ -103,7 +106,11 @@ def _git_commit(rev: str = "HEAD") -> str | None:
         )
         sha = out.stdout.strip()
         return sha or None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-METADATA] event=RELEASE_METADATA_GIT_COMMIT_PROBE_FAILED op=_git_commit error_type=%s (the commit identity is reported as unknown, never fabricated)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -120,7 +127,11 @@ def _git_dirty() -> bool:
             cwd=cwd,
         )
         return bool(out.stdout.strip())
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-METADATA] event=RELEASE_METADATA_GIT_DIRTY_PROBE_FAILED op=_git_dirty error_type=%s (dirty state is reported as clean-by-default, never fabricated)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -143,7 +154,11 @@ def _git_commit_timestamp_iso() -> str | None:
         )
         ts = out.stdout.strip()
         return ts or None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-METADATA] event=RELEASE_METADATA_GIT_TIMESTAMP_PROBE_FAILED op=_git_commit_timestamp_iso error_type=%s (the build timestamp falls back to the build-info stamp)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -164,7 +179,11 @@ def _read_pyproject_version() -> str | None:
             m = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
             if m:
                 return m.group(1)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-METADATA] event=RELEASE_METADATA_ENGINE_PYPROJECT_UNREADABLE op=_read_pyproject_version error_type=%s (the engine checkout copy is skipped; the next candidate is tried)",
+                type(exc).__name__,
+            )
             pass
     if (probe_root / "pyproject.toml").exists():
         try:
@@ -172,7 +191,11 @@ def _read_pyproject_version() -> str | None:
             m = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
             if m:
                 return m.group(1)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-METADATA] event=RELEASE_METADATA_PROBE_PYPROJECT_UNREADABLE op=_read_pyproject_version error_type=%s (the probe-root copy is skipped; the CWD walk still runs)",
+                type(exc).__name__,
+            )
             pass
     root = Path.cwd()
     for _ in range(6):
@@ -183,7 +206,11 @@ def _read_pyproject_version() -> str | None:
                 m = re.search(r"^version\s*=\s*[\"']([^\"']+)[\"']", text, re.MULTILINE)
                 if m:
                     return m.group(1)
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-METADATA] event=RELEASE_METADATA_CWD_PYPROJECT_UNREADABLE op=_read_pyproject_version error_type=%s (this ancestor's pyproject is skipped; the walk continues upward)",
+                    type(exc).__name__,
+                )
                 pass
         if root.parent == root:
             break
@@ -194,7 +221,11 @@ def _read_pyproject_version() -> str | None:
 def _read_dist_version() -> str | None:
     try:
         return importlib.metadata.version("nexus-scalp-engine")
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-METADATA] event=RELEASE_METADATA_DIST_VERSION_UNAVAILABLE op=_read_dist_version error_type=%s (no installed distribution; get_version falls through to the frozen fallback)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -205,7 +236,11 @@ def get_version() -> str:
             v = source()
             if v:
                 return v.lstrip("v")
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-METADATA] event=RELEASE_METADATA_VERSION_SOURCE_FAILED op=get_version error_type=%s (that version source is skipped; the next source still answers)",
+                type(exc).__name__,
+            )
             continue
     # Frozen fallback for fully-cold bundled environments where neither the
     # checkout nor dist metadata is reachable (defensive only — the build
@@ -262,7 +297,11 @@ def get_build_info_file() -> Path | None:
     for c in candidates:
         try:
             resolved = c.resolve()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-METADATA] event=RELEASE_METADATA_BUILD_INFO_CANDIDATE_RESOLVE_FAILED op=get_build_info_file error_type=%s (this candidate is skipped; the remaining candidates are still probed)",
+                type(exc).__name__,
+            )
             continue
         if resolved in seen:
             continue
@@ -292,7 +331,11 @@ def _canonical_feature_schema(info: dict[str, Any]) -> str:
         from nexus_scalp.features.schema_contract import SCHEMA_ID as CANON_SCHEMA_ID
 
         return str(CANON_SCHEMA_ID)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-METADATA] event=RELEASE_METADATA_FEATURE_SCHEMA_CONTRACT_IMPORT_FAILED op=_canonical_feature_schema error_type=%s (the stamped build value is used instead of the canonical contract id)",
+            type(exc).__name__,
+        )
         pass
     stamped = str(info.get("feature_schema") or "").strip()
     if stamped:

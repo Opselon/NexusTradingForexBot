@@ -473,6 +473,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 #: JSON is NOT an "errored" check — it is BLOCKED by the named root failure
 #: when one exists, and only "skipped" when nothing failed upstream.
 DOWNSTREAM_CHECKS = (
+    "anti_crash",
     "mypy",
     "pytest",
     "smoke",

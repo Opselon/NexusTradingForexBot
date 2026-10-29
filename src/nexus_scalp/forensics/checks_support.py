@@ -17,6 +17,7 @@ DO-NOT-PUT-HERE: any ``check_*`` function (they live in the domain modules).
 
 from __future__ import annotations
 
+import logging
 import math
 import sqlite3
 import time
@@ -30,6 +31,8 @@ from nexus_scalp.forensics.models import (
     HealthStatus,
     new_correlation_id,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _ro_connect(path: Path, timeout: float = 5.0) -> sqlite3.Connection:
@@ -46,7 +49,13 @@ def _table_names(conn: sqlite3.Connection) -> set[str]:
 def _row_count(conn: sqlite3.Connection, table: str) -> int | None:
     try:
         return int(conn.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0])
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        # row count feeds a forensic report as None ("unmeasurable"), never a pass
+        logger.debug(
+            "[FORENSIC] event=ROW_COUNT_UNAVAILABLE op=_row_count "
+            "error_type=%s (table count reported as None)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -144,7 +153,12 @@ def _registered_families() -> dict[str, dict[str, Any]]:
                 "description": s.description,
             }
         return out
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[FORENSIC] event=FEATURE_REGISTRY_UNAVAILABLE op=_registered_families "
+            "error_type=%s (contract checks see an empty registry and report it)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -236,7 +250,12 @@ def _probe_vector(engine: Any, bars: list[list]) -> list[float] | None:
                 if hasattr(result, "tolist"):
                     return [float(v) for v in result.tolist()[0]]
                 return None
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[FORENSIC] event=FEATURE_PROBE_CALL_FAILED op=_probe_vector "
+                    "error_type=%s (next engine hook is tried)",
+                    type(exc).__name__,
+                )
                 continue
     return None
 
@@ -354,8 +373,12 @@ def _last_feature_vectors(conn: sqlite3.Connection, limit: int = 500) -> list[di
             ).fetchall()
             for r in rows:
                 out.append(dict(zip(cols, r, strict=False)))
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.debug(
+                "[FORENSIC] event=FEATURE_VECTORS_UNREADABLE op=_last_feature_vectors "
+                "error_type=%s (empty sample; the check reports its own evidence)",
+                type(exc).__name__,
+            )
     return out
 
 
@@ -442,7 +465,12 @@ def _load_runtime_config() -> Any | None:
             if p.exists():
                 return AppConfig.load_from_yaml(p)
         return AppConfig()
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[FORENSIC] event=RUNTIME_CONFIG_LOAD_FAILED op=_load_runtime_config "
+            "error_type=%s (config-derived evidence is reported as unknown)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -450,7 +478,12 @@ def _config_mode(cfg: Any) -> str | None:
     try:
         mode = getattr(getattr(cfg, "execution", None), "mode", None)
         return str(getattr(mode, "value", mode)) if mode is not None else None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[FORENSIC] event=CONFIG_MODE_UNAVAILABLE op=_config_mode "
+            "error_type=%s (execution mode reported as unknown)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -460,7 +493,12 @@ def _config_news_enabled(cfg: Any) -> bool | None:
         if news is None:
             return None
         return bool(getattr(news, "enabled", False))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[FORENSIC] event=CONFIG_NEWS_FLAG_UNAVAILABLE op=_config_news_enabled "
+            "error_type=%s (news enablement reported as unknown)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -470,7 +508,13 @@ def _config_liquidity_enabled(cfg: Any) -> bool | None:
         if model is None:
             return None
         return bool(getattr(model, "liquidity_features_enabled", False))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[FORENSIC] event=CONFIG_LIQUIDITY_FLAG_UNAVAILABLE "
+            "op=_config_liquidity_enabled error_type=%s "
+            "(liquidity feature flag reported as unknown)",
+            type(exc).__name__,
+        )
         return None
 
 

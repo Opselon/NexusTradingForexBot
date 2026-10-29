@@ -80,6 +80,9 @@ from nexus_scalp.release.update_engine.safety_guards import (
     QuiesceProtocol,
     UpdateBlockedError,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.update_engine.orchestrator")
 
 #: Structured update-lifecycle logger (OBS-006: every stage transition and
 #: terminal outcome must land in the severity tree stamped with the ``upd-``
@@ -108,7 +111,11 @@ def _update_log(level: str, event: str, msg: str, *args: Any) -> None:
             event,
             msg % args if args else msg,
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[UPDATE] event=UPDATE_LOG_EMIT_FAILED op=_update_log error_type=%s (the update log record is dropped; the update flow continues)",
+            type(exc).__name__,
+        )
         pass
 
 
@@ -152,7 +159,11 @@ class UpdateOrchestrator:
             import uuid
 
             self._correlation_id += "-" + uuid.uuid4().hex[:8]
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_CORRELATION_ID_RANDOMISER_FAILED op=UpdateOrchestrator.__init__ error_type=%s (the timestamp correlation id is used without the random suffix)",
+                type(exc).__name__,
+            )
             pass
 
     # ------------------------------------------------------------------ check
@@ -565,7 +576,11 @@ class UpdateOrchestrator:
 
         try:
             cfg = rpaths.get_user_config_path()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_ENGINE_CONFIG_PATH_PROBE_FAILED op=_engine_config_path error_type=%s (LIVE-mode detection finds no config, so the update is not blocked as live)",
+                type(exc).__name__,
+            )
             return None
         return cfg if cfg.exists() else None
 
@@ -936,7 +951,11 @@ class UpdateOrchestrator:
                     leftovers.get("removed_dirs", 0),
                     residue.get("removed", 0),
                 )
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[UPDATE] event=UPDATE_STORAGE_SWEEP_FAILED op=post-install sweep error_type=%s (the storage sweep is skipped; the completed install is untouched)",
+                    type(exc).__name__,
+                )
                 pass
 
     def rollback(self, reason: str = "update-failure") -> dict[str, Any]:
@@ -1097,7 +1116,11 @@ class UpdateOrchestrator:
         p = self.update_home / "rollback-pointer.json"
         try:
             return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_BACKUP_POINTER_UNREADABLE op=_read_backup_pointer error_type=%s (no backup pointer is reported; rollback falls back to discovery)",
+                type(exc).__name__,
+            )
             return {}
 
     def _record_backup_pointer_cleanup(self) -> None:

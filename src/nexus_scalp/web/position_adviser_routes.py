@@ -640,7 +640,12 @@ def route_datasets() -> dict[str, Any]:
             continue
         try:
             stat = path.stat()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[ADVISER] event=ADVISER_DATASET_UNREADABLE "
+                "error_type=%s (dataset skipped from the picker)",
+                type(exc).__name__,
+            )
             continue
         manifest = path.with_suffix(".manifest.json")
         tf = ""
@@ -917,8 +922,13 @@ def _rehydrate_at_startup() -> None:
         )
         try:
             AdviserSettingsStore(_settings_database()).clear_selection()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[ADVISER] event=ADVISER_STALE_SELECTION_CLEAR_FAILED "
+                "error_type=%s (service stays unbound; stored selection is "
+                "re-rejected on the next load)",
+                type(exc).__name__,
+            )
 
 
 __all__ = [

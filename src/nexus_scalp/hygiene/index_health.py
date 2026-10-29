@@ -27,6 +27,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.index_health")
+
 #: Column names that are high-value WHERE targets for the heuristic.
 SUSPECT_WHERE_COLUMNS = {
     "ticket",
@@ -89,7 +93,14 @@ class IndexHealthMonitor:
     def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
         try:
             return [d[1] for d in conn.execute(f"PRAGMA table_info('{table}')").fetchall()]
-        except sqlite3.OperationalError:
+        except sqlite3.OperationalError as exc:
+            logger.debug(
+                "[HYGIENE] event=TABLE_COLUMNS_UNAVAILABLE op=_columns table=%s "
+                "error_type=%s (an unreadable table has no column list, so it is "
+                "reported as having none and no index finding is claimed for it)",
+                table,
+                type(exc).__name__,
+            )
             return []
 
     @staticmethod

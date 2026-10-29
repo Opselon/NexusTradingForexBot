@@ -75,7 +75,13 @@ def _read_json(text: str | None) -> dict[str, Any]:
     try:
         data = json.loads(str(text))
         return data if isinstance(data, dict) else {}
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RESEARCH] event=EVIDENCE_JSON_UNDECODABLE op=parse_evidence_json "
+            "error_type=%s (a non-JSON evidence body is reported as an empty "
+            "evidence payload, the documented default)",
+            type(exc).__name__,
+        )
         return {}
 
 
@@ -522,7 +528,13 @@ class ResearchObservabilityStore:
                 "WHERE table_schema = current_schema() "
                 "AND name IN ('research_events_archive', 'research_evidence_archive')"
             )
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=ARCHIVE_PROBE_FAILED op=archive_tables_present "
+                "error_type=%s (the archive tables are reported ABSENT, the "
+                "documented never-fake default for a failed probe)",
+                type(exc).__name__,
+            )
             return False
         return bool(row and int(row.get(0) or 0) == 2)
 
@@ -1217,7 +1229,13 @@ def _parse_ts(value: str | None) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(str(value)).astimezone(UTC)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RESEARCH] event=TIMESTAMP_UNPARSEABLE op=parse_ts error_type=%s "
+            "(an unparseable timestamp is treated as absent, so the row is "
+            "excluded from time-ordered views rather than crashing them)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -1226,7 +1244,13 @@ def _parse_int(value: str | None) -> int | None:
         return None
     try:
         return int(value)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RESEARCH] event=INT_UNPARSEABLE op=parse_int error_type=%s (a "
+            "non-integer counter is treated as absent, so the reader reports "
+            "no value instead of failing the whole view)",
+            type(exc).__name__,
+        )
         return None
 
 

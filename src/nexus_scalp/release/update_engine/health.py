@@ -38,5 +38,3 @@ class PostUpdateHealth:
             return {"overall": data.get("overall", "FAIL"), "checks": data.get("checks", [])}
         except Exception as e:
             return {"overall": "FAIL", "checks": [], "error": str(e)}
-
-

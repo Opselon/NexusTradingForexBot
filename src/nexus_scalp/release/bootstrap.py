@@ -181,7 +181,11 @@ def mint_starter_bundle(model_path: Path | str, *, force: bool = False) -> dict[
     if final["state"] == STATE_OK:
         try:
             out["model_sha256"] = sha256_file(p)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-BOOTSTRAP] event=RELEASE_BOOTSTRAP_MODEL_SHA256_FAILED op=mint_starter_bundle error_type=%s (the bundle stays OK but reports no sha256)",
+                type(exc).__name__,
+            )
             pass
     return out
 
@@ -192,7 +196,11 @@ def canonical_starter_path(config: Any | None = None) -> Path:
     try:
         if config is not None:
             rel = str(config.model.model_artifact_path) or rel
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-BOOTSTRAP] event=RELEASE_BOOTSTRAP_CANONICAL_PATH_CONFIG_FAILED op=canonical_starter_path error_type=%s (the canonical relative artifact path is used)",
+            type(exc).__name__,
+        )
         pass
     return resolve_model_path(rel)
 
@@ -217,7 +225,11 @@ def anchor_workspace() -> None:
     for sub in rpaths.RUNTIME_SUBDIRS:
         try:
             (root / sub).mkdir(parents=True, exist_ok=True)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-BOOTSTRAP] event=RELEASE_BOOTSTRAP_RUNTIME_SUBDIR_FAILED op=anchor_workspace error_type=%s (that runtime subdir is absent; the remaining subdirs are still created)",
+                type(exc).__name__,
+            )
             pass
 
 
@@ -272,8 +284,8 @@ __all__ = [
     "STATE_UNSERVABLE",
     "BootstrapError",
     "anchor_workspace",
-    "bundled_configs_dir",
     "bundle_status",
+    "bundled_configs_dir",
     "canonical_starter_path",
     "ensure_packaged_config_dir",
     "json",

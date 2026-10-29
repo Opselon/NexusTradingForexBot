@@ -260,8 +260,22 @@ class RuntimeLoop:
                 try:
                     await asyncio.shield(task)
                 except asyncio.CancelledError:
+                    # Re-cancelled mid-drain: keep waiting, never detach the
+                    # urllib worker (it is still holding the adapter).
+                    logger.debug(
+                        "[MT5_FEED] event=TICK_TASK_DRAIN_RECANCELLED "
+                        "(the drain was cancelled again; still waiting for the "
+                        "urllib worker before the caller may swap adapters)",
+                    )
                     continue
-                except Exception:
+                except Exception as _drain_err:
+                    logger.debug(
+                        "[MT5_FEED] event=TICK_TASK_DRAIN_ABANDONED error_type=%s "
+                        "(the shielded get_last_tick raised; nothing left to "
+                        "retrieve, so the drain stops and cancellation is "
+                        "still re-raised to the caller)",
+                        type(_drain_err).__name__,
+                    )
                     break
             if not task.cancelled():
                 task.exception()

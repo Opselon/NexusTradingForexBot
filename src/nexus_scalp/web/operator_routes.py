@@ -61,7 +61,10 @@ from typing import Any
 
 from fastapi import Depends
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.auth import require_web_auth
+
+logger = get_logger("nexus_scalp.web.operator_routes")
 
 #: audit_signals columns exposed in LIST views (fixed projection - the raw
 #: payload blob stays server-side; detail endpoint returns it explicitly).
@@ -155,7 +158,12 @@ def _audit_db_path() -> str | None:
         from nexus_scalp.database.provider import default_sqlite_path
 
         return default_sqlite_path("audit")
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[OPERATOR] event=OPERATOR_AUDIT_DB_PATH_UNRESOLVED "
+            "error_type=%s (ledger reader has no SQLite fallback path)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -212,7 +220,12 @@ class LedgerReader:
             return None
         try:
             return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[OPERATOR] event=OPERATOR_AUDIT_DB_OPEN_FAILED "
+                "error_type=%s (operator views render an empty ledger)",
+                type(exc).__name__,
+            )
             return None
 
     def _rows(self, sql: str, args: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
@@ -230,7 +243,12 @@ class LedgerReader:
                 con.row_factory = sqlite3.Row
                 with con:
                     return [dict(r) for r in con.execute(sql, tuple(args)).fetchall()]
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[OPERATOR] event=OPERATOR_LEDGER_QUERY_FAILED "
+                    "error_type=%s (view renders no rows instead of an error page)",
+                    type(exc).__name__,
+                )
                 return []
             finally:
                 with _Suppress():

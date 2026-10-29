@@ -129,7 +129,14 @@ class LearningCycleStore:
             from nexus_scalp.database.fabric import get_domain_backend
 
             return get_domain_backend(AUDIT_DOMAIN, readonly=False) is not None
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[MODEL_LIFECYCLE] event=AUDIT_BACKEND_UNRESOLVED "
+                "op=_audit_backend_available error_type=%s (the fabric write "
+                "plane could not be resolved, so the cycle reports the audit "
+                "store as unavailable instead of retrying blind)",
+                type(exc).__name__,
+            )
             return False
 
     # ------------------------------------------------------------------

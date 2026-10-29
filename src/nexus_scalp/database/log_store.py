@@ -394,7 +394,17 @@ class DatabaseLogStore:
             if value is None or str(value).strip() == "":
                 return False
             return str(value).strip().lower() in _TRUTHY
-        except Exception:
+        except Exception as exc:
+            # Settings probe only: OFF is the documented default for INFO
+            # (high-volume); WARNING+ persistence is unaffected. Stdlib
+            # ``logger`` (never structlog) so this cannot re-enter the sink.
+            logger.debug(
+                "[LOG-STORE] event=LOG_STORE_INFO_SETTING_PROBE_FAILED "
+                "error_type=%s (the include-INFO operator setting is "
+                "unreadable; INFO stays excluded — the documented default — "
+                "and WARNING+ persistence is unaffected)",
+                type(exc).__name__,
+            )
             return False
 
     def record(self, entry: DatabaseLogEntry, driver: Any | None = None) -> bool:
@@ -1138,7 +1148,16 @@ def install_database_log_handler(
         root = logging.getLogger()
         root.addHandler(handler)
         return handler
-    except Exception:
+    except Exception as exc:
+        # Sink construction failed: ``None`` is the documented answer and the
+        # console/file handlers stay authoritative. Stdlib fallback only — the
+        # structlog ``logger`` could itself depend on the sink being built.
+        logging.getLogger(__name__).debug(
+            "[LOG-STORE] event=LOG_SINK_INSTALL_FAILED error_type=%s "
+            "(the DB sink could not be built or attached; console/file "
+            "handlers stay authoritative and no record is lost)",
+            type(exc).__name__,
+        )
         return None
 
 

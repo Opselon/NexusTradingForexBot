@@ -85,7 +85,14 @@ def _state_dict_input_dim(path: Path) -> int | None:
                     if "projection" in k or k.startswith("net."):
                         return int(v.shape[1])
         return int(w.shape[1]) if w is not None else None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[GOVERNANCE] event=ARTIFACT_DIMENSION_PROBE_FAILED "
+            "op=_state_dict_dimension error_type=%s (the checkpoint could not be "
+            "read; the load gate falls back to the manifest dimension instead of "
+            "assuming one)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -413,7 +420,13 @@ def read_manifest_file(manifest_path: Path | str) -> dict[str, Any] | None:
     try:
         with open(p, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[GOVERNANCE] event=MANIFEST_UNDECODABLE op=read_manifest_file "
+            "error_type=%s (an unreadable manifest is reported as absent, so the "
+            "load gate fails closed instead of trusting a partial manifest)",
+            type(exc).__name__,
+        )
         return None
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import queue
 import subprocess
@@ -17,6 +18,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from nexus_scalp.model_provisioning.pipeline import ProgressCb, TrainingRequest
     from nexus_scalp.model_provisioning.training_env import EnvironmentReport
+
+logger = logging.getLogger(__name__)
 
 CANCEL_GRACE_SECONDS = 5.0
 WORKER_TIMEOUT_SECONDS = 24 * 3600.0
@@ -123,7 +126,13 @@ def run_training_worker(
                 try:
                     messages.put(line, timeout=0.1)
                     return
-                except queue.Full:
+                except queue.Full as exc:
+                    # reader back-pressure loop: retried immediately, never dropped
+                    logger.debug(
+                        "[LOCAL-TRAIN] event=WORKER_MESSAGE_QUEUE_FULL "
+                        "op=enqueue error_type=%s (reader retries the same line)",
+                        type(exc).__name__,
+                    )
                     continue
 
         def read_stdout() -> None:
@@ -183,7 +192,13 @@ def run_training_worker(
                 return blocked("training worker timed out; no successful result accepted")
             try:
                 line = messages.get(timeout=0.05)
-            except queue.Empty:
+            except queue.Empty as exc:
+                # the driver loop polls at 20 Hz; this fires most iterations
+                logger.debug(
+                    "[LOCAL-TRAIN] event=WORKER_MESSAGE_QUEUE_IDLE "
+                    "op=dispatch error_type=%s (poll interval elapsed, loop re-checks)",
+                    type(exc).__name__,
+                )
                 continue
             if line is None:
                 eof = True

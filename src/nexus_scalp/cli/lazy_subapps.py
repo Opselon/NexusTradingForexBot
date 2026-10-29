@@ -32,6 +32,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.lazy_subapps")
+
 
 def _heavy_model_studio() -> None:
     """EU-03 shim: import + register ``nexus model-*``/``dataset-*``/``position-*``.
@@ -145,7 +149,11 @@ def _command_names_on_disk() -> list[str] | None:
         from nexus_scalp.cli._lazy_manifest import LAZY_COMMAND_NAMES
 
         return list(LAZY_COMMAND_NAMES)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI] event=CLI_LAZY_MANIFEST_IMPORT_FAILED op=_command_names_on_disk error_type=%s (the manifest is unavailable, so help falls back to importing lazy sub-apps)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -300,7 +308,11 @@ def _root_app() -> Any:
         from nexus_scalp.cli.app_factory import app
 
         return app
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI] event=CLI_LAZY_ROOT_APP_IMPORT_FAILED op=_root_app error_type=%s (the root app could not be built eagerly; the lazy loader retries on demand)",
+            type(exc).__name__,
+        )
         return None
 
 

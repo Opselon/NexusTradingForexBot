@@ -352,7 +352,13 @@ def load_label_quality_report(path: str | Path) -> LabelQualityReport | None:
         return None
     try:
         payload = json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[LABEL_QUALITY] event=REPORT_UNDECODABLE op=read_label_quality_report "
+            "error_type=%s (a corrupt report reads as absent, so the dataset is "
+            "never treated as label-certified on unreadable evidence)",
+            type(exc).__name__,
+        )
         return None
     payload["config"] = payload.get("config") or {}
     return LabelQualityReport(**payload)

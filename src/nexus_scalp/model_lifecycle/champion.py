@@ -223,7 +223,14 @@ class ChampionManager:
         """Cheap identity of the artifact file (size + mtime_ns)."""
         try:
             st = self.artifact_path.stat()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[MODEL_LIFECYCLE] event=CHAMPION_ARTIFACT_STAT_SKIPPED "
+                "op=_artifact_fingerprint error_type=%s (a missing artifact has "
+                "NO cheap identity, so a change is reported as unproven instead "
+                "of falsely unchanged)",
+                type(exc).__name__,
+            )
             return None
         return (st.st_size, st.st_mtime_ns)
 

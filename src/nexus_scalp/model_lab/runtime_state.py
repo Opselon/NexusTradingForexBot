@@ -29,6 +29,10 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.model_lab.runtime_state")
+
 # Model lifecycle states (Phase 3) — one meaning per state, no field carries two.
 MODEL_LIFECYCLE_STATES: tuple[str, ...] = (
     "DISCOVERED",  # checkpoint seen on disk, not yet validated
@@ -265,6 +269,13 @@ def _probe_engine_health(engine: Any) -> bool | None:
     if callable(probe):
         try:
             return bool(probe())
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[MODEL_LAB] event=ENGINE_HEALTH_PROBE_FAILED "
+                "op=_probe_engine_health error_type=%s (a failing health probe "
+                "reports UNKNOWN, so the runtime state is never claimed healthy "
+                "or unhealthy on a broken probe)",
+                type(exc).__name__,
+            )
             return None
     return None

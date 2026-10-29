@@ -98,8 +98,12 @@ def apply_windows_identity() -> bool:
     except Exception as exc:
         try:
             _mod_logger().warning("Windows taskbar identity not applied (non-fatal): %s", exc)
-        except Exception:
-            pass
+        except Exception as log_exc:
+            # The logging stack itself is unavailable this early in startup;
+            # there is no sink left to report to, so the return value is the
+            # only remaining signal. Kept inside the lazy-logger pattern so no
+            # module-level import can reintroduce the circular import.
+            _ = log_exc
         return False
 
 
@@ -126,7 +130,16 @@ def current_app_user_model_id() -> str | None:
             # avoid a handle leak on every readback.
             ctypes.windll.ole32.CoTaskMemFree(ptr)  # type: ignore[attr-defined]
         return value or None
-    except Exception:
+    except Exception as exc:
+        logger_ref = _mod_logger()
+        if logger_ref is not None:
+            logger_ref.debug(
+                "[PLATFORM] event=TASKBAR_APP_ID_READBACK_SKIPPED "
+                "op=current_app_user_model_id error_type=%s (the readback is a "
+                "verification convenience; a failure reports UNKNOWN rather "
+                "than claiming the identity was applied)",
+                type(exc).__name__,
+            )
         return None
 
 
