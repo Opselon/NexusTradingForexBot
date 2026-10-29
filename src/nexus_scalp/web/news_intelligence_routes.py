@@ -44,13 +44,23 @@ def _resolve_settings_svc(engine: Any | None) -> Any | None:
             svc = getattr(obj, "settings_service", None)
             if svc is not None:
                 return svc
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[NEWS-INTEL] event=NEWS_INTEL_SETTINGS_SERVICE_PROBE_FAILED "
+                "error_type=%s (candidate skipped; the next one is tried)",
+                type(exc).__name__,
+            )
             continue
     try:
         from nexus_scalp.settings import load_settings_service
 
         return load_settings_service()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[NEWS-INTEL] event=NEWS_INTEL_SETTINGS_SERVICE_FALLBACK_FAILED "
+            "error_type=%s (news surface reports unavailable settings)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -70,7 +80,12 @@ def _settings(request: Request) -> Any | None:
         from nexus_scalp.settings import load_settings_service
 
         return load_settings_service()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[NEWS-INTEL] event=NEWS_INTEL_SETTINGS_SERVICE_FALLBACK_FAILED "
+            "error_type=%s (news surface reports unavailable settings)",
+            type(exc).__name__,
+        )
         return None
 
 

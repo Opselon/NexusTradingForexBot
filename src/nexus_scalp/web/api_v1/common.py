@@ -25,6 +25,10 @@ from typing import Any
 from fastapi import Request
 from fastapi.responses import JSONResponse
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.web.api_v1.common")
+
 # ---------------------------------------------------------------------------
 # Error contract
 # ---------------------------------------------------------------------------
@@ -291,7 +295,13 @@ def _repo_read_plane(repo: Any) -> Any:
         from nexus_scalp.database.fabric import get_domain_backend
 
         backend = get_domain_backend("audit", readonly=True)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[WEB-API-V1] event=WEB_API_V1_READ_PLANE_PROBE_FAILED "
+            "error_type=%s (no registered read accessor; callers report "
+            "the audit read plane as unavailable)",
+            type(exc).__name__,
+        )
         return None
     if backend is None or hasattr(backend, "execute") or not hasattr(backend, "query"):
         return None
@@ -360,7 +370,13 @@ def fetch_rows_bounded(
                 return [dict(r) for r in cursor.fetchall()]
             finally:
                 conn.close()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[WEB-API-V1] event=WEB_API_V1_BOUNDED_SQLITE_READ_FAILED "
+                "error_type=%s ([] means cannot read, never 'no data'; "
+                "callers surface the reason)",
+                type(exc).__name__,
+            )
             return []
 
     # Non-SQLite provider: read the store the engine writes, through the

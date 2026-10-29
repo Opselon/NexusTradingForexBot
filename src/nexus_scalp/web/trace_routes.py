@@ -346,7 +346,12 @@ def query_event(event_id: str) -> dict[str, Any] | None:
     """
     try:
         return _stored_event(event_id)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=TRACE_STORED_EVENT_LOOKUP_FAILED "
+            "error_type=%s (caller renders NOT OBSERVED, never a synthesized row)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -362,7 +367,12 @@ def query_why(event_id: str) -> dict[str, Any] | None:
         if ev is None:
             return None
         return _why_payload(ev)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=TRACE_WHY_PAYLOAD_FAILED "
+            "error_type=%s (WHY answer rendered as not stored)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -411,7 +421,12 @@ def query_trace_ids(limit: int = 50) -> list[str]:
                     if len(seen) >= max(1, min(int(limit), 500)):
                         break
         return seen
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TRACE] event=TRACE_SESSION_ID_SCAN_FAILED "
+            "error_type=%s (empty session list instead of a failed scan)",
+            type(exc).__name__,
+        )
         return []
 
 

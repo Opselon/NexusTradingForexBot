@@ -44,6 +44,9 @@ from nexus_scalp.model_lifecycle.confidence_calibration import (
     MIN_CONFIDENCE_RISK_MULTIPLIER,
     confidence_to_risk_multiplier,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.web.calibration_monitor")
 
 AUDIT_DB_PATH = "artifacts/audit.db"
 CONFIDENCE_FLOOR = 0.05  # mirrors calibration_collector.MIN_CONFIDENCE
@@ -58,7 +61,12 @@ def _sha16(path: str) -> str | None:
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
         return h.hexdigest()[:16]
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[WEB-CALIBRATION] event=WEB_CALIBRATION_ARTIFACT_HASH_FAILED "
+            "error_type=%s (fingerprint reported as absent evidence)",
+            type(exc).__name__,
+        )
         return None
 
 

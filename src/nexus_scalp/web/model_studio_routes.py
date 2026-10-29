@@ -970,8 +970,12 @@ def fetch_70d_components(engine: Any = None) -> dict[str, Any]:
             try:
                 base_50 = list(last_fv.to_tensor_input())
                 sources["base"] = "LIVE_TICK"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[MODEL-STUDIO] event=MODEL_STUDIO_LIVE_TICK_VECTOR_UNREADABLE "
+                    "error_type=%s (base vector falls through to the next source)",
+                    type(exc).__name__,
+                )
 
         news_engine = getattr(engine, "news_engine", None)
         if news_engine is not None and getattr(engine, "_news_enabled", False):
@@ -983,8 +987,12 @@ def fetch_70d_components(engine: Any = None) -> dict[str, Any]:
 
                     news_10, _ = build_news_10(vectorize_news_context(ctx))
                     sources["news"] = "LIVE_NEWS_ENGINE"
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[MODEL-STUDIO] event=MODEL_STUDIO_LIVE_NEWS_VECTOR_UNREADABLE "
+                    "error_type=%s (news block stays at its neutral fallback)",
+                    type(exc).__name__,
+                )
 
         gov = getattr(engine, "liquidity_governor", None)
         if gov is not None:
@@ -1381,7 +1389,13 @@ def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
                         df = loaded
                         target_path = cand_p
                         break
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "[MODEL-STUDIO] event=MODEL_STUDIO_CANDIDATE_DATASET_SKIPPED "
+                        "error_type=%s (candidate skipped; synthetic bars remain "
+                        "the fallback)",
+                        type(exc).__name__,
+                    )
                     continue
 
     if df is None:
@@ -2948,7 +2962,12 @@ def execute_certify_model(req: ModelStudioCertifyRequest) -> dict[str, Any]:
             return None
         try:
             return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[MODEL-STUDIO] event=MODEL_STUDIO_QUALITY_REPORT_UNREADABLE "
+                "error_type=%s (quality block served as null)",
+                type(exc).__name__,
+            )
             return None
 
     from nexus_scalp.model_generation.certification import certify_model
@@ -3004,7 +3023,12 @@ def execute_quality_reports(model_id: str) -> dict[str, Any]:
             return None
         try:
             return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[MODEL-STUDIO] event=MODEL_STUDIO_QUALITY_REPORT_UNREADABLE "
+                "error_type=%s (quality block served as null)",
+                type(exc).__name__,
+            )
             return None
 
     return {

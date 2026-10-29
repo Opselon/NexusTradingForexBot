@@ -90,14 +90,24 @@ def _settings_db_path() -> Path | None:
             return Path(db.db_path) if db.db_path else None
         finally:
             db.close()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[DB-CONSOLE] event=DB_CONSOLE_SETTINGS_DB_UNAVAILABLE "
+            "error_type=%s (console reports no settings database)",
+            type(exc).__name__,
+        )
         return None
 
 
 def _db_file_size(path: str | Path) -> int | None:
     try:
         return os.path.getsize(path)
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[DB-CONSOLE] event=DB_CONSOLE_FILE_SIZE_UNAVAILABLE "
+            "error_type=%s (size_bytes rendered as null)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -247,7 +257,13 @@ def _list_databases() -> list[dict[str, Any]]:
     for domain in CONSOLE_DOMAINS:
         try:
             cfg = load_database_config(domain)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[DB-CONSOLE] event=DB_CONSOLE_DOMAIN_CONFIG_UNREADABLE "
+                "domain=%s error_type=%s (domain listed with no config detail)",
+                domain,
+                type(exc).__name__,
+            )
             continue
         entry: dict[str, Any] = {
             "name": domain,
@@ -507,8 +523,13 @@ def _is_statement_error(exc: BaseException) -> bool:
 
             if isinstance(exc, _pg_errors.OperationalError):
                 return False
-        except ImportError:
-            pass
+        except ImportError as imp_exc:
+            logger.debug(
+                "[DB-CONSOLE] event=DB_CONSOLE_PSYCOPG_IMPORT_SKIPPED "
+                "error_type=%s (no psycopg installed; classification falls "
+                "back to the name/sqlstate heuristics)",
+                type(imp_exc).__name__,
+            )
         if name in {
             "UndefinedTable",
             "UndefinedColumn",
@@ -536,7 +557,12 @@ def _is_statement_error(exc: BaseException) -> bool:
             return True
         if getattr(exc, "sqlstate", None):
             return True
-    except Exception:
+    except Exception as probe_exc:
+        logger.debug(
+            "[DB-CONSOLE] event=DB_CONSOLE_STATEMENT_ERROR_PROBE_FAILED "
+            "error_type=%s (the error is not classified as a statement rejection)",
+            type(probe_exc).__name__,
+        )
         return False
     return False
 
@@ -566,7 +592,12 @@ def _load_apikey_names() -> list[dict[str, Any]]:
                 }
             )
         return masked
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[DB-CONSOLE] event=DB_CONSOLE_SECRET_LIST_UNAVAILABLE "
+            "error_type=%s (no secret names shown; values are never read)",
+            type(exc).__name__,
+        )
         return []
 
 
@@ -585,7 +616,12 @@ def _secret_file_names() -> list[str]:
                 continue
             names.append(line.split("=", 1)[0].strip())
         return names
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[DB-CONSOLE] event=DB_CONSOLE_SECRET_FILE_FALLBACK_FAILED "
+            "error_type=%s (empty secret-name list instead of an error page)",
+            type(exc).__name__,
+        )
         return []
 
 
