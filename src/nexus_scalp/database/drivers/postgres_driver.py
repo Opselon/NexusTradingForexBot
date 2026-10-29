@@ -31,7 +31,7 @@ from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any
 
-from nexus_scalp.database.config import DatabaseConfig, build_postgres_url, mask_url_password
+from nexus_scalp.database.config import DatabaseConfig, build_postgres_url
 from nexus_scalp.database.drivers._sql_guard import assert_safe_sql
 from nexus_scalp.database.drivers.base import _IDENT_SHAPE, DatabaseDriver
 from nexus_scalp.database.query_logging import QueryMetricsRecorder
@@ -876,10 +876,15 @@ class PostgreSQLDriver(DatabaseDriver):
             kwargs["sslmode"] = cfg.ssl_mode
         if cfg.command_timeout_sec:
             kwargs["options"] = f"-c statement_timeout={cfg.command_timeout_sec * 1000}"
-        # Log only the sanitized form (never the password). Use the stdlib
-        # logger: structlog's unconfigured PrintLogger default writes to
-        # stdout, which polluted ``health --json`` (parseable output required).
-        _pg_probe_logger.debug("postgres connect url=%s", mask_url_password(url))
+        # Log only non-sensitive connection shape. Never log the URL itself:
+        # CodeQL's py/clear-text-logging-sensitive-data taints any password
+        # source that reaches a log call, even through a masking helper.
+        _pg_probe_logger.debug(
+            "postgres connect host=%s port=%s db=%s",
+            cfg.host,
+            cfg.port,
+            cfg.database,
+        )
         return psycopg.connect(url, **kwargs)
 
     def closed(self) -> bool:  # pragma: no cover - thin passthrough
