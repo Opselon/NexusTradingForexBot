@@ -305,14 +305,26 @@ class ResearchPipeline:
 
                 identity_cfg.setdefault("feature_schema_id", _SID)
                 identity_cfg.setdefault("feature_schema_hash", _FSH())
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[RESEARCH] event=IDENTITY_FEATURE_SCHEMA_SKIPPED "
+                    "op=build_identity error_type=%s (the feature-schema "
+                    "identity is a provenance enrichment; a probe failure "
+                    "leaves those two keys unset and the run proceeds)",
+                    type(exc).__name__,
+                )
             try:
                 from nexus_scalp.release.metadata import _git_commit as _git
 
                 identity_cfg.setdefault("git_commit", _git() or "")
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[RESEARCH] event=IDENTITY_GIT_COMMIT_SKIPPED "
+                    "op=build_identity error_type=%s (release-metadata import "
+                    "or git probe failed; git_commit stays unset and the run "
+                    "proceeds)",
+                    type(exc).__name__,
+                )
             try:
                 from pathlib import Path as _ConfigPath
 
@@ -327,10 +339,21 @@ class ResearchPipeline:
                         from nexus_scalp.research.streaming_replay import _sha256_file
 
                         identity_cfg.setdefault("model_hash", _sha256_file(_ConfigPath(_art)))
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+                    except Exception as exc:
+                        logger.debug(
+                            "[RESEARCH] event=IDENTITY_MODEL_HASH_SKIPPED "
+                            "op=build_identity error_type=%s (the artifact hash "
+                            "is best-effort provenance; model_id is still "
+                            "recorded and the run proceeds)",
+                            type(exc).__name__,
+                        )
+            except Exception as exc:
+                logger.debug(
+                    "[RESEARCH] event=IDENTITY_MODEL_RESOLVE_SKIPPED "
+                    "op=build_identity error_type=%s (config/artifact lookup "
+                    "failed; model identity stays unset and the run proceeds)",
+                    type(exc).__name__,
+                )
             fingerprint = ""
             try:
                 snapshot = build_run_snapshot(

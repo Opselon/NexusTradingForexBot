@@ -40,6 +40,9 @@ from typing import Any
 
 from nexus_scalp.database import audit_read as _sqlite_infra
 from nexus_scalp.database.audit_read import AuditReadError
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.web.audit_read")
 
 #: Re-exported so callers import one symbol for "the audit read failed".
 __all__ = [
@@ -70,7 +73,13 @@ def _postgresql_active() -> bool:
         from nexus_scalp.database.ops_provider import active_provider_is_postgresql
 
         return bool(active_provider_is_postgresql("audit"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[WEB-AUDIT] event=WEB_AUDIT_ACTIVE_PROVIDER_PROBE_FAILED "
+            "error_type=%s (settings store unreadable; audit reads stay on "
+            "the SQLite default)",
+            type(exc).__name__,
+        )
         return False
 
 

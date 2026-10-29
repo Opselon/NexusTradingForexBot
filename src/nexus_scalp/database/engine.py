@@ -148,13 +148,29 @@ class DatabaseMigrationEngine:
         """Current recorded schema version (0 when no metadata)."""
         if not self.db_path.exists():
             return 0
+        con = None
         try:
             con = self._connect(timeout=5.0)
             try:
                 return self._read_version(con)
             finally:
                 con.close()
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            if isinstance(exc, sqlite3.OperationalError) and "no such table" in str(exc):
+                # Healthy, un-migrated database: ``schema_meta`` does not exist
+                # until the first apply, so "no metadata" here is the normal
+                # state, not a fault — the healthy path stays silent.
+                return 0
+            # Schema-version probe: 0 ("no metadata") is the documented answer
+            # for an unreadable DB; the migration runner then treats the file
+            # as unversioned rather than raising on a read-only/busy handle.
+            logger.debug(
+                "[DB-ENGINE] event=SCHEMA_VERSION_PROBE_FAILED domain=%s "
+                "error_type=%s (schema-version probe is read-only; 0 means "
+                "'no readable metadata' and the runner re-applies by contract)",
+                self.domain,
+                type(exc).__name__,
+            )
             return 0
 
     def expected_version(self) -> int:
@@ -844,7 +860,20 @@ class DatabaseMigrationEngine:
                 applied = self._applied_checksums(con)
             finally:
                 con.close()
-        except sqlite3.Error:
+        except sqlite3.Error as exc:
+            if isinstance(exc, sqlite3.OperationalError) and "no such table" in str(exc):
+                # Same healthy-path fact as current_version(): an un-migrated
+                # database has no history table yet and nothing to tamper with.
+                return False
+            # Tamper detection is a diagnostic gate: an unreadable history
+            # table is reported as "no tamper" and the boot continues.
+            logger.debug(
+                "[DB-ENGINE] event=TAMPER_PROBE_FAILED domain=%s error_type=%s "
+                "(tamper detection is read-only; an unreadable migration "
+                "history yields False so a boot path is never blocked by it)",
+                self.domain,
+                type(exc).__name__,
+            )
             return False
         for mig_id, stored in applied.items():
             expected = current.get(mig_id)

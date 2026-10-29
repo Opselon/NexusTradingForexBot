@@ -314,6 +314,29 @@ jobs:
           sys.exit(0 if ok else 1)
           PY
 
+      # -------- Anti-crash static (silent-handler / lost-traceback policy) --------
+      # scripts/ci/anti_crash_static.py existed since the MASTER crash-containment
+      # pass but was never wired into CI, so 490 silent handlers accumulated
+      # invisibly on main. Blocking from the OBS "log everything" wave onward:
+      # an exception handler either logs (with error_type), re-raises, records
+      # state, or carries a reviewed `# anti-crash: allow (<reason>)` marker.
+      - name: Anti-crash static policy
+        id: anti_crash
+        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/anti_crash"
+          python scripts/ci/anti_crash_static.py > "$CI_RESULTS_DIR/anti_crash/anti_crash.txt" 2>&1
+          rc=$?
+          { echo "ANTI_CRASH_RC=$rc"; } >> "$GITHUB_ENV"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" anti_crash "$rc" \
+            "silent exception handler(s) found (see anti_crash/)" || true
+          if [ "$rc" -ne 0 ]; then
+            grep -E '^  src/|^\[' "$CI_RESULTS_DIR/anti_crash/anti_crash.txt" | head -20 \
+              | sed 's/^/::error::anti-crash: /' || true
+            exit "$rc"
+          fi
+
       - name: Mypy - Type checking
         id: mypy
         if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -19,6 +20,8 @@ from pathlib import Path
 from typing import Any
 
 _local_locks = threading.local()
+
+logger = logging.getLogger(__name__)
 
 ALLOWED_PAYLOAD = frozenset({"model.pt", "model.meta.json", "model.scaler.npz", "dataset.parquet"})
 
@@ -259,8 +262,12 @@ def _sync_file(path: Path) -> None:
         mode = "r+b" if os.name == "nt" else "rb"
         with path.open(mode) as stream:
             os.fsync(stream.fileno())
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.warning(
+            "[PROVISION] event=ARTIFACT_FSYNC_FAILED op=_sync_file error_type=%s "
+            "(install continues; durability not enforced by OS flush)",
+            type(exc).__name__,
+        )
 
 
 def _sync_dir(path: Path) -> None:

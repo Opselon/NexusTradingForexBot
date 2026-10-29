@@ -59,8 +59,13 @@ def load_gap_thresholds(config_path: Path | None = None) -> dict[str, float]:
             for k in ("gap_rate_warning", "gap_rate_degraded", "recoverable_min"):
                 if k in section:
                     thresholds[k] = float(section[k])
-    except Exception:
-        pass
+    except Exception as exc:
+        # a malformed/partial config keeps the DEFAULT thresholds (§20)
+        logger.warning(
+            "[FORENSIC] event=GAP_THRESHOLDS_LOAD_FAILED op=load_gap_thresholds "
+            "error_type=%s (default governance thresholds retained)",
+            type(exc).__name__,
+        )
     return thresholds
 
 

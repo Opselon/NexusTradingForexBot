@@ -558,7 +558,14 @@ def as_utc(value: Any) -> datetime | None:
             return as_utc(int(text))
         try:
             dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[EXPERIENCE] event=OUTCOME_TS_UNPARSEABLE op=_parse_ts "
+                "error_type=%s (an unparseable timestamp is treated as absent, "
+                "so the recovery rule cannot anchor the outcome and leaves it "
+                "unrecovered rather than mis-dated)",
+                type(exc).__name__,
+            )
             return None
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)

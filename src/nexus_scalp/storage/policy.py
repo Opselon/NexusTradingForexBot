@@ -36,12 +36,15 @@ pass in.
 from __future__ import annotations
 
 import gzip
+import logging
 import re
 import shutil
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "DEFAULT_DIAGNOSTICS_KEEP",
@@ -134,9 +137,20 @@ def _dir_size_bytes(path: Path) -> int:
             try:
                 if p.is_file():
                     total += p.stat().st_size
-            except OSError:
+            except OSError as exc:
+                # hot path (per file): a vanished/unreadable entry just drops
+                _log.debug(
+                    "[STORAGE] event=DIR_SIZE_ENTRY_SKIPPED op=dir_size "
+                    "error_type=%s (unreadable entry contributes 0 bytes)",
+                    type(exc).__name__,
+                )
                 continue
-    except OSError:
+    except OSError as exc:
+        _log.debug(
+            "[STORAGE] event=DIR_SIZE_WALK_FAILED op=dir_size error_type=%s "
+            "(unreadable subtree reports 0 bytes)",
+            type(exc).__name__,
+        )
         return 0
     return total
 
@@ -226,13 +240,24 @@ def enforce_byte_budget(
                 # .log.gz sorts before .log at equal mtime: 0 < 1
                 kind = 0 if p.name.endswith(".gz") else 1
                 entries.append((st.st_mtime, kind, p))
-            except OSError:
+            except OSError as exc:
+                # hot path (per log file): entry simply not budgeted this pass
+                _log.debug(
+                    "[STORAGE] event=BUDGET_ENTRY_SKIPPED op=enforce_byte_budget "
+                    "error_type=%s (entry excluded from the budget total)",
+                    type(exc).__name__,
+                )
                 continue
     total = 0
     for _mtime, _kind, path in entries:
         try:
             total += path.stat().st_size
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=BUDGET_SIZE_UNAVAILABLE op=enforce_byte_budget "
+                "error_type=%s (file adds 0 bytes to the total)",
+                type(exc).__name__,
+            )
             continue
     if total <= budget:
         return result
@@ -295,7 +320,12 @@ def prune_update_cache(
                     result["bytes_freed"] += size
                 continue
             packages.append((child.stat().st_mtime, child))
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=PACKAGE_CACHE_ENTRY_SKIPPED op=prune_update_cache "
+                "error_type=%s (entry not considered for pruning)",
+                type(exc).__name__,
+            )
             continue
     for _mtime, path in sorted(packages, key=lambda e: e[0])[
         : max(0, len(packages) - keep_packages)
@@ -327,9 +357,19 @@ def _dir_mtime_fallback(path: Path) -> float:
                 if p.is_file():
                     m = p.stat().st_mtime
                     newest = max(newest, m)
-            except OSError:
+            except OSError as exc:
+                _log.debug(
+                    "[STORAGE] event=BACKUP_MTIME_FILE_SKIPPED op=_dir_mtime_fallback "
+                    "error_type=%s (file excluded from the newest-mtime scan)",
+                    type(exc).__name__,
+                )
                 continue
-    except OSError:
+    except OSError as exc:
+        _log.debug(
+            "[STORAGE] event=BACKUP_MTIME_WALK_FAILED op=_dir_mtime_fallback "
+            "error_type=%s (newest mtime reported as 0)",
+            type(exc).__name__,
+        )
         return 0.0
     return newest
 
@@ -363,7 +403,12 @@ def sweep_crash_leftovers(app_root: Path, *, keep_previous_backups: int) -> dict
                 _rmtree_recorded(child, result)
             elif _PREVIOUS_RE.match(name):
                 backups.append((_dir_mtime_fallback(child), child))
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=BACKUP_ENTRY_SKIPPED op=prune_previous_versions "
+                "error_type=%s (entry left in place)",
+                type(exc).__name__,
+            )
             continue
     ordered = sorted(backups, key=lambda e: e[0], reverse=True)
     result["kept_backups"] = min(len(ordered), keep_previous_backups)
@@ -382,7 +427,12 @@ def sweep_diagnostics(diagnostics_dir: Path, *, keep: int) -> dict[str, Any]:
         try:
             if p.is_file():
                 zips.append((p.stat().st_mtime, p))
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=DIAGNOSTICS_ZIP_SKIPPED op=sweep_diagnostics "
+                "error_type=%s (zip not considered for removal)",
+                type(exc).__name__,
+            )
             continue
     for _mtime, path in sorted(zips, key=lambda e: e[0])[: max(0, len(zips) - keep)]:
         try:
@@ -425,9 +475,19 @@ def sweep_residue_files(root: Path, *, min_age_sec: float) -> dict[str, Any]:
                 p.unlink()
                 result["removed"] += 1
                 result["bytes_freed"] += size
-            except OSError:
+            except OSError as exc:
+                _log.debug(
+                    "[STORAGE] event=RESIDUE_FILE_SKIPPED op=sweep_residue_files "
+                    "error_type=%s (residue left for the next pass)",
+                    type(exc).__name__,
+                )
                 continue
-    except OSError:
+    except OSError as exc:
+        _log.debug(
+            "[STORAGE] event=RESIDUE_WALK_FAILED op=sweep_residue_files "
+            "error_type=%s (partial sweep result returned)",
+            type(exc).__name__,
+        )
         return result
     return result
 
@@ -440,14 +500,24 @@ def _prune_empty_month_dirs(severity_dir: Path) -> dict[str, Any]:
             if month_dir.is_dir() and not any(month_dir.iterdir()):
                 month_dir.rmdir()
                 removed += 1
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=EMPTY_MONTH_DIR_SKIPPED op=_prune_empty_month_dirs "
+                "error_type=%s (dir kept)",
+                type(exc).__name__,
+            )
             continue
     for year_dir in sorted(severity_dir.glob("*"), reverse=True):
         try:
             if year_dir.is_dir() and not any(year_dir.iterdir()):
                 year_dir.rmdir()
                 removed += 1
-        except OSError:
+        except OSError as exc:
+            _log.debug(
+                "[STORAGE] event=EMPTY_YEAR_DIR_SKIPPED op=_prune_empty_month_dirs "
+                "error_type=%s (dir kept)",
+                type(exc).__name__,
+            )
             continue
     return {"removed_empty_dirs": removed}
 

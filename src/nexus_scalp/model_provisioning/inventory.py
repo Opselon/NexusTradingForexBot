@@ -115,7 +115,12 @@ def _hash_prefix(weights: Path, limit: int = 16) -> str | None:
         return None
     try:
         digest = fingerprint_artifact(weights)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[PROVISION] event=INVENTORY_HASH_FAILED op=_hash_prefix "
+            "error_type=%s (hash omitted from the listing)",
+            type(exc).__name__,
+        )
         return None
     if not isinstance(digest, str) or not digest:
         return None
@@ -244,11 +249,21 @@ def _active_artifact_path() -> Path | None:
     """
     try:
         from nexus_scalp.model_provisioning.service import serving_model_path
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[PROVISION] event=ACTIVE_ARTIFACT_IMPORT_FAILED op=_active_artifact_path "
+            "error_type=%s (active artifact reported as unknown)",
+            type(exc).__name__,
+        )
         return None
     try:
         p = serving_model_path()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[PROVISION] event=ACTIVE_ARTIFACT_PROBE_FAILED op=_active_artifact_path "
+            "error_type=%s (fail-closed: active artifact reported as unknown)",
+            type(exc).__name__,
+        )
         return None
     return p if p.is_file() else None
 
@@ -267,7 +282,12 @@ def _walk_bundles(root: Path) -> list[Path]:
             current, depth = stack.pop()
             try:
                 entries = sorted(current.iterdir())
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[PROVISION] event=INVENTORY_DIR_UNREADABLE op=_walk_bundles "
+                    "error_type=%s (unreadable subtree skipped)",
+                    type(exc).__name__,
+                )
                 continue
             has_weights = False
             has_sidecar = False
@@ -282,7 +302,12 @@ def _walk_bundles(root: Path) -> list[Path]:
                             has_weights = True
                         elif low in (_MANIFEST, _META):
                             has_sidecar = True
-                except OSError:
+                except OSError as exc:
+                    logger.debug(
+                        "[PROVISION] event=INVENTORY_ENTRY_STAT_FAILED op=_walk_bundles "
+                        "error_type=%s (entry not classified as weights/sidecar)",
+                        type(exc).__name__,
+                    )
                     continue
             if has_weights and has_sidecar:
                 found.append(current)
@@ -292,7 +317,12 @@ def _walk_bundles(root: Path) -> list[Path]:
                 for sub in subdirs:
                     try:
                         resolved = sub.resolve()
-                    except OSError:
+                    except OSError as exc:
+                        logger.debug(
+                            "[PROVISION] event=INVENTORY_SUBDIR_UNRESOLVED "
+                            "op=_walk_bundles error_type=%s (subdir not walked)",
+                            type(exc).__name__,
+                        )
                         continue
                     if resolved not in seen:
                         seen.add(resolved)
@@ -416,13 +446,23 @@ def _resolve_registered(weights_path: str, workspace: Path) -> Path | None:
             from nexus_scalp.model_generation.model_registry import REPO_ROOT
 
             candidates.append(Path(str(REPO_ROOT)) / raw)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[PROVISION] event=INVENTORY_REGISTRY_ROOT_UNAVAILABLE "
+                "op=_resolve_registered error_type=%s "
+                "(workspace-relative candidate still tried)",
+                type(exc).__name__,
+            )
     for cand in candidates:
         try:
             if cand.is_file():
                 return cand
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[PROVISION] event=INVENTORY_CANDIDATE_STAT_FAILED "
+                "op=_resolve_registered error_type=%s (candidate skipped)",
+                type(exc).__name__,
+            )
             continue
     return None
 

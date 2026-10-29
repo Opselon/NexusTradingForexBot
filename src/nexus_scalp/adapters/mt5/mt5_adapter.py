@@ -366,15 +366,26 @@ class DirectMT5Adapter(IMT5Port):
                 vers = mt5.version()
                 if vers:
                     pkg_ver = f"{vers[0]}.{vers[1]}.{vers[2]}" if len(vers) >= 3 else str(vers[0])
-            except Exception:
-                pass
+            except Exception as exc:
+                # Version stamping is diagnostics only; the connect continues.
+                # Per-connection (cold), and no account/credential data here.
+                logger.info(
+                    "[MT5] event=MT5_VERSION_PROBE_FAILED error_type=%s "
+                    "(terminal version left unset; connection continues)",
+                    type(exc).__name__,
+                )
             try:
                 term_info = mt5.terminal_info()
                 self._conn_state.set_terminal(term_info)
                 if term_info is not None:
                     term_ver = str(getattr(term_info, "name", "") or "")
-            except Exception:
-                pass
+            except Exception as exc:
+                # terminal_info feeds connection-state telemetry only.
+                logger.info(
+                    "[MT5] event=MT5_TERMINAL_INFO_PROBE_FAILED error_type=%s "
+                    "(terminal_info left unset; connection continues)",
+                    type(exc).__name__,
+                )
             self._conn_state.set_versions(pkg_ver, term_ver)
 
         if self._account and self._password and self._server:
@@ -1785,7 +1796,14 @@ class DirectMT5Adapter(IMT5Port):
             return None
         try:
             raw = mt5.orders_get(symbol=symbol)
-        except Exception:
+        except Exception as exc:
+            # Idempotency guard only: without the order book the caller's
+            # retry proceeds as before (no equivalent found). Probe, not write.
+            logger.warning(
+                "[MT5] event=MT5_EQUIVALENT_PENDING_PROBE_FAILED error_type=%s "
+                "(orders_get failed; retry continues without dedup proof)",
+                type(exc).__name__,
+            )
             return None
         if raw is None:
             return None

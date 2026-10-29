@@ -229,7 +229,13 @@ class StrategyRegistry:
                     or 0
                 )
             return int(self._reader().scalar("SELECT COUNT(*) FROM strategy_registry;") or 0)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_RESEARCH] event=REGISTRY_COUNT_UNAVAILABLE "
+                "op=registry_count error_type=%s (an absent or unreadable "
+                "registry table reports a count of 0, the documented default)",
+                type(exc).__name__,
+            )
             return 0
 
     # ------------------------------------------------------------------
@@ -471,5 +477,11 @@ def _parse_ts(value: str | None) -> datetime | None:
         return None
     try:
         return datetime.fromisoformat(value).astimezone(UTC)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[STRATEGY_RESEARCH] event=REGISTRY_TS_UNPARSEABLE op=parse_ts "
+            "error_type=%s (an unparseable timestamp is treated as absent, so "
+            "the entry is excluded from time-ordered views)",
+            type(exc).__name__,
+        )
         return None

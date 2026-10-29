@@ -357,8 +357,13 @@ def _git_revision() -> str:
                     )
                     if out.returncode == 0 and out.stdout.strip():
                         return out.stdout.strip()[:12]
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.debug(
+                        "[SHADOW] event=GIT_HEAD_PROBE_SKIPPED op=_git_sha "
+                        "error_type=%s (git is unavailable; the SHA is read "
+                        "straight from the .git ref file instead)",
+                        type(exc).__name__,
+                    )
                 ref = git_head.read_text(encoding="utf-8", errors="replace").strip()
                 if ref.startswith("ref:"):
                     ref_path = parent / ".git" / ref[4:].strip()

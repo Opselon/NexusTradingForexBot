@@ -207,8 +207,13 @@ def _git_commit() -> str:
         )
         if out.returncode == 0:
             return out.stdout.strip()[:12]
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[DATA_QUALITY] event=GIT_COMMIT_PROBE_SKIPPED op=_git_commit "
+            "error_type=%s (git is unavailable or not a repo; the provenance "
+            "commit stays empty and certification proceeds)",
+            type(exc).__name__,
+        )
     return ""
 
 
@@ -667,8 +672,16 @@ def certify_and_persist(
                 ):
                     logger.info("[DATA_QUALITY] event=REUSED clean_dataset_id=%s", cid)
                     return cid, report
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "[DATA_QUALITY] event=REPORT_UNREADABLE op=ensure_clean_dataset "
+                    "clean_dataset_id=%s error_type=%s (the existing quality "
+                    "report could not be read, so reuse cannot be proven; the "
+                    "caller gets the documented FileExistsError instead of an "
+                    "overwrite)",
+                    cid,
+                    type(exc).__name__,
+                )
         if not report_path.exists():
             raise FileExistsError(
                 f"clean artifact {cid!r} exists without a quality report — "
@@ -698,7 +711,14 @@ def load_quality_report(store: Any, clean_dataset_id: str) -> DataQualityReport 
         return None
     try:
         payload = json.loads(report_path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[DATA_QUALITY] event=QUALITY_REPORT_UNDECODABLE op=load_quality_report "
+            "clean_dataset_id=%s error_type=%s (a corrupt quality report is "
+            "reported as absent so the dataset is never treated as certified)",
+            clean_dataset_id,
+            type(exc).__name__,
+        )
         return None
     return DataQualityReport(**payload)
 

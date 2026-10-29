@@ -665,7 +665,17 @@ def _parse_iso_timestamp(value: str) -> datetime | None:
     # the space separator is what the app actually writes.
     try:
         return datetime.fromisoformat(normalized)
-    except ValueError:
+    except ValueError as exc:
+        # Multi-format parse fallback: an unrecognised shape is refused on
+        # purpose so the caller quarantines the row instead of storing a
+        # wrong instant. The value itself is never logged.
+        logger.debug(
+            "[DB-MIGRATION] event=SQLITE_TO_PG_TIMESTAMP_PARSE_FAILED "
+            "error_type=%s (unrecognised timestamp text is refused so the row "
+            "is quarantined rather than coerced to a wrong instant; the source "
+            "value is never logged)",
+            type(exc).__name__,
+        )
         return None
 
 

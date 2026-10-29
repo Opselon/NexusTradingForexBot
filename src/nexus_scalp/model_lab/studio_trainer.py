@@ -797,7 +797,14 @@ class NeuralStudioTrainer:
                 feature_schema_hash=_feature_schema_hash_of(schema_id),
             )
             return cert.certify(np.asarray(mat), names)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[MODEL_LAB] event=FEATURE_QUALITY_REPORT_SKIPPED "
+                "op=_feature_quality_report error_type=%s (the studio run records "
+                "NO feature-quality report rather than a fabricated one; the fit "
+                "itself is unaffected)",
+                type(exc).__name__,
+            )
             return None
 
     @staticmethod
@@ -811,5 +818,12 @@ class NeuralStudioTrainer:
             audit = LabelQualityAudit()
             frame = pl.DataFrame({"label": labels[:n_rows]})
             return audit.audit(frame)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[MODEL_LAB] event=LABEL_QUALITY_REPORT_SKIPPED "
+                "op=_label_quality_report error_type=%s (the studio run records "
+                "NO label-quality report rather than a fabricated one; the fit "
+                "itself is unaffected)",
+                type(exc).__name__,
+            )
             return None

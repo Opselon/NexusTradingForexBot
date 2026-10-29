@@ -14,6 +14,7 @@ from typing import Any
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.api_v1.common import (
     _repo_read_plane,
     build_page,
@@ -25,6 +26,8 @@ from nexus_scalp.web.api_v1.common import (
     sanitize_config,
     utc_now_iso,
 )
+
+_logger = get_logger("nexus_scalp.web.api_v1")
 
 router = APIRouter(
     prefix="/api/v1",
@@ -66,7 +69,12 @@ def _sqlite_ro(path: str) -> sqlite3.Connection | None:
         return None
     try:
         return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5.0)
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        _logger.debug(
+            "[WEB-API-V1] event=WEB_API_V1_INCIDENT_DB_OPEN_FAILED "
+            "error_type=%s (request degrades to the unavailable envelope)",
+            type(exc).__name__,
+        )
         return None
 
 

@@ -113,8 +113,13 @@ def _audit_repo_is_nonsqlite(audit_repo: Any) -> bool:
                 return db_url.split("://", 1)[0].lower() not in ("sqlite", "file")
             # A libpq-style DSN names a driver keyword: SQLite has no such form.
             return "=" in db_url
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug(
+            "[MODEL_LIFECYCLE] event=DB_URL_PROBE_SKIPPED op=_is_postgres_url "
+            "error_type=%s (an unparseable db url is treated as NOT postgres, "
+            "the sqlite-default assumption the rest of the loop already makes)",
+            type(exc).__name__,
+        )
     return False
 
 

@@ -8,6 +8,10 @@ import contextlib
 from collections import deque
 from dataclasses import dataclass
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.application.live_sequence")
+
 
 @dataclass
 class LiveSequenceState:
@@ -99,7 +103,13 @@ class LiveSequenceService:
             return None
         try:
             import torch as _torch
-        except Exception:
+        except Exception as _torch_err:
+            logger.debug(
+                "[SEQUENCE] event=TORCH_UNAVAILABLE error_type=%s (torch is not "
+                "importable; a sequence-trained artifact cannot build a "
+                "tensor and honestly returns None -> 2D fallback)",
+                type(_torch_err).__name__,
+            )
             return None
         # GAP INVALIDATION (enforced): the bar timestamp is REQUIRED for buffer
         # writes (bar-aligned window, not a tick window). A >max_gap_us interval
@@ -147,7 +157,14 @@ class LiveSequenceService:
                 try:
                     arr = _torch.tensor(list(state.buffer)[-need:], dtype=_torch.float32)
                     return arr.unsqueeze(0)
-                except Exception:
+                except Exception as _same_ts_err:
+                    logger.debug(
+                        "[SEQUENCE] event=TENSOR_BUILD_FAILED window=%s error_type=%s "
+                        "(same-bar window could not be materialised; returning "
+                        "None so the caller keeps the honest 2D path)",
+                        need,
+                        type(_same_ts_err).__name__,
+                    )
                     return None
             return None
         state.last_bar_ts_us = int(ts_us)
@@ -170,7 +187,14 @@ class LiveSequenceService:
         try:
             arr = _torch.tensor(list(state.buffer)[-need:], dtype=_torch.float32)
             return arr.unsqueeze(0)
-        except Exception:
+        except Exception as _ts_err:
+            logger.debug(
+                "[SEQUENCE] event=TENSOR_BUILD_FAILED window=%s error_type=%s "
+                "(fresh-bar window could not be materialised; returning None "
+                "so the caller keeps the honest 2D path)",
+                need,
+                type(_ts_err).__name__,
+            )
             return None
 
     @staticmethod

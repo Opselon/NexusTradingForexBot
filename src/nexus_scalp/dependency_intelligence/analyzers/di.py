@@ -33,6 +33,9 @@ from nexus_scalp.dependency_intelligence.models import (
     NodeKind,
     ResolutionStatus,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.dependency_intelligence.analyzers.di")
 
 # Call names that denote a registration of a dependency (abstraction <- impl).
 _REGISTER_CALLS = {
@@ -105,7 +108,13 @@ class DIAnalyzer:
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[DEPENDENCY_INTELLIGENCE] event=SOURCE_UNPARSABLE op=build_index "
+                    "error_type=%s (an unparseable source file contributes no "
+                    "type index; its imports are still resolved by name)",
+                    type(exc).__name__,
+                )
                 continue
             mod_parts = list(rel.with_suffix("").parts)
             if mod_parts[-1] == "__init__":

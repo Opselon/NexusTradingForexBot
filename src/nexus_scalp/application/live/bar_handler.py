@@ -353,5 +353,10 @@ class BarHandler:
                     name="worker.online_finetune",
                     component="ONLINE_TRAINING",
                 )
-            except RuntimeError:
-                pass
+            except RuntimeError as _spawn_err:
+                logger.debug(
+                    "[ONLINE_TRAIN] event=SPAWN_REFUSED error_type=%s (no running "
+                    "loop to spawn the fine-tune task; the tick path is already "
+                    "stopping, so the optional retrain is simply skipped)",
+                    type(_spawn_err).__name__,
+                )

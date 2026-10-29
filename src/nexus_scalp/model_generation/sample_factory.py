@@ -185,6 +185,13 @@ class SampleFactory:
             try:
                 label_encoded = self.label_schema.encode(label_str)
             except ValueError:
+                # Expected control flow, not a swallow: WAIT / unknown label
+                # strings are legitimately not neural targets.
+                logger.debug(
+                    "[SAMPLE_FACTORY] event=LABEL_NOT_A_TARGET op=from_labeled "
+                    "error_type=ValueError (WAIT and unknown label strings have "
+                    "no neural target class by design, so the row is skipped)"
+                )
                 continue  # WAIT / unknown strings are not neural targets
 
             feature_vector: list[float] = []
@@ -270,7 +277,13 @@ class SampleFactory:
             return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
         try:
             return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[SAMPLE_FACTORY] event=SAMPLE_TS_UNPARSEABLE op=_parse_ts "
+                "error_type=%s (a sample with an unparseable timestamp carries "
+                "no time and is excluded from time-ordered splits)",
+                type(exc).__name__,
+            )
             return None
 
 

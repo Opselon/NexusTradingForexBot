@@ -202,7 +202,9 @@ class TickPipeline:
         # fabricates NO confidence. It is the only production touchpoint of
         # the freshness model.
         # =====================================================================
-        proposal, _fresh_blocked = self.om.live_freshness_gate(proposal)
+        proposal, _fresh_blocked = self.om.live_freshness_gate(
+            proposal, decision_ts=datetime.now(UTC)
+        )
         if _fresh_blocked:
             logger.warning(
                 "[FRESHNESS_GATE] event=BLOCKED reason=BLOCKED_BY_STALE "
@@ -271,7 +273,19 @@ class TickPipeline:
             self.om._last_model_output_hash = model_output_hash
         self.om._last_raw_market_hash = raw_market_hash
         # Decision stage
-        self.om.last_decision_timestamp = getattr(proposal, "generated_at", now_utc)
+        # The decision stamp is the LOCAL decision clock, never the broker's
+        # ``generated_at``. ``generated_at`` is derived from ``tick.timestamp``
+        # (see the fail-closed warmup proposal above), so a broker feed that is
+        # ahead of this host by even a fraction of a second produced a FUTURE
+        # stamp. ``stage_freshness`` deliberately treats a negative age as
+        # STALE (fail closed on a timebase defect), which then latched the
+        # whole freshness verdict to STALE for as long as the broker stayed
+        # ahead -> every proposal downgraded to NO_TRADE / BLOCKED_BY_STALE
+        # even though ingestion and inference were healthy (issue #689).
+        # Decision *latency* SLOs are measured against the local decision
+        # clock; broker time remains available as generated_at on the proposal
+        # and on the audit record.
+        self.om.last_decision_timestamp = now_utc
         self.om._decision_updates_total += 1
         self.om._decision_sequence += 1
 

@@ -172,7 +172,11 @@ def _windows_start(url: str) -> bool:
             stderr=subprocess.DEVNULL,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000),
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CLI-BROWSER] event=CLI_BROWSER_WINDOWS_START_FAILED op=_windows_start error_type=%s (the OS refused the browser open; the URL is printed for a manual open instead)",
+            type(exc).__name__,
+        )
         return False
     return True
 

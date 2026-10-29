@@ -102,11 +102,23 @@ def _is_safe_child(root: str, candidate: str) -> bool:
     """
     try:
         real_root = os.path.realpath(root)
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[HYGIENE] event=BACKUP_CONTAINMENT_RESOLVE_SKIPPED op=realpath_root "
+            "error_type=%s (unresolvable root cannot contain anything; the "
+            "candidate is treated as unsafe and never collected or deleted)",
+            type(exc).__name__,
+        )
         return False
     try:
         real_candidate = os.path.realpath(candidate)
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[HYGIENE] event=BACKUP_CONTAINMENT_RESOLVE_SKIPPED op=realpath_candidate "
+            "error_type=%s (unresolvable candidate cannot be proven inside the "
+            "backup root, so it is treated as unsafe and skipped)",
+            type(exc).__name__,
+        )
         return False
     if os.path.dirname(real_candidate) != real_root:
         return False
@@ -127,9 +139,22 @@ def _dir_size(path: str) -> int:
             for f in files:
                 try:
                     total += os.path.getsize(os.path.join(root, f))
-                except OSError:
+                except OSError as exc:
+                    logger.debug(
+                        "[HYGIENE] event=BACKUP_SIZE_STAT_SKIPPED op=dir_size "
+                        "error_type=%s (an unreadable member only under-counts the "
+                        "reported size; the set is still listed and pruned by "
+                        "mtime first)",
+                        type(exc).__name__,
+                    )
                     continue
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[HYGIENE] event=BACKUP_SIZE_WALK_SKIPPED op=dir_size error_type=%s "
+            "(an unwalkable snapshot set reports size 0; age/name ranking is "
+            "unaffected and nothing is deleted on the size value)",
+            type(exc).__name__,
+        )
         return 0
     return total
 
@@ -160,9 +185,19 @@ def list_backups(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, int]]:
     try:
         entries = os.listdir(backup_dir)
     except FileNotFoundError:
+        logger.debug(
+            "[HYGIENE] event=BACKUP_DIR_ABSENT op=list_backups error_type="
+            "FileNotFoundError (no backup directory yet means nothing to prune; "
+            "the directory is re-listed next backup)"
+        )
         return []
     except OSError as exc:
-        logger.warning("backup retention: cannot list %s: %s", backup_dir, exc)
+        logger.warning(
+            "[HYGIENE] event=BACKUP_DIR_LIST_FAILED op=list_backups error_type=%s "
+            "(listing failed; the pruner keeps every backup this round rather "
+            "than guessing at deletable names)",
+            type(exc).__name__,
+        )
         return []
 
     found: list[tuple[str, float, int]] = []
@@ -178,7 +213,13 @@ def list_backups(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, int]]:
             continue
         try:
             st = os.stat(path)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[HYGIENE] event=BACKUP_STAT_SKIPPED op=list_backups error_type=%s "
+                "(an unstattable entry is not a prunable candidate; it stays "
+                "untouched and is re-examined on the next backup)",
+                type(exc).__name__,
+            )
             continue
         found.append((path, st.st_mtime, st.st_size))
     found.sort(key=lambda item: item[1])  # oldest first
@@ -198,9 +239,19 @@ def list_snapshot_sets(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, i
     try:
         entries = os.listdir(backup_dir)
     except FileNotFoundError:
+        logger.debug(
+            "[HYGIENE] event=BACKUP_DIR_ABSENT op=list_snapshot_sets error_type="
+            "FileNotFoundError (no backup directory yet means nothing to prune; "
+            "the directory is re-listed next backup)"
+        )
         return []
     except OSError as exc:
-        logger.warning("backup retention: cannot list %s: %s", backup_dir, exc)
+        logger.warning(
+            "[HYGIENE] event=BACKUP_DIR_LIST_FAILED op=list_snapshot_sets error_type=%s "
+            "(listing failed; the pruner keeps every backup this round rather "
+            "than guessing at deletable names)",
+            type(exc).__name__,
+        )
         return []
 
     found: list[tuple[str, float, int]] = []
@@ -212,7 +263,13 @@ def list_snapshot_sets(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, i
             continue
         try:
             st = os.stat(path)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[HYGIENE] event=BACKUP_STAT_SKIPPED op=list_snapshot_sets "
+                "error_type=%s (an unstattable snapshot set is not a prunable "
+                "candidate; it stays untouched and is re-examined next backup)",
+                type(exc).__name__,
+            )
             continue
         if not stat.S_ISDIR(st.st_mode):
             continue

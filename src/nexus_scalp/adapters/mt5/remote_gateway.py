@@ -96,8 +96,16 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
                 if s_key and s_secret:
                     resolved_key = resolved_key or s_key.strip()
                     resolved_secret = resolved_secret or s_secret.strip()
-            except Exception:
-                pass
+            except Exception as exc:
+                # Secret-store read failed (DPAPI unavailable, corrupt store):
+                # fall through to the allow-defaults check / explicit refusal.
+                # error_type only — the exception may name key material paths.
+                logger.info(
+                    "[MT5-GATEWAY] event=MT5_GATEWAY_SECRET_STORE_READ_FAILED "
+                    "error_type=%s (secure secret store unavailable; credentials "
+                    "fall back to env or explicit refusal)",
+                    exc.__class__.__name__,
+                )
         if not resolved_key or not resolved_secret:
             allow_defaults = os.environ.get("NSE_GATEWAY_ALLOW_DEFAULTS", "").strip() == "1"
             if allow_defaults:
@@ -455,7 +463,16 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         if res.get("status") == "SUCCESS":
             try:
                 return int(res.get("ticket") or res.get("order") or 0)
-            except Exception:
+            except Exception as exc:
+                # Broker ACCEPTED the order but the reply ticket is unparseable.
+                # The order EXISTS — this is a money-path anomaly, not a swallow.
+                logger.error(
+                    "[MT5-GATEWAY] event=MT5_GATEWAY_TICKET_UNPARSEABLE "
+                    "op=execute_market_order error_type=%s (broker accepted the "
+                    "order but returned no usable ticket; order is live, "
+                    "returning 0 for caller reconciliation)",
+                    exc.__class__.__name__,
+                )
                 return 0
         logger.error(
             "Remote gateway EXECUTE_MARKET_ORDER rejected",
@@ -491,7 +508,16 @@ class RemoteMT5GatewayAdapter(IMT5Port, IGatewayPort):
         if res.get("status") == "SUCCESS":
             try:
                 return int(res.get("ticket") or res.get("order") or 0)
-            except Exception:
+            except Exception as exc:
+                # Same money-path anomaly as execute_market_order: the pending
+                # order was accepted server-side; only the reply ticket failed.
+                logger.error(
+                    "[MT5-GATEWAY] event=MT5_GATEWAY_TICKET_UNPARSEABLE "
+                    "op=place_pending_order error_type=%s (broker accepted the "
+                    "order but returned no usable ticket; order is live, "
+                    "returning 0 for caller reconciliation)",
+                    exc.__class__.__name__,
+                )
                 return 0
         logger.error(
             "Remote gateway PLACE_PENDING_ORDER rejected",

@@ -287,8 +287,14 @@ def outcome_forensics(db_path: str, limit: int = 200) -> dict[str, Any]:
                 broker_pnl_by[str(br.get("trade_id") or "")] = float(br.get("net_pnl") or 0.0)
         finally:
             bc.close()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        logger.debug(
+            "[INCIDENTS] event=BROKER_PNL_CROSSCHECK_SKIPPED op=trace_broker_pnl "
+            "error_type=%s (the broker-PnL cross-check needs audit_broker_trades; "
+            "without it the trace reports only the ledger-side outcomes, a "
+            "narrower but non-contradicting view)",
+            type(exc).__name__,
+        )
 
     suspect: list[dict[str, Any]] = []
     zero_total = 0
@@ -664,8 +670,14 @@ def news_incidents(news_db_path: str) -> dict[str, Any]:
                 "JOIN news_articles a ON a.article_id = news_analysis.article_id "
                 "GROUP BY direction",
             )
-        except sqlite3.Error:
-            pass
+        except sqlite3.Error as exc:
+            logger.debug(
+                "[INCIDENTS] event=NEWS_DIRECTION_COUNTS_SKIPPED "
+                "op=trace_news_health error_type=%s (the news table is absent or "
+                "unreadable; direction counts stay empty and the news source is "
+                "reported by its own health flag)",
+                type(exc).__name__,
+            )
     finally:
         conn.close()
     counts = {str(r.get("direction") or "?"): int(r.get("n") or 0) for r in dir_rows}
@@ -736,8 +748,13 @@ def version_consistency(workspace: str) -> dict[str, Any]:
             observed["audit_schema_version"] = str(row[0]) if row else ""
         finally:
             conn.close()
-    except sqlite3.Error:
-        pass
+    except sqlite3.Error as exc:
+        logger.debug(
+            "[INCIDENTS] event=AUDIT_SCHEMA_VERSION_SKIPPED op=trace_versions "
+            "error_type=%s (schema_meta is unreadable; the observed schema "
+            "version stays empty, so no mismatch is claimed from it)",
+            type(exc).__name__,
+        )
     mismatch: list[str] = []
     if observed["backend_version"] and observed["web_bundle_stamp"]:
         if observed["backend_version"] != observed["web_bundle_stamp"]:

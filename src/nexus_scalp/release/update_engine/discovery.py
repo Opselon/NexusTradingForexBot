@@ -39,6 +39,9 @@ from nexus_scalp.release.update_engine.constants import (
     SUPPORTED_CHANNELS,
     SUPPORTED_PLATFORM,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.update_engine.discovery")
 
 
 def compare_versions(a: str, b: str) -> int | None:
@@ -229,7 +232,11 @@ class HashVerifier:
     def verify_sha256(path: Path, expected: str) -> bool:
         try:
             actual = packaging.sha256_file(path)
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[UPDATE] event=UPDATE_HASH_PROBE_ARTIFACT_UNREADABLE op=HashVerifier.verify_sha256 error_type=%s (an unreadable artifact never verifies, so install is refused)",
+                type(exc).__name__,
+            )
             return False
         return actual.lower() == str(expected).lower()
 
@@ -394,7 +401,11 @@ def _discovery_log(level: str, msg: str) -> None:
         logging.getLogger("nexus_scalp.release.update").log(
             getattr(logging, level.upper(), logging.WARNING), "[UPDATE] %s", msg
         )
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[UPDATE] event=UPDATE_DISCOVERY_LOG_EMIT_FAILED op=_discovery_log error_type=%s (the update log record is dropped; discovery continues)",
+            type(exc).__name__,
+        )
         pass
 
 

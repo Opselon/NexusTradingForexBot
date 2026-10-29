@@ -605,8 +605,13 @@ class DatedRotatingFileHandler(logging.Handler):
             try:
                 self._stream.flush()
                 self._stream.close()
-            except OSError:
-                pass
+            except OSError as exc:
+                # LOGGING SETUP PATH: never call a logging API here — it re-enters
+                # this handler. Plain stderr, message text only (no path).
+                sys.stderr.write(
+                    "[LOGGING] event=LOG_STREAM_CLOSE_FAILED op=_close_stream error_type="
+                    f"{type(exc).__name__} (stream dropped; next emit reopens)\n"
+                )
             self._stream = None
 
     @property
@@ -709,7 +714,13 @@ def _prune_old_logs(base: Path | None = None, retention_days: dict[str, int] | N
             try:
                 if path.stat().st_mtime < cutoff:
                     path.unlink()
-            except OSError:
+            except OSError as exc:
+                # LOGGING SETUP PATH: no logger call (re-entrancy); the file name
+                # is never printed, only the OS error class.
+                sys.stderr.write(
+                    "[LOGGING] event=LOG_PRUNE_FILE_FAILED op=_prune_old_logs error_type="
+                    f"{type(exc).__name__} (file kept; retried next prune pass)\n"
+                )
                 continue
 
 
@@ -732,8 +743,12 @@ def maybe_prune_on_emit(force_check: bool = False) -> None:
             return
         _prune_old_logs(base, _current_retention_days)
         _compress_and_budget_pass(base)
-    except Exception:
-        pass
+    except Exception as exc:
+        # LOGGING SETUP PATH (emit-path hook): no logger call (re-entrancy).
+        sys.stderr.write(
+            "[LOGGING] event=LOG_RETENTION_PASS_FAILED op=maybe_prune_on_emit "
+            f"error_type={type(exc).__name__} (retention retried next window)\n"
+        )
 
 
 def _compress_and_budget_pass(base: Path) -> None:
@@ -760,7 +775,12 @@ def _compress_and_budget_pass(base: Path) -> None:
         try:
             compress_old_logs(severity_dir, compress_after_days=compress_days)
             enforce_byte_budget(severity_dir, max_total_mb=budget_mb)
-        except OSError:
+        except OSError as exc:
+            # LOGGING SETUP PATH: no logger call (re-entrancy).
+            sys.stderr.write(
+                "[LOGGING] event=LOG_BUDGET_PASS_FAILED op=_compress_and_budget_pass "
+                f"error_type={type(exc).__name__} (severity bucket left as-is)\n"
+            )
             continue
 
 
@@ -917,8 +937,14 @@ def configure_logging(
         from nexus_scalp.database.log_store import install_database_log_handler
 
         install_database_log_handler()
-    except Exception:
-        pass
+    except Exception as exc:
+        # LOGGING SETUP PATH: console/file handlers are already installed and
+        # logging into them here would be legal, but a stderr line keeps this
+        # failure visible even when the root level filters DEBUG/INFO.
+        sys.stderr.write(
+            "[LOGGING] event=DB_LOG_SINK_INSTALL_FAILED op=configure_logging "
+            f"error_type={type(exc).__name__} (DB sink disabled; console/file sinks live)\n"
+        )
 
     _prune_old_logs(base_dir, _current_retention_days)
 

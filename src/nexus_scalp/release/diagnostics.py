@@ -25,6 +25,9 @@ from typing import Any
 from . import paths
 from .health import HealthEngine
 from .metadata import get_version_info
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.diagnostics")
 
 _SECRET_PATTERNS = [
     re.compile(
@@ -136,7 +139,11 @@ def export_diagnostics(workspace: Path | None = None) -> Path:
                 for pat in _SECRET_PATTERNS:
                     text = pat.sub("[REDACTED]", text)
                 zf.writestr(f"logs/{log.name}", text)
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[RELEASE-DIAGNOSTICS] event=RELEASE_DIAGNOSTICS_LOG_ARCHIVE_FAILED op=export_diagnostics error_type=%s (that log is omitted from the diagnostics bundle; the rest still ships)",
+                    type(exc).__name__,
+                )
                 continue
     return out
 

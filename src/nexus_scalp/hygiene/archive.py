@@ -26,6 +26,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.archive")
+
 ARCHIVE_ROOT_NAME = "archive"
 
 
@@ -337,8 +341,15 @@ def enumerate_dataset(
                         f'SELECT MIN("{pk[0]}"), MAX("{pk[0]}") FROM "{t}"'
                     ).fetchone()
                     entry["pk_min"], entry["pk_max"] = lo, hi
-                except sqlite3.Error:
-                    pass
+                except sqlite3.Error as exc:
+                    logger.debug(
+                        "[HYGIENE] event=ARCHIVE_PK_RANGE_SKIPPED op=_table_entry "
+                        "table=%s error_type=%s (the pk range is informational "
+                        "only, so the table entry is still reported with rows and "
+                        "columns)",
+                        t,
+                        type(exc).__name__,
+                    )
             out[t] = entry
         return out
     finally:

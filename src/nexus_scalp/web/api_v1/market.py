@@ -10,12 +10,15 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.api_v1.common import (
     adapter_or_503,
     fail,
     get_engine,
     ok,
 )
+
+logger = get_logger("nexus_scalp.web.api_v1.market")
 
 router = APIRouter(prefix="/api/v1/market", tags=["market"])
 
@@ -151,7 +154,12 @@ def _dataclass_dict(obj: Any) -> Any:
 
         try:
             return asdict(obj)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[WEB-API-V1] event=WEB_API_V1_MARKET_ASDICT_FAILED "
+                "error_type=%s (caller renders the field as unavailable)",
+                type(exc).__name__,
+            )
             return None
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
