@@ -58,6 +58,9 @@ from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release import verify as rverify
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.doctor")
 
 
 @contextlib.contextmanager
@@ -96,20 +99,32 @@ def version_cmd(
             try:
                 block = RuntimeVersionBlock(web_dir=Path("Web") if Path("Web").is_dir() else None)
                 info = {**info, "web_bundle": block.build()}
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_VERSION_WEB_BUNDLE_UNAVAILABLE op=version_cmd error_type=%s (version truth never blocks the CLI; the field is simply absent)",
+                    type(exc).__name__,
+                )
                 pass  # version truth never blocks the CLI
             # CHG-0043: one canonical snapshot consumed by version/health/doctor/web
             try:
                 from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
 
                 info["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_VERSION_RUNTIME_SNAPSHOT_UNAVAILABLE op=version_cmd error_type=%s (failure-isolated: identity still emits without the snapshot)",
+                    type(exc).__name__,
+                )
                 pass  # failure-isolated: identity still emits
             try:
                 from nexus_scalp.release.release_status import build_release_status
 
                 info["release_status"] = build_release_status()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_VERSION_RELEASE_STATUS_UNAVAILABLE op=version_cmd error_type=%s (offline-safe: absence is UNKNOWN, never fabricated)",
+                    type(exc).__name__,
+                )
                 pass  # offline-safe: absence is UNKNOWN, never fabricated
         _emit(info, True)
         return
@@ -264,20 +279,32 @@ def doctor_cmd(
                 from nexus_scalp.release.runtime_snapshot import build_runtime_snapshot
 
                 payload["runtime_snapshot"] = build_runtime_snapshot(include_update=False)
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_RUNTIME_SNAPSHOT_UNAVAILABLE op=doctor_cmd error_type=%s (failure-isolated: the runtime payload still emits, snapshot absent)",
+                    type(exc).__name__,
+                )
                 pass
             try:
                 from nexus_scalp.release.release_status import build_release_status
 
                 payload["release_status"] = build_release_status()
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_RELEASE_STATUS_UNAVAILABLE op=doctor_cmd error_type=%s (offline-safe: absence is UNKNOWN, never fabricated)",
+                    type(exc).__name__,
+                )
                 pass  # offline-safe: absence is UNKNOWN, never fabricated
             # CONTRACT #8/#9: additive Control Center seam (frontend build +
             # browser auto-open state). Failure-isolated so doctor --json can
             # never lose its payload to this report.
             try:
                 payload["control_center"] = _frontend_seam_status()
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_CONTROL_CENTER_SEAM_UNAVAILABLE op=doctor_cmd error_type=%s (the Control Center seam field is dropped, so the UI state it describes is unverified in this report)",
+                    type(exc).__name__,
+                )
                 pass
         _emit(payload, True)
         return
@@ -527,7 +554,11 @@ def status_cmd(
         # build + browser auto-open state); failure-isolated like every field.
         try:
             payload["control_center"] = _frontend_seam_status()
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[CLI-DOCTOR] event=CLI_DOCTOR_STATUS_CONTROL_CENTER_SEAM_UNAVAILABLE op=status_cmd error_type=%s (the Control Center seam field is dropped, so the UI state it describes is unverified in this payload)",
+                type(exc).__name__,
+            )
             pass
         _emit(payload, True)
         return
@@ -687,7 +718,11 @@ def _log_root() -> Path:
     for cand in candidates:
         try:
             resolved = cand.resolve()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[CLI-DOCTOR] event=CLI_DOCTOR_LOG_ROOT_RESOLVE_FAILED op=_log_root error_type=%s (that candidate is skipped; the next candidate still resolves the log root)",
+                type(exc).__name__,
+            )
             continue
         if resolved in known:
             continue
@@ -698,7 +733,11 @@ def _log_root() -> Path:
             try:
                 if any(cand.rglob("*.log")):
                     return cand
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[CLI-DOCTOR] event=CLI_DOCTOR_LOG_ROOT_SCAN_FAILED op=_log_root error_type=%s (the scan failed for this candidate only; the first existing candidate still wins)",
+                    type(exc).__name__,
+                )
                 continue
     # Fall back to the first existing candidate so "no logs yet" still points
     # at the place where logs WILL appear.

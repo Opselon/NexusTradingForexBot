@@ -29,6 +29,9 @@ from nexus_scalp.cli.db_commands import db_app, make_portability_app
 from nexus_scalp.cli.incident_commands import incidents_app
 from nexus_scalp.cli.lazy_subapps import lazy_group_cls
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.cli.app_factory")
 
 # LAZY (EU-03, wave-6 perf): ai_commands (ai_providers.orchestrator),
 # dependency_commands (networkx), gateway_commands (fastapi -> torch+polars)
@@ -168,7 +171,11 @@ try:
     from nexus_scalp.cli.pr_commands import register_pr_commands as _register_pr_commands
 
     _register_pr_commands(app)
-except Exception:
+except Exception as exc:
+    logger.debug(
+        "[CLI] event=CLI_OPTIONAL_SUBAPP_REGISTER_FAILED op=register_lazy_subapps error_type=%s (the optional PR sub-app is unavailable; every other command still registers)",
+        type(exc).__name__,
+    )
     pass
 
 
