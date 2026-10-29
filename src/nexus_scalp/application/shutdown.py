@@ -338,7 +338,13 @@ class ShutdownSupervisor:
                 schedule(ctrl_kind)
                 # Give the drain a bounded window before Windows kills us.
                 self._drain_done.wait(timeout=self.DEFAULT_TIMEOUT_SEC)
-            except BaseException:
+            except BaseException:  # anti-crash: allow (Win32 console handler )
+                # This runs on a Windows kernel callback thread for
+                # CTRL_CLOSE_EVENT / CTRL_SHUTDOWN. Anything raised here is
+                # unreportable (the console is already going away) and must
+                # never replace the default handler's exit path — hence the
+                # finally-style behaviour: always return False and let the
+                # default handler proceed after the drain.
                 pass
             return False  # let the default handler proceed after the drain
 
