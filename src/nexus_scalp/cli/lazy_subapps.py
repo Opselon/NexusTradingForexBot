@@ -31,6 +31,7 @@ ORDER (Typer 0.9+ / Click 8.x, verified by tests/unit/test_cli_lazy_imports.py):
 from __future__ import annotations
 
 from typing import Any
+
 from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.cli.lazy_subapps")

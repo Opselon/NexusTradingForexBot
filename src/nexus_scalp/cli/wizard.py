@@ -42,6 +42,7 @@ from nexus_scalp.cli.styling import (
     console,
 )
 from nexus_scalp.configuration.config import AppConfig
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import environment as renv
 from nexus_scalp.release import evaluate as reval
 from nexus_scalp.release import exit_codes as xc
@@ -49,7 +50,6 @@ from nexus_scalp.release import health as rhealth
 from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release.metadata import get_version_info
-from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.cli.wizard")
 

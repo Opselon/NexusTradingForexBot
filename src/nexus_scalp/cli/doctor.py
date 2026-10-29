@@ -50,6 +50,7 @@ from nexus_scalp.cli.styling import (
     console,
 )
 from nexus_scalp.configuration.config import AppConfig
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import diagnostics as rdiag
 from nexus_scalp.release import environment as renv
 from nexus_scalp.release import exit_codes as xc
@@ -58,7 +59,6 @@ from nexus_scalp.release import paths as rpaths
 from nexus_scalp.release import repair as rrepair
 from nexus_scalp.release import verify as rverify
 from nexus_scalp.release.metadata import PRODUCT_DISPLAY, get_version_info
-from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.cli.doctor")
 

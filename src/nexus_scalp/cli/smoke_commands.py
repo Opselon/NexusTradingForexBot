@@ -23,10 +23,10 @@ import typer
 
 from nexus_scalp.cli.app_factory import app
 from nexus_scalp.cli.styling import console
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.release import exit_codes as xc
 from nexus_scalp.smoke.result_contract import human_summary
 from nexus_scalp.smoke.runner import run_smoke
-from nexus_scalp.observability.logging import get_logger
 
 logger = get_logger("nexus_scalp.cli.smoke_commands")
 

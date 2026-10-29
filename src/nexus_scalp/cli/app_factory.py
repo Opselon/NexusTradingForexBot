@@ -28,8 +28,8 @@ from nexus_scalp.cli.analyze_commands import register_analyze_commands
 from nexus_scalp.cli.db_commands import db_app, make_portability_app
 from nexus_scalp.cli.incident_commands import incidents_app
 from nexus_scalp.cli.lazy_subapps import lazy_group_cls
-from nexus_scalp.release.metadata import PRODUCT_DISPLAY
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.release.metadata import PRODUCT_DISPLAY
 
 logger = get_logger("nexus_scalp.cli.app_factory")
 
