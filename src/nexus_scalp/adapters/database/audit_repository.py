@@ -339,7 +339,17 @@ def _unique_target_resolves(conn: sqlite3.Connection, table: str, cols: tuple[st
         pk = [c for c in tcols if c[5] > 0]
         if [c[1].lower() for c in pk] == want:
             return True
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        # BUG-276 probe: an unreadable catalog means "cannot prove the
+        # ON CONFLICT target resolves"; the caller keeps the pre-heal path.
+        # Only table/column names here — no row data, no DSN.
+        logger.debug(
+            "[AUDIT-DB] event=AUDIT_DB_UNIQUE_TARGET_PROBE_SKIPPED "
+            "table=%s error_type=%s (catalog probe failed; ON CONFLICT "
+            "target treated as unresolved)",
+            table,
+            type(exc).__name__,
+        )
         return False
     return False
 
@@ -1559,7 +1569,15 @@ class AuditRepository:
                     (table,),
                 ).fetchone()
             )
-        except Exception:
+        except Exception as exc:
+            # Fail-closed probe: the caller treats "cannot read the catalog"
+            # as "table absent" and refuses the dependent write. Debug only —
+            # boot/caller paths can retry this repeatedly.
+            logger.debug(
+                "[AUDIT-DB] event=AUDIT_DB_TABLE_PROBE_SKIPPED "
+                "error_type=%s (catalog lookup failed; table treated as absent)",
+                type(exc).__name__,
+            )
             return False
 
     def release_runtime_risk_state(
@@ -5551,7 +5569,15 @@ class AuditRepository:
             )
             try:
                 return int(dict(raw[0]).get("n") or 0) if raw else 0
-            except Exception:
+            except Exception as exc:
+                # The provider read succeeded but its row shape was not the
+                # expected {"n": ...}; the caller's contract is a count, so 0.
+                logger.debug(
+                    "[AUDIT-DB] event=AUDIT_DB_COUNT_SHAPE_UNUSABLE "
+                    "op=count_decisions error_type=%s (provider row could not "
+                    "be coerced to an integer count; reporting 0)",
+                    type(exc).__name__,
+                )
                 return 0
         try:
             with sqlite_session(self._connect_sqlite(5.0)) as conn:
@@ -5592,7 +5618,15 @@ class AuditRepository:
                     return None
                 val = dict(raw[0]).get("max") if isinstance(raw[0], dict) else raw[0][0]
                 return int(val) if val is not None else None
-            except Exception:
+            except Exception as exc:
+                # Same as count_decisions: an uncoercible high-water value
+                # degrades to None ("no cursor") rather than raising.
+                logger.debug(
+                    "[AUDIT-DB] event=AUDIT_DB_HWM_SHAPE_UNUSABLE "
+                    "op=ledger_high_water_mark error_type=%s (provider value "
+                    "could not be coerced to an integer cursor; reporting None)",
+                    type(exc).__name__,
+                )
                 return None
         try:
             with sqlite_session(self._connect_sqlite(5.0)) as conn:
