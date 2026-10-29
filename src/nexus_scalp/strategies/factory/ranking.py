@@ -25,10 +25,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.strategies.factory.models import (
     RankDimension,
     StrategyFamily,
 )
+
+logger = get_logger("nexus_scalp.strategies.factory.ranking")
 
 #: Documented selection weights (spec 22 / 107). Each is a bounded [0,1]
 #: contribution to the selection score.
@@ -83,7 +86,13 @@ def score_components(
         try:
             parsed = _json.loads(text_val)
             return parsed if isinstance(parsed, dict) else {}
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_FACTORY] event=RANKING_ROW_UNDECODABLE op=_decoded "
+                "error_type=%s (a corrupt registry column ranks as an empty "
+                "payload, the documented default)",
+                type(exc).__name__,
+            )
             return {}
 
     score = _decoded(entry.get("score"))

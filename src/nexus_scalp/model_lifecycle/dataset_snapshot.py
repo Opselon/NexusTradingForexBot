@@ -226,7 +226,14 @@ class TrainingDatasetSnapshotStore:
             return False
         try:
             actual = sha256_file(path)
-        except OSError:
+        except OSError as exc:
+            logger.warning(
+                "[MODEL_LIFECYCLE] event=SNAPSHOT_HASH_UNREADABLE "
+                "op=verify_snapshot error_type=%s (the snapshot bytes could not "
+                "be read, so verification FAILS CLOSED — callers treat it as "
+                "missing rather than verified)",
+                type(exc).__name__,
+            )
             return False
         return actual == stored_hash
 

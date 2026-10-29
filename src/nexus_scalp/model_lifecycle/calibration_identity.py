@@ -53,7 +53,14 @@ def sha256_file(path: str | Path, width: int = FINGERPRINT_WIDTH) -> str | None:
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
         return h.hexdigest()[:width]
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[MODEL_LIFECYCLE] event=ARTIFACT_FINGERPRINT_UNAVAILABLE "
+            "op=sha256_file error_type=%s (an unreadable artifact has NO "
+            "fingerprint; identity checks then treat it as unverified rather "
+            "than matching anything)",
+            type(exc).__name__,
+        )
         return None
 
 

@@ -247,7 +247,13 @@ def factory_benchmarks(
 
                     cov = candidate_coverage_stats(row, factory._ledger_snapshot_for_filter())
                     benchmarks.append(cov)
-                except Exception:
+                except Exception as exc:
+                    logger.debug(
+                        "[FACTORY] event=FACTORY_BENCHMARK_CANDIDATE_SKIPPED "
+                        "error_type=%s (unreadable candidate left out of the "
+                        "benchmark list, never fails the page)",
+                        type(exc).__name__,
+                    )
                     continue
         return serialize_enums(_ok({"benchmarks": benchmarks[:limit]}))
     except Exception as e:

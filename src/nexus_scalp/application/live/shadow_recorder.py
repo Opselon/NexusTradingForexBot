@@ -160,8 +160,13 @@ def _build_shadow_input(
             v = list(fv.to_tensor_input())
             if v and len(v) == 50:
                 base = v
-        except Exception:
-            pass
+        except Exception as _fv_err:
+            logger.debug(
+                "[SHADOW] event=BASE_VECTOR_UNAVAILABLE error_type=%s (feature "
+                "vector could not be materialised; the shadow records the "
+                "zeroed base block and stamps assembly_state=EMPTY)",
+                type(_fv_err).__name__,
+            )
     if live_dim != 70:
         return (base, "BASE_50D" if base != [0.0] * 50 else "EMPTY")
 

@@ -36,6 +36,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.consistency")
+
 #: Sanity bound for parsed timestamps (2000-01-01 .. +5 years).
 MIN_TS_EPOCH: float = 946_684_800.0
 MAX_TS_EPOCH: float = 1_883_496_000.0
@@ -83,7 +87,13 @@ def _as_ts(text: Any) -> float | None:
     if isinstance(text, (int, float)):
         try:
             fval = float(text)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[HYGIENE] event=CONSISTENCY_TS_UNPARSEABLE op=_as_ts "
+                "error_type=%s (a non-numeric epoch value has no age signal, so "
+                "the rule cannot judge this row and skips it)",
+                type(exc).__name__,
+            )
             return None
         # epoch-shaped (small enough to be seconds) vs microseconds
         return fval if fval < 1e12 else fval / 1_000_000.0
@@ -97,12 +107,24 @@ def _as_ts(text: Any) -> float | None:
             raw += "T00:00:00+00:00"
         try:
             dt = datetime.fromisoformat(raw)
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[HYGIENE] event=CONSISTENCY_TS_UNPARSEABLE op=_as_ts "
+                "error_type=%s (an unparseable ISO timestamp has no age signal, "
+                "so the rule cannot judge this row and skips it)",
+                type(exc).__name__,
+            )
             return None
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return dt.timestamp()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[HYGIENE] event=CONSISTENCY_TS_UNPARSEABLE op=_as_ts error_type=%s "
+            "(an unconvertible timestamp has no age signal, so the rule cannot "
+            "judge this row and skips it)",
+            type(exc).__name__,
+        )
         return None
 
 

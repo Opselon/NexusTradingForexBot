@@ -192,7 +192,16 @@ def bind_placeholder_count(sql: Any, driver: str = "") -> int:
         if pg:
             return pg
         return len(_QMARK_PLACEHOLDERS.findall(sql))
-    except Exception:
+    except Exception as exc:
+        # Diagnostic counter only: zero is the documented answer and it never
+        # changes the statement the driver executes.
+        logging.getLogger(__name__).debug(
+            "[DB-DRIVERS] event=BIND_PLACEHOLDER_COUNT_FAILED driver=%s "
+            "error_type=%s (placeholder counting is diagnostic only; the "
+            "statement is executed unchanged)",
+            driver,
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -215,7 +224,14 @@ def arg_count(args: Any) -> int:
         if isinstance(first, (tuple, list)):
             return len(first)  # executemany: the first parameter row
         return n
-    except Exception:
+    except Exception as exc:
+        # Diagnostic counter only; the bound values are never rendered.
+        logging.getLogger(__name__).debug(
+            "[DB-DRIVERS] event=BIND_ARG_COUNT_FAILED error_type=%s "
+            "(parameter counting is diagnostic only; the bound values are "
+            "never rendered and the statement is executed unchanged)",
+            type(exc).__name__,
+        )
         return 0
 
 

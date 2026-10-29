@@ -236,11 +236,29 @@ def _recorded_domain_migrations(domain: str):
 
     try:
         domain_enum = DatabaseDomain(domain)
-    except ValueError:
+    except ValueError as exc:
+        # Not a governed database domain (the ops domain): the caller's
+        # documented "no registry chain" path, not a schema defect.
+        logger.debug(
+            "[DB-MIGRATION] event=PG_SCHEMA_DOMAIN_NOT_GOVERNED domain=%s "
+            "error_type=%s (a domain outside DatabaseDomain has no governed "
+            "migration chain; bootstrap proceeds on the DDL-only path)",
+            domain,
+            type(exc).__name__,
+        )
         return None  # ops domain: no governed registry chain
     try:
         return migrations_for(domain_enum)
-    except KeyError:
+    except KeyError as exc:
+        # Domain exists in the enum but carries no registered chain: same
+        # documented DDL-only path as above.
+        logger.debug(
+            "[DB-MIGRATION] event=PG_SCHEMA_NO_REGISTRY_CHAIN domain=%s "
+            "error_type=%s (this domain registers no migrations; bootstrap "
+            "proceeds on the DDL-only path)",
+            domain,
+            type(exc).__name__,
+        )
         return None
 
 

@@ -15,6 +15,7 @@ BOUNDARY: transport + payload shaping only. Failure normalization lives in
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import subprocess
@@ -24,6 +25,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from nexus_scalp.pr_evidence.models import UNKNOWN
+
+_log = logging.getLogger(__name__)
 
 #: ``/actions/runs/<run>/job/<job-id>`` — the job id inside a check-run URL.
 _CHECK_RUN_JOB_ID_RE = re.compile(r"/actions/runs/\d{1,20}/job/(\d{1,20})")
@@ -632,7 +635,12 @@ class GitHubClient:
         url = f"{self._api_base}/repos/{self._repo}/actions/artifacts/{artifact_id}/zip"
         try:
             return self._transport.get_bytes(url)
-        except Exception:
+        except Exception as exc:
+            _log.debug(
+                "[PR_EVIDENCE] event=ARTIFACT_DOWNLOAD_FAILED "
+                "op=get_artifact_zip error_type=%s (no deep diagnostics for this run)",
+                type(exc).__name__,
+            )
             return None
 
     def get_job_log(self, job_id: int) -> bytes | None:
@@ -650,7 +658,12 @@ class GitHubClient:
         url = f"{self._api_base}/repos/{self._repo}/actions/jobs/{job_id}/logs"
         try:
             return self._transport.get_bytes(url)
-        except Exception:
+        except Exception as exc:
+            _log.debug(
+                "[PR_EVIDENCE] event=JOB_LOG_DOWNLOAD_FAILED op=get_job_log "
+                "error_type=%s (failure cause falls back to annotations)",
+                type(exc).__name__,
+            )
             return None
 
     def get_job_id_for_check(self, check_run_id: int) -> int | None:

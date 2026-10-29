@@ -40,6 +40,9 @@ from nexus_scalp.dependency_intelligence.models import (
     NodeKind,
     ResolutionStatus,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.dependency_intelligence.scanner")
 
 _STDLIB_BASE = {
     "abc",
@@ -351,7 +354,13 @@ class Scanner:
                 continue
             try:
                 tree = ast.parse(path.read_text(encoding="utf-8"))
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[DEPENDENCY_INTELLIGENCE] event=SOURCE_UNPARSABLE "
+                    "op=_index_classes error_type=%s (an unparseable source file "
+                    "contributes no class index entry; other files still scan)",
+                    type(exc).__name__,
+                )
                 continue
             mod_parts = list(path.relative_to(self.root).with_suffix("").parts)
             if mod_parts[-1] == "__init__":

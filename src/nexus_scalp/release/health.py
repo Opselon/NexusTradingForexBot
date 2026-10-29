@@ -143,7 +143,11 @@ def _bars_time_span(scan: Any) -> str | None:
 
     try:
         cols = scan.collect_schema().names()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_BARS_SCHEMA_COLLECT_FAILED op=_bars_time_span error_type=%s (the bar window is left unreported rather than guessed)",
+            type(exc).__name__,
+        )
         return None
     col = "time_utc" if "time_utc" in cols else "time" if "time" in cols else None
     if col is None:
@@ -167,7 +171,11 @@ def _bars_time_span(scan: Any) -> str | None:
         first = getattr(first, "to_pydatetime", lambda: first)()
         last = getattr(last, "to_pydatetime", lambda: last)()
         return f"{first:%Y-%m-%d %H:%M}..{last:%Y-%m-%d %H:%M} UTC"
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_BARS_TIME_SPAN_RENDER_FAILED op=_bars_time_span error_type=%s (the time window is omitted from the DATABASE detail; the check verdict is unchanged)",
+            type(exc).__name__,
+        )
         return None
 
 
@@ -178,7 +186,11 @@ def _bars_quality_warnings(scan: Any) -> list[str]:
     try:
         schema = scan.collect_schema()
         cols = schema.names()
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_BARS_QUALITY_SCHEMA_FAILED op=_bars_quality_warnings error_type=%s (the bar-quality probes are skipped, so no warning is claimed either way)",
+            type(exc).__name__,
+        )
         return []
     col = "time_utc" if "time_utc" in cols else "time" if "time" in cols else None
     if col is None:
@@ -201,7 +213,11 @@ def _bars_quality_warnings(scan: Any) -> list[str]:
         if nonmono:
             out.append(f"{nonmono} non-monotonic bar times")
         return out
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_BARS_QUALITY_SCAN_FAILED op=_bars_quality_warnings error_type=%s (duplicate/non-monotonic detection is skipped for this scan)",
+            type(exc).__name__,
+        )
         return []
 
 
@@ -227,7 +243,11 @@ def _alternative_bars_source(rel_path: Path) -> Path | None:
             candidates.append(configured)
             if not configured.is_absolute():
                 candidates.append(_repo_root() / configured)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_BARS_CONFIG_PROBE_FAILED op=_alternative_bars_source error_type=%s (the configured raw-bars candidates are not added; the CSV-sibling candidates still apply)",
+            type(exc).__name__,
+        )
         pass
     for cand in candidates:
         try:
@@ -483,7 +503,11 @@ class HealthEngine:
                     if cand.exists():
                         try:
                             base_cfg = AppConfig.load_from_yaml(cand)
-                        except Exception:
+                        except Exception as exc:
+                            logger.debug(
+                                "[RELEASE-HEALTH] event=RELEASE_HEALTH_CONFIG_CANDIDATE_LOAD_FAILED op=_load_config error_type=%s (this candidate is rejected and the next one is tried)",
+                                type(exc).__name__,
+                            )
                             continue
                         # Coerce through the enum so the field keeps its
                         # declared ExecutionMode type (mypy); an invalid value
@@ -847,7 +871,11 @@ class HealthEngine:
                         f"{candidate} ({n} tensors)",
                         state=AVAILABLE,
                     )
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[RELEASE-HEALTH] event=RELEASE_HEALTH_MODEL_ARTIFACT_INTROSPECT_FAILED op=check_model error_type=%s (the MODEL check reports WARNING/DEGRADED instead of PASS because the artifact could not be read)",
+                type(exc).__name__,
+            )
             pass
         return HealthEntry(
             "MODEL",
@@ -1031,7 +1059,11 @@ class HealthEngine:
                         rows = con.execute(
                             f"SELECT last_cycle_at FROM {table} ORDER BY rowid DESC LIMIT 1"
                         ).fetchall()
-                    except sqlite3.Error:
+                    except sqlite3.Error as exc:
+                        logger.debug(
+                            "[RELEASE-HEALTH] event=RELEASE_HEALTH_WORKER_STATE_QUERY_FAILED op=check_worker_liveness error_type=%s (a missing worker-state table is not a defect; the other table still answers)",
+                            type(exc).__name__,
+                        )
                         continue
                     if rows and rows[0][0]:
                         latest = max(latest or rows[0][0], rows[0][0])
@@ -1780,5 +1812,9 @@ def async_health(check_fns: list[CheckFn]) -> None:
 
     try:
         asyncio.run(_runner())
-    except RuntimeError:
+    except RuntimeError as exc:
+        logger.debug(
+            "[RELEASE-HEALTH] event=RELEASE_HEALTH_ASYNC_SHIM_RUN_FAILED op=async_health error_type=%s (the no-op async shim never ran because a loop is already active; checks are synchronous by design)",
+            type(exc).__name__,
+        )
         pass

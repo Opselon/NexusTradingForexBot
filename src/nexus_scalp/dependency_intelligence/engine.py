@@ -20,6 +20,9 @@ from nexus_scalp.dependency_intelligence import ANALYZER_VERSION
 from nexus_scalp.dependency_intelligence.analyzers.di import DIAnalyzer
 from nexus_scalp.dependency_intelligence.models import DependencyGraph
 from nexus_scalp.dependency_intelligence.scanner import Scanner
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.dependency_intelligence.engine")
 
 CACHE_DIR = Path("artifacts/dependency_intelligence")
 
@@ -67,7 +70,13 @@ class DependencyIntelligenceEngine:
             files += 1
             try:
                 m = path.stat().st_mtime_ns
-            except OSError:
+            except OSError as exc:
+                logger.debug(
+                    "[DEPENDENCY_INTELLIGENCE] event=SOURCE_STAT_SKIPPED "
+                    "op=_fingerprint error_type=%s (an unstattable file cannot "
+                    "influence the freshness stamp, so it is excluded)",
+                    type(exc).__name__,
+                )
                 continue
             newest = max(newest, m)
         return files, newest
@@ -140,7 +149,13 @@ class DependencyIntelligenceEngine:
             return None
         try:
             graph = DependencyGraph.from_dict(payload["graph"])
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[DEPENDENCY_INTELLIGENCE] event=CACHED_GRAPH_UNDECODABLE "
+                "op=load_cache error_type=%s (a corrupt cache entry is treated "
+                "as a cache miss; the graph is rebuilt instead of trusted)",
+                type(exc).__name__,
+            )
             return None
         return graph, int(payload["files_analyzed"]), list(payload.get("parse_errors", []))
 

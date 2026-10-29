@@ -46,8 +46,30 @@ SCAN_ROOTS = [REPO_ROOT / "src" / "nexus_scalp", REPO_ROOT / "NexusTradingForexB
 ALLOW_MARKER = "anti-crash: allow"
 
 #: files where BaseException boundaries are DELIBERATE (process/shutdown edge)
+#:
+#: Every entry was reviewed during the OBS logging wave and falls into one of
+#: two shapes:
+#:   * cleanup-then-re-raise — ``except BaseException: <rollback/release>; raise``
+#:     (a CancelledError or KeyboardInterrupt must still run the release path,
+#:     and the exception propagates unchanged), or
+#:   * observability-then-re-raise — the handler records a pool/query failure
+#:     and re-raises, so catching BaseException is what makes the failure
+#:     VISIBLE rather than letting it bypass the reporter.
+#: Catching BaseException is only a violation when the handler swallows.
 BASE_EXCEPTION_ALLOWLIST = {
     "src/nexus_scalp/diagnostics/runner.py",
+    # cleanup-then-re-raise (transaction/session rollback)
+    "src/nexus_scalp/database/sqlite_session.py",  # rollback + raise
+    "src/nexus_scalp/model_lab/experiment_registry.py",  # ROLLBACK + raise
+    "src/nexus_scalp/model_provisioning/official.py",  # cleanup_dir(tmp) + raise
+    "src/nexus_scalp/model_provisioning/official_install.py",  # _rollback + raise
+    "src/nexus_scalp/experience/evaluator.py",  # drop cached conn + raise
+    # observability-then-re-raise
+    "src/nexus_scalp/adapters/database/audit_write_plane.py",  # logger.critical + retry
+    "src/nexus_scalp/database/fabric/pg_planes.py",  # log_pool_failure + raise
+    "src/nexus_scalp/database/fabric/sqlite_planes.py",  # backoff/retry on backend
+    "src/nexus_scalp/database/query_logging.py",  # log_pool_failure + raise
+    "src/nexus_scalp/observability/task_spawner.py",  # stamp task name + raise
 }
 
 #: known-EXPECTED ``except Exception: pass`` control flows (relative paths).

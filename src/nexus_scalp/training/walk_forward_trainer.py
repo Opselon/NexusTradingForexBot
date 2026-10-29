@@ -2474,7 +2474,14 @@ class WalkForwardTrainer:
 
                 return list(BASE_50D_NAMES) if dim == 50 else None
             return None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[TRAINING] event=FEATURE_NAMES_UNAVAILABLE "
+                "op=_canonical_feature_names error_type=%s (the canonical name "
+                "projection is descriptive metadata; None means identity "
+                "unavailable and the training contract is unchanged)",
+                type(exc).__name__,
+            )
             return None
 
     def _feature_schema_hash(self) -> str | None:
@@ -2485,7 +2492,13 @@ class WalkForwardTrainer:
             from nexus_scalp.features.schema_contract import feature_schema_hash
 
             return feature_schema_hash()
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[TRAINING] event=FEATURE_SCHEMA_HASH_UNAVAILABLE "
+                "op=_feature_schema_hash error_type=%s (the schema hash is "
+                "recorded as absent; the run is not aborted)",
+                type(exc).__name__,
+            )
             return None
 
     def _save_metadata(

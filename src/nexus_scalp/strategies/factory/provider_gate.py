@@ -724,7 +724,14 @@ def parse_retry_after(header_value: str | None) -> float | None:
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=UTC)
         return max(0.0, (datetime.now(UTC) - dt).total_seconds())
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[PROVIDER_GATE] event=RETRY_AFTER_UNPARSEABLE op=parse_retry_after "
+            "error_type=%s (an unparseable Retry-After header yields no "
+            "provider-requested cooldown; the gate falls back to its own "
+            "backoff, trading_engine=UNAFFECTED)",
+            type(exc).__name__,
+        )
         return None
 
 

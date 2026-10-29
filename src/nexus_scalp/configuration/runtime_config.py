@@ -1348,6 +1348,12 @@ def _coerce_setting_value(annotation: Any, raw: str) -> Any:
             return raw.strip().lower() in ("1", "true", "yes", "on")
         if annotation in (int, float):
             return annotation(raw) if raw.strip() else None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[CONFIG] event=SETTING_COERCION_SKIPPED op=_coerce_setting_value "
+            "error_type=%s (no safe coercion applies; the caller keeps the raw "
+            "value rather than dropping the setting)",
+            type(exc).__name__,
+        )
         return None
     return None

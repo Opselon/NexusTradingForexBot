@@ -281,8 +281,13 @@ class NewsEngine:
                             title=str(art.get("title", "")),
                             analysis_id=str(ex.get("analysis_id", "")),
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.debug(
+                            "[NEWS] event=ANALYZED_HASH_TOMBSTONE_FAILED "
+                            "op=analyze_article_id error_type=%s "
+                            "(existing analysis row still answers the idempotent skip)",
+                            type(exc).__name__,
+                        )
                 return {
                     "ok": True,
                     "status": "SKIPPED_ALREADY_ANALYZED",
@@ -350,6 +355,11 @@ def _parse(value: Any):
     if isinstance(value, str) and value:
         try:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
+        except ValueError as exc:
+            logger.debug(
+                "[NEWS] event=TIMESTAMP_UNPARSEABLE op=_parse_dt error_type=%s "
+                "(row timestamp omitted)",
+                type(exc).__name__,
+            )
             return None
     return value

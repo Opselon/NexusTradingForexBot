@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import subprocess
@@ -23,6 +24,8 @@ import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+
+_log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Run identity (correlation ID) — every smoke run is traceable.
@@ -240,8 +243,12 @@ def current_commit() -> str:
         )
         if out.returncode == 0:
             return out.stdout.strip()
-    except Exception:
-        pass
+    except Exception as exc:
+        _log.debug(
+            "[SMOKE] event=COMMIT_PROBE_FAILED op=current_commit error_type=%s "
+            "(commit recorded as NOT_RECORDED)",
+            type(exc).__name__,
+        )
     return "NOT_RECORDED"
 
 

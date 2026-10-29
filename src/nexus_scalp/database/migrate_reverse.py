@@ -170,7 +170,17 @@ class PostgresToSqliteMigrator:
         """Read reverse checkpoints so interrupted tables resume safely."""
         try:
             rows = dst_driver.query(f"SELECT * FROM {CHECKPOINT_TABLE}")
-        except Exception:
+        except Exception as exc:
+            # Resume bookkeeping only: an unreadable checkpoint table means
+            # "start from the beginning" — an empty mapping, not a failed
+            # reverse migration.
+            logger.debug(
+                "[DB-MIGRATE] event=MIGRATE_REVERSE_CHECKPOINT_READ_FAILED "
+                "error_type=%s (reverse checkpoints are best-effort; an "
+                "unreadable checkpoint table means the table resumes from the "
+                "first row)",
+                type(exc).__name__,
+            )
             return {}
         return {
             row["table_name"]: {

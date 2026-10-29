@@ -105,8 +105,14 @@ class WorkerSupervisor:
                     timeout_sec,
                     _last_cycle_hint(worker_fn),
                 )
-            except asyncio.CancelledError:
-                pass
+            except asyncio.CancelledError as _kick_cancel:
+                logger.debug(
+                    "[WORKER_KICK] event=CANCELLED worker=%s error_type=%s "
+                    "(the kick was cancelled, normally by shutdown; the "
+                    "inflight slot is released in the finally below)",
+                    name,
+                    type(_kick_cancel).__name__,
+                )
             except Exception as wkr_err:
                 logger.warning("[WORKER_KICK] event=FAILED worker=%s error=%s", name, wkr_err)
             finally:

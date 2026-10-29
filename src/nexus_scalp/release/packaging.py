@@ -17,6 +17,9 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from .metadata import get_version, get_version_info
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.release.packaging")
 
 #: Canonical name of the release manifest that the build pipeline embeds in the
 #: portable/installed tree (BUG-166 pre-stage, ``release.yml`` "Embed release
@@ -95,7 +98,11 @@ def _manifest_feature_schema(info: dict[str, Any]) -> str:
 
             FEATURE_SCHEMAS.resolve(stamped)
             return stamped
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_STAMPED_SCHEMA_UNRESOLVED op=_manifest_feature_schema error_type=%s (the stamped schema id is not registered; the active schema id is recorded instead)",
+                type(exc).__name__,
+            )
             pass
     from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID
 
@@ -109,7 +116,11 @@ def _manifest_feature_dimension(info: dict[str, Any]) -> int:
         from nexus_scalp.features.schema import FEATURE_SCHEMAS
 
         return FEATURE_SCHEMAS.resolve(sid).dimension
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_FEATURE_DIMENSION_UNRESOLVED op=_manifest_feature_dimension error_type=%s (the dimension is recorded as 0 (unknown) in the manifest)",
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -160,7 +171,11 @@ def _manifest_required_migrations() -> list[str]:
         ):
             out.extend(all_migration_ids(d))
         return out
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_MIGRATION_IDS_UNAVAILABLE op=_manifest_required_migrations error_type=%s (the manifest lists no required migrations)",
+            type(exc).__name__,
+        )
         return []
 
 
@@ -175,7 +190,11 @@ def _schema_dim(schema_id: str) -> int:
         from nexus_scalp.features.schema import FEATURE_SCHEMAS
 
         return FEATURE_SCHEMAS.resolve(schema_id).dimension
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_SCHEMA_DIM_UNRESOLVED op=_schema_dim error_type=%s (the compatibility line reports 0D for this schema)",
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -467,7 +486,11 @@ def resolve_manifest_entries(rel: str, base_dir: Path) -> list[Path]:
     for spelling in manifest_rel_candidates(rel):
         try:
             candidate = (root / spelling).resolve()
-        except OSError:
+        except OSError as exc:
+            logger.debug(
+                "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_MANIFEST_ENTRY_RESOLVE_FAILED op=resolve_manifest_entries error_type=%s (this path spelling is skipped; the remaining spellings are still resolved)",
+                type(exc).__name__,
+            )
             continue
         if not candidate.is_relative_to(root):
             continue
@@ -835,6 +858,10 @@ def _installed_versions() -> dict[str, str]:
         try:
             m = __import__(mod)
             out[mod] = str(getattr(m, "__version__", "unknown"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RELEASE-PACKAGING] event=RELEASE_PACKAGING_INSTALLED_VERSION_PROBE_FAILED op=_installed_versions error_type=%s (the module version is reported as unknown)",
+                type(exc).__name__,
+            )
             continue
     return out

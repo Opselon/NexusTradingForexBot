@@ -869,7 +869,14 @@ class ShadowStore:
                 "WHERE payload IS NOT NULL AND payload != '' AND payload != '{}' "
                 "AND (champion_probabilities IS NULL OR champion_probabilities IN ('', '[]'))"
             ).fetchall()
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                "[SHADOW] event=CHAMPION_MIGRATION_SCAN_FAILED "
+                "op=_migrate_champion_probabilities error_type=%s (the pending-row "
+                "scan failed; 0 rows are migrated this pass and the next pass "
+                "re-scans the same rows)",
+                type(exc).__name__,
+            )
             return 0
         migrated = 0
         for row in pending:
@@ -1079,7 +1086,13 @@ class ShadowStore:
                 "SELECT COALESCE(SUM(LENGTH(payload)), 0) FROM shadow_decisions"
             ).fetchone()
             return int(row[0] or 0) if row else 0
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[SHADOW] event=PAYLOAD_BYTES_UNAVAILABLE op=payload_bytes "
+                "error_type=%s (an unreadable size probe reports 0 bytes; it is "
+                "telemetry only and drives no retention decision)",
+                type(exc).__name__,
+            )
             return 0
 
     # ------------------------------------------------------------------

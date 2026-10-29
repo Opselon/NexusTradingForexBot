@@ -158,10 +158,19 @@ class SQLiteReadPlane:
         finally:
             with self._lock:
                 try:
-                    self._ro_conns.remove(conn)
-                except ValueError:
-                    pass
-            conn.close()
+                    conn.close()
+                except Exception as close_exc:
+                    # Retry-path cleanup: the connection is already going to be
+                    # abandoned (the loop retries with a fresh one), and the
+                    # original OperationalError is what the caller must see.
+                    logger.debug(
+                        "[DB-FABRIC] event=SQLITE_WRITER_RETRY_CLOSE_FAILED "
+                        "error_type=%s (discarding a connection whose PRAGMA "
+                        "setup failed; the loop retries with a fresh one and "
+                        "the original OperationalError is reported unchanged)",
+                        type(close_exc).__name__,
+                    )
+                time.sleep(0.05)
 
     # -- query ------------------------------------------------------------
 
@@ -397,8 +406,19 @@ class SQLiteWritePlane:
                 last_err = err
                 try:
                     conn.close()
-                except Exception:
-                    pass
+                except Exception as close_exc:
+                    # Retry-path cleanup: the connection is already being
+                    # abandoned and the loop retries with a fresh one, so only
+                    # the best-effort close result is lost — the original
+                    # OperationalError still reaches the caller.
+                    logger.debug(
+                        "[DB-FABRIC] event=SQLITE_WRITER_RETRY_CLOSE_FAILED "
+                        "error_type=%s (best-effort close of a connection "
+                        "whose PRAGMA setup failed; the writer retries with a "
+                        "fresh connection and the original OperationalError is "
+                        "reported unchanged)",
+                        type(close_exc).__name__,
+                    )
                 time.sleep(0.05)
         raise RuntimeError(
             f"SQLite write connection could not be established for "
@@ -423,7 +443,13 @@ class SQLiteWritePlane:
                         if item is None:  # stop sentinel
                             break
                         batch.append(item)
-                except queue.Empty:
+                except queue.Empty:  # anti-crash: allow (normal writer idle, not a swallow)
+                    # The flush window elapsed with an empty/partial batch: the
+                    # normal idle condition of the writer, not a lost write.
+                    # A per-interval event on an idle writer is the hottest
+                    # path in this module, so it is NEVER emitted: the idle
+                    # state is already visible as "no batch committed" plus
+                    # the queue depth in the plane's own health surface.
                     pass
 
                 if batch:

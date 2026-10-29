@@ -20,9 +20,12 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.research.event_projection import parse_lineage_entry
 from nexus_scalp.research.models import StrategyRegistryEntry
 from nexus_scalp.research.spatial_layout import MATURITY_RANK
+
+logger = get_logger("nexus_scalp.research.time_machine")
 
 
 class TimeMachine:
@@ -42,7 +45,13 @@ class TimeMachine:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=UTC)
             return dt
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=TIME_MACHINE_TS_UNPARSEABLE op=parse_ts "
+                "error_type=%s (an unparseable event timestamp is treated as "
+                "absent, so the event is not anchored to a replay instant)",
+                type(exc).__name__,
+            )
             return None
 
     def _strategy_events(self, entry: StrategyRegistryEntry) -> list[dict[str, Any]]:

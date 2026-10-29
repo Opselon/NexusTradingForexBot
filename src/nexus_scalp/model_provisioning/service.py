@@ -183,7 +183,12 @@ def _champion_bound(model_path: Path) -> bool:
             for chunk in iter(lambda: fh.read(1 << 20), b""):
                 h.update(chunk)
         return h.hexdigest()[:16] == governed
-    except Exception:
+    except Exception as exc:
+        logger.warning(
+            "[PROVISION] event=GOVERNED_FINGERPRINT_PROBE_FAILED "
+            "op=_is_governed_artifact error_type=%s (treated as not governed)",
+            type(exc).__name__,
+        )
         return False
 
 
@@ -368,8 +373,13 @@ def write_provisioner_state(state: str, **fields: Any) -> dict[str, Any]:
                 existing = json.loads(p.read_text(encoding="utf-8"))
         existing.update(payload)
         p.write_text(json.dumps(existing, indent=2), encoding="utf-8")
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug(
+            "[PROVISION] event=PROVISIONER_STATE_WRITE_FAILED "
+            "op=write_provisioner_state error_type=%s "
+            "(UI resume state stays at its last value; payload still returned)",
+            type(exc).__name__,
+        )
     return payload
 
 

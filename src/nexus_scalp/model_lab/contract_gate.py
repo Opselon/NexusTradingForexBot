@@ -28,6 +28,9 @@ import numpy as np
 
 from nexus_scalp.features.schema import FEATURE_SCHEMAS
 from nexus_scalp.model_lab.model_builder import DIMENSION_TO_SCHEMA_ID, SUPPORTED_DIMENSIONS
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.model_lab.contract_gate")
 
 
 class ContractDimensionError(ValueError):
@@ -223,6 +226,13 @@ def _scaler_width(scaler: Any) -> int | None:
             out = fn()
             if isinstance(out, int) and out > 0:
                 return out
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[MODEL_LAB] event=SCALER_DIMENSION_PROBE_FAILED op=_class_dimension "
+                "error_type=%s (a failing dimension() probe yields None; the gate "
+                "falls through to its weighted-shape probes instead of assuming a "
+                "dimension)",
+                type(exc).__name__,
+            )
             return None
     return None

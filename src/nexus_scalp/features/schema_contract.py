@@ -49,6 +49,9 @@ from typing import Any
 
 from nexus_scalp.features.scalp_features import FEATURE_NAMES as BASE_50D_NAMES
 from nexus_scalp.features.schema import ACTIVE_SCHEMA_ID, FEATURE_SCHEMAS
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.features.schema_contract")
 
 
 def base_50d_names() -> tuple[str, ...]:
@@ -318,6 +321,14 @@ def registry_has_canonical_70d() -> bool:
     try:
         schema = FEATURE_SCHEMAS.resolve(SCHEMA_ID)
     except KeyError:
+        # Expected control flow: an absent schema id means the registry is not
+        # canonical, which is exactly the False this predicate promises.
+        logger.debug(
+            "[FEATURES] event=SCHEMA_NOT_REGISTERED op=registry_has_canonical_70d "
+            "schema_id=%s error_type=KeyError (the schema id is not registered, "
+            "so the canonical 70D contract is reported as absent)",
+            SCHEMA_ID,
+        )
         return False
     return schema.dimension == DIMENSION
 

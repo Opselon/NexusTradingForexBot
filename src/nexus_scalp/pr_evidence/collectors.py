@@ -12,6 +12,7 @@ fields, never to an exception (spec §22: "GitHub API failure" must be handled).
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -44,6 +45,8 @@ from nexus_scalp.pr_evidence.parsers import (
     parse_pytest_output,
     parse_ruff_output,
 )
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "AnnotationCollector",
@@ -237,8 +240,12 @@ class CheckRunCollector:
                 name = _text(self.client.get_workflow_run(run_id).get("name"))
                 if name:
                     return name
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug(
+                "[PR_EVIDENCE] event=WORKFLOW_NAME_LOOKUP_FAILED op=_workflow_for "
+                "error_type=%s (degrades to the GitHub App name)",
+                type(exc).__name__,
+            )
         return _text((raw.get("app") or {}).get("name")) or UNKNOWN
 
     def _run_meta_for(self, raw: dict[str, Any]) -> dict[str, str]:
@@ -269,7 +276,12 @@ class CheckRunCollector:
                         meta["failing_step"] = name
                         break
             return meta
-        except Exception:
+        except Exception as exc:
+            _log.debug(
+                "[PR_EVIDENCE] event=RUN_META_LOOKUP_FAILED op=_run_meta_for "
+                "error_type=%s (workflow file/step reported as unknown)",
+                type(exc).__name__,
+            )
             return {}
 
     def _to_check(self, raw: dict[str, Any]) -> CheckResult:

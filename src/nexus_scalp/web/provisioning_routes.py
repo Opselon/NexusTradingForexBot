@@ -467,8 +467,14 @@ def _scan_dataset_root(root: Path) -> dict[str, Any]:
             current = stack.pop()
             try:
                 entries = sorted(current.iterdir())
-            except OSError:
-                continue  # unreadable directory: keep what was listed so far
+            except OSError as exc:
+                # unreadable directory: keep what was listed so far
+                logger.debug(
+                    "[PROVISIONING] event=PROVISIONING_DATASET_DIR_UNREADABLE "
+                    "error_type=%s (dir skipped; the listing keeps what it has)",
+                    type(exc).__name__,
+                )
+                continue
             for entry in entries:
                 try:
                     resolved = entry.resolve()
@@ -481,8 +487,14 @@ def _scan_dataset_root(root: Path) -> dict[str, Any]:
                     elif resolved.is_file() and resolved.suffix.lower() in _DATASET_EXTS:
                         stat = resolved.stat()
                         found.append((stat.st_mtime, stat.st_size, resolved))
-                except OSError:
-                    continue  # deleted mid-scan / stat failure: skip, never fail the list
+                except OSError as exc:
+                    # deleted mid-scan / stat failure: skip, never fail the list
+                    logger.debug(
+                        "[PROVISIONING] event=PROVISIONING_DATASET_ENTRY_SKIPPED "
+                        "error_type=%s (entry vanished mid-scan; listing unaffected)",
+                        type(exc).__name__,
+                    )
+                    continue
     found.sort(key=lambda item: item[0], reverse=True)  # newest mtime first
     files = [
         {

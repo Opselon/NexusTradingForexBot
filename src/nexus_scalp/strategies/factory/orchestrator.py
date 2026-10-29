@@ -115,7 +115,13 @@ def _score_dict(entry: dict[str, Any]) -> dict[str, Any]:
 
             parsed = _json.loads(score) if score.strip() else {}
             return parsed if isinstance(parsed, dict) else {}
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_FACTORY] event=REGISTRY_SCORE_UNDECODABLE "
+                "op=_decode_registry_row error_type=%s (a corrupt score column "
+                "decodes as an empty mapping, the documented default)",
+                type(exc).__name__,
+            )
             return {}
     return {}
 
@@ -889,7 +895,14 @@ class StrategyFactory:
             bt = _decode_registry_row(entry or {}).get("backtest") or {}
             raw = bt.get("expectancy_r")
             return float(raw) if raw is not None else None
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_FACTORY] event=PARENT_EXPECTANCY_UNAVAILABLE "
+                "op=_parent_expectancy error_type=%s (no usable parent baseline; "
+                "the improvement delta is reported as absent instead of against "
+                "a fabricated baseline)",
+                type(exc).__name__,
+            )
             return None
 
     # ------------------------------------------------------------------
@@ -1166,8 +1179,14 @@ class StrategyFactory:
                         "created_at": _now().isoformat(),
                     },
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[STRATEGY_FACTORY] event=FACTORY_RUN_RECORD_SKIPPED "
+                    "op=_record_run error_type=%s (the reproducibility row for "
+                    "this candidate did not persist; the candidate itself is "
+                    "still persisted below with the same lifecycle)",
+                    type(exc).__name__,
+                )
             self._persist_candidate(
                 candidate,
                 lifecycle=lifecycle,
@@ -1272,12 +1291,25 @@ class StrategyFactory:
                                     "feature_values": vals,
                                 }
                             )
-                    except Exception:
+                    except Exception as exc:
+                        logger.debug(
+                            "[STRATEGY_FACTORY] event=LEDGER_SNAPSHOT_ROW_SKIPPED "
+                            "op=ledger_snapshots error_type=%s (one decision row "
+                            "with an undecodable payload is skipped; the "
+                            "remaining snapshots are still replayed)",
+                            type(exc).__name__,
+                        )
                         continue
             finally:
                 conn.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[STRATEGY_FACTORY] event=LEDGER_SNAPSHOTS_UNAVAILABLE "
+                "op=ledger_snapshots error_type=%s (the decision ledger is "
+                "unreadable; DSL replay gets no snapshots and falls back to the "
+                "full sample family)",
+                type(exc).__name__,
+            )
         return rows
 
     def _to_strategy_candidate(self, candidate: FactoryCandidate) -> Any:
@@ -1519,7 +1551,14 @@ class StrategyFactory:
                 break
             try:
                 out = json.loads(out) if out.strip() else {}
-            except Exception:
+            except Exception as exc:
+                logger.debug(
+                    "[STRATEGY_FACTORY] event=GENERATION_CONFIG_UNDECODABLE "
+                    "op=_coerce_config error_type=%s (unparsable config text "
+                    "yields an empty mapping, as documented — never crashes the "
+                    "generation loop)",
+                    type(exc).__name__,
+                )
                 return {}
         return out if isinstance(out, dict) else {}
 

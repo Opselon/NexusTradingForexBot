@@ -46,6 +46,7 @@ except ImportError:
 CHECKS = (
     "ruff_lint",
     "ruff_format",
+    "anti_crash",
     "mypy",
     "pytest",
     "smoke",
