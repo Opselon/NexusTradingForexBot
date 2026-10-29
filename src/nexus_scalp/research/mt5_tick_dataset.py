@@ -178,7 +178,15 @@ class _DatasetLock:
                     if age > self.stale_seconds:
                         self.path.unlink(missing_ok=True)
                         continue
-                except FileNotFoundError:
+                except FileNotFoundError as exc:
+                    logger.debug(
+                        "[RESEARCH] event=MT5_DATASET_LOCK_VANISHED "
+                        "op=acquire_lock error_type=%s (the lock file was "
+                        "removed between listing and stat — its owner released "
+                        "it, so the acquisition retries the lock instead of "
+                        "waiting out the deadline)",
+                        type(exc).__name__,
+                    )
                     continue
                 if datetime.now(UTC).timestamp() > deadline:
                     raise ArtifactConflictError(
@@ -225,7 +233,13 @@ class MT5TickDataset:
             return None
         try:
             return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=MT5_DATASET_META_UNDECODABLE op=dataset_meta "
+                "error_type=%s (a corrupt dataset meta reads as absent; the "
+                "caller re-acquires or reports the dataset missing)",
+                type(exc).__name__,
+            )
             return None
 
     # ------------------------------------------------------------------

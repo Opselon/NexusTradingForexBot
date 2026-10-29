@@ -38,6 +38,9 @@ from nexus_scalp.hygiene.worker import (
     HygieneScanner,
     financial_aggregates,
 )
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.worker_runner")
 
 #: Databases the worker manages (spec §4). Paths resolved at runtime.
 MANAGED_DATABASES: dict[str, str] = {
@@ -50,14 +53,26 @@ MANAGED_DATABASES: dict[str, str] = {
 def _db_size(path: str) -> int:
     try:
         return os.path.getsize(path)
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[HYGIENE] event=DB_SIZE_UNAVAILABLE op=_db_size error_type=%s (a "
+            "missing or unreadable database reports 0 bytes; it is telemetry "
+            "only and drives no retention decision)",
+            type(exc).__name__,
+        )
         return 0
 
 
 def _wal_size(path: str) -> int:
     try:
         return os.path.getsize(path + "-wal")
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[HYGIENE] event=WAL_SIZE_UNAVAILABLE op=_wal_size error_type=%s (no "
+            "WAL file means 0 bytes; it is telemetry only and drives no retention "
+            "decision)",
+            type(exc).__name__,
+        )
         return 0
 
 

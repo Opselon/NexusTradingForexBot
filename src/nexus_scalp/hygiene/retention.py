@@ -24,6 +24,9 @@ from datetime import UTC, datetime
 from typing import Any, ClassVar
 
 from nexus_scalp.hygiene import DataTier
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.hygiene.retention")
 
 
 @dataclass(frozen=True)
@@ -765,7 +768,13 @@ class RetentionEngine:
                     if dt.tzinfo is None:
                         dt = dt.replace(tzinfo=UTC)
             return max(0.0, (now - dt).total_seconds() / 86400.0)
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[HYGIENE] event=RETENTION_AGE_UNPARSEABLE op=age_days "
+                "error_type=%s (an unparseable row timestamp has NO age, so the "
+                "row is neither KEEP nor CANDIDATE by age and is left untouched)",
+                type(exc).__name__,
+            )
             return None
 
     def classify(self, table: str, row_age_days: float | None) -> str:

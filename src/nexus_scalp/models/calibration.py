@@ -44,6 +44,10 @@ from typing import Any
 
 import numpy as np
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.models.calibration")
+
 #: Search range for the temperature. T > 1 softens an over-confident head,
 #: T < 1 sharpens an under-confident one; both extremes are bounded so a
 #: degenerate fit cannot turn the gate into a constant.
@@ -199,7 +203,13 @@ def read_artifact(path: Path | str) -> dict[str, Any] | None:
     """Load + validate; anything unusable means 'no calibration' (fail-open)."""
     try:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[MODELS] event=CALIBRATION_ARTIFACT_UNUSABLE op=read_artifact "
+            "error_type=%s (a missing or corrupt calibration artifact means 'no "
+            "calibration', the documented fail-open contract)",
+            type(exc).__name__,
+        )
         return None
     if not isinstance(payload, dict):
         return None

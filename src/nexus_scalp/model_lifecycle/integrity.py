@@ -57,7 +57,13 @@ def artifact_size(path: Path | str) -> int:
     p = Path(path)
     try:
         return p.stat().st_size if p.exists() and p.is_file() else 0
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[MODEL_LIFECYCLE] event=ARTIFACT_SIZE_UNAVAILABLE op=artifact_size "
+            "error_type=%s (an unstattable artifact reports 0 bytes; size is "
+            "descriptive and no verdict depends on it)",
+            type(exc).__name__,
+        )
         return 0
 
 

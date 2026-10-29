@@ -252,8 +252,14 @@ def _alt_ui_banner_line(port: int) -> str:
             alt_index = Path(override) / "index.html"
         if alt_index.is_file():
             return f"  [dim]>[/dim] [dim]Alternative console:[/dim] [cyan]http://localhost:{port}/alt/[/cyan]"
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[LAUNCHER] event=ALT_CONSOLE_PROBE_FAILED op=_alt_console_banner_line "
+            "error_type=%s (the frontend-dist probe failed; the banner falls back "
+            "to its build reminder, which is indistinguishable from an unbuilt "
+            "dist — the launch itself continues)",
+            type(exc).__name__,
+        )
     return "[dim]Alternative console: build frontend/ (npm run build) to enable /alt/[/dim]"
 
 
@@ -296,8 +302,13 @@ def print_startup_banner(
         lan = socket.gethostbyname(hostname)
         if lan and not lan.startswith("127.") and f"http://{lan}:{port}" not in endpoints:
             endpoints.append(f"http://{lan}:{port}")
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(
+            "[LAUNCHER] event=LAN_ENDPOINT_PROBE_FAILED op=_banner error_type=%s "
+            "(the LAN address could not be discovered; the banner advertises "
+            "loopback endpoints only and the launch continues)",
+            type(exc).__name__,
+        )
     ep_str = "\n".join(f"  [cyan]> {ep}[/cyan]" for ep in endpoints)
     go_line = _go_api_banner_line(go_supervisor)
     go_block = f"{go_line}\n" if go_line else ""
@@ -451,8 +462,14 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
                 table.add_row(
                     "Paper guard", "[green]PAPER[/green]", f"Default safe · {c.execution.symbol}"
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[LAUNCHER] event=EXECUTION_SAFETY_ROW_SKIPPED "
+                "op=_print_diagnostics error_type=%s (the config parsed as VALID "
+                "but its execution mode could not be shown; the summary omits the "
+                "LIVE/PAPER safety row — treat the mode as unconfirmed)",
+                type(exc).__name__,
+            )
 
     console.print(table)
     if cfg_ok and cfg_detail:
@@ -478,8 +495,14 @@ def run_infrastructure_doctor(config_path: Path) -> bool:
                     )
                 )
                 return verdict in ("READY", "PASS", "DEGRADED")
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(
+                "[LAUNCHER] event=HEALTH_GRADE_UNAVAILABLE op=_print_diagnostics "
+                "error_type=%s (the health grade could not be computed; the "
+                "pre-flight verdict falls back to the config-only result, which "
+                "is NARROWER than the full grade — not a pass claim)",
+                type(exc).__name__,
+            )
     if not cfg_ok:
         console.print(
             Panel(

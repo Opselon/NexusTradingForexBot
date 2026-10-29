@@ -22,6 +22,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.incidents.models import EvidenceItem, Incident
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.incidents.occurrences")
 
 #: Canonical identity families an incident may carry.
 IDENTITY_FAMILIES = (
@@ -46,7 +49,13 @@ def _count(conn: sqlite3.Connection, sql: str, args: tuple[Any, ...] | list[Any]
     try:
         row = conn.execute(sql, args).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
-    except sqlite3.Error:
+    except sqlite3.Error as exc:
+        logger.debug(
+            "[INCIDENTS] event=OCCURRENCE_COUNT_QUERY_FAILED op=_count "
+            "error_type=%s (a failed evidence count reports 0 occurrences, the "
+            "documented default; the incident itself is unaffected)",
+            type(exc).__name__,
+        )
         return 0
 
 
@@ -196,7 +205,14 @@ def pre_persistence_detection(incident: Incident, db_path: str) -> list[str]:
                 row = conn.execute(
                     f"SELECT MIN({col}) AS m FROM {table} WHERE {col} != ''"
                 ).fetchone()
-            except sqlite3.Error:
+            except sqlite3.Error as exc:
+                logger.debug(
+                    "[INCIDENTS] event=EVIDENCE_TIME_SPAN_SKIPPED "
+                    "op=time_span error_type=%s (one table's time span is "
+                    "unreadable, so it contributes no bound; the span is taken "
+                    "over the remaining tables)",
+                    type(exc).__name__,
+                )
                 continue
             if row and row["m"]:
                 from nexus_scalp.incidents.timebase import _parse_ts as _p

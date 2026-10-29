@@ -95,8 +95,14 @@ class PromotionLock:
         if self.acquired:
             try:
                 self.path.unlink(missing_ok=True)
-            except OSError:
-                pass
+            except OSError as exc:
+                logger.debug(
+                    "[GOVERNANCE] event=PROMOTION_LOCK_UNLINK_SKIPPED op=release "
+                    "error_type=%s (the lock file could not be removed; the "
+                    "in-process flag is still cleared and the next acquirer "
+                    "reclaims a stale lock by its own timeout)",
+                    type(exc).__name__,
+                )
             self.acquired = False
 
     def __enter__(self) -> PromotionLock:

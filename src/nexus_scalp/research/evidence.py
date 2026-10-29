@@ -43,6 +43,10 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from nexus_scalp.observability.logging import get_logger
+
+logger = get_logger("nexus_scalp.research.evidence")
+
 # ---------------------------------------------------------------------------
 # Enumerations
 # ---------------------------------------------------------------------------
@@ -166,7 +170,13 @@ def next_gate(current: GateType) -> GateType | None:
     """Returns the gate after `current` in the canonical chain, or None."""
     try:
         idx = GATE_CHAIN.index(current)
-    except ValueError:
+    except ValueError as exc:
+        logger.debug(
+            "[RESEARCH] event=GATE_CHAIN_LOOKUP_MISS op=next_gate error_type=%s "
+            "(an unknown gate is treated as the end of the canonical chain, so "
+            "no successor is proposed)",
+            type(exc).__name__,
+        )
         return None
     return GATE_CHAIN[idx + 1] if idx + 1 < len(GATE_CHAIN) else None
 
@@ -355,14 +365,25 @@ def build_run_snapshot(
                 from nexus_scalp.features.schema_contract import feature_schema_hash
 
                 schema_hash_v = feature_schema_hash()
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug(
+                    "[RESEARCH] event=EVIDENCE_SCHEMA_HASH_SKIPPED "
+                    "op=build_evidence error_type=%s (schema hash is provenance "
+                    "enrichment; it stays empty and the evidence is still built)",
+                    type(exc).__name__,
+                )
     if schema_dim_v <= 0:
         try:
             from nexus_scalp.features.schema import active_dimension
 
             schema_dim_v = int(active_dimension())
-        except Exception:
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=EVIDENCE_SCHEMA_DIM_SKIPPED "
+                "op=build_evidence error_type=%s (unknown active dimension is "
+                "recorded as 0, the documented unset marker)",
+                type(exc).__name__,
+            )
             schema_dim_v = 0
     feature_schema_version_v = str(config.get("feature_schema_version", "") or "")
     if not feature_schema_version_v:
@@ -370,8 +391,13 @@ def build_run_snapshot(
             from nexus_scalp.features.schema_contract import SCHEMA_VERSION as _SVER2
 
             feature_schema_version_v = _SVER2
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[RESEARCH] event=EVIDENCE_SCHEMA_VERSION_SKIPPED "
+                "op=build_evidence error_type=%s (schema version is provenance "
+                "enrichment; it stays empty and the evidence is still built)",
+                type(exc).__name__,
+            )
 
     # --- CHG-0035: code version (git commit of the working tree) ---
     git_commit_v = str(config.get("git_commit", "") or "")
