@@ -950,7 +950,17 @@ def configure_logging(
 
 
 def get_logger(name: str = "nexus_scalp") -> structlog.stdlib.BoundLogger:
-    """Return a bound structlog logger (unchanged public contract)."""
+    """Return a bound structlog logger (unchanged public contract).
+
+    When nothing has called :func:`configure_logging` (bare CLI invocations,
+    tests), structlog's default is ``PrintLoggerFactory`` writing to *stdout*.
+    That corrupts machine-readable command output: a migration debug record
+    emitted ahead of ``nexus health --json`` / ``model-train-dataset --json``
+    breaks ``json.loads``. Install a stderr-bound default instead, so stdout
+    stays reserved for command results.
+    """
+    if not structlog.is_configured():
+        structlog.configure(logger_factory=structlog.PrintLoggerFactory(file=sys.stderr))
     return structlog.get_logger(name)
 
 

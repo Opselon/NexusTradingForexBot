@@ -33,7 +33,7 @@ pytest-xdist==3.8.0
 pytest==9.2.0
 pyyaml==6.0.3
 rich==15.0.0
-ruff==0.17.0
+ruff==0.17.1
 structlog==26.1.0
 torch==2.15.0
 typer==0.27.3
