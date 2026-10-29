@@ -35,6 +35,7 @@ exactly as before.
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Iterator
@@ -44,6 +45,8 @@ from typing import Any
 #: ContextVar keys the logging pipeline renders as record fields. Names match
 #: the fields the audit's log census looks for.
 CORRELATION_KEYS: tuple[str, ...] = ("request_id", "correlation_id", "boot_id")
+
+_log = logging.getLogger(__name__)
 
 
 def _contextvars() -> Any:
@@ -125,8 +128,12 @@ def clear_request_scope() -> None:
     for key in CORRELATION_KEYS:
         try:
             cv.unbind_contextvars(key)
-        except Exception:
-            pass
+        except Exception as exc:
+            _log.debug(
+                "[CORRELATION] event=CONTEXTVAR_UNBIND_FAILED op=clear_request_scope "
+                "error_type=%s (unbound key was already absent)",
+                type(exc).__name__,
+            )
 
 
 @contextmanager

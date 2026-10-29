@@ -291,8 +291,19 @@ def _safe_dir_size(path: Path) -> int:
             try:
                 if p.is_file():
                     total += p.stat().st_size
-            except OSError:
+            except OSError as exc:
+                # hot path (per file): a vanished/unreadable entry just drops
+                logger.debug(
+                    "[STORAGE] event=QUOTA_DIR_SIZE_ENTRY_SKIPPED op=quota_snapshot "
+                    "error_type=%s (unreadable entry contributes 0 bytes)",
+                    type(exc).__name__,
+                )
                 continue
-    except OSError:
+    except OSError as exc:
+        logger.debug(
+            "[STORAGE] event=QUOTA_DIR_SIZE_WALK_FAILED op=quota_snapshot "
+            "error_type=%s (unreadable root reports 0 bytes)",
+            type(exc).__name__,
+        )
         return 0
     return total

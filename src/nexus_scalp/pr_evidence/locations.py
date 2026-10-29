@@ -14,12 +14,15 @@ no repo mutation. Deterministic and side-effect free.
 
 from __future__ import annotations
 
+import logging
 import re
 from collections.abc import Iterable
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import Any
 
 from nexus_scalp.pr_evidence.models import UNKNOWN, SourceLocation
+
+_log = logging.getLogger(__name__)
 
 __all__ = [
     "PYTEST_NODEID_RE",
@@ -211,7 +214,12 @@ def _to_int(value: str | None) -> int | None:
         return None
     try:
         n = int(value)
-    except ValueError:
+    except ValueError as exc:
+        _log.debug(
+            "[PR_EVIDENCE] event=LINE_NUMBER_UNPARSEABLE op=_to_int error_type=%s "
+            "(source location reported without a line)",
+            type(exc).__name__,
+        )
         return None
     return n if n > 0 else None
 

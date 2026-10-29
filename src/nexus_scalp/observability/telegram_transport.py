@@ -91,7 +91,12 @@ def _retry_after_from_body(body: bytes | None) -> float | None:
         params = data.get("parameters") or {}
         ra = params.get("retry_after")
         return float(ra) if ra is not None else None
-    except Exception:
+    except Exception as exc:
+        logger.debug(
+            "[TELEGRAM] event=RETRY_AFTER_UNPARSEABLE "
+            "op=_retry_after_from_response error_type=%s (default backoff used)",
+            type(exc).__name__,
+        )
         return None
 
 

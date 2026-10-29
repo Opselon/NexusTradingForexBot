@@ -443,8 +443,12 @@ class TelegramNotifier(TransportMixin, NotificationsMixin):
         self._stop_event.set()
         try:
             self._queue.put_nowait(None)
-        except queue.Full:
-            pass
+        except queue.Full as exc:
+            logger.debug(
+                "[TELEGRAM_WORKER] event=STOP_SENTINEL_DROPPED op=stop "
+                "error_type=%s (queue saturated; drain loop exits on the stop flag)",
+                type(exc).__name__,
+            )
         if self._worker_thread and self._worker_thread.is_alive():
             self._worker_thread.join(timeout=timeout)
         logger.info("[TELEGRAM_WORKER] event=STOP_REQUESTED")
