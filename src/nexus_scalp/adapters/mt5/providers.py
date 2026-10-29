@@ -462,7 +462,14 @@ def normalize_utc(value: Any) -> datetime | None:
     if type(value).__module__.startswith("numpy") and hasattr(value, "astype"):
         try:
             return normalize_utc(str(value))
-        except Exception:
+        except Exception as exc:
+            # Unparseable numpy scalar: callers treat the timestamp as unknown.
+            # Per-bar on history import — hot, so debug. Value is NOT logged.
+            _logger.debug(
+                "[MT5] event=MT5_NORMALIZE_UTC_SCALAR_FAILED error_type=%s "
+                "(numpy scalar unparseable; timestamp treated as unknown)",
+                type(exc).__name__,
+            )
             return None
 
     # float / int epoch seconds
@@ -486,7 +493,14 @@ def normalize_utc(value: Any) -> datetime | None:
             # tolerate "2026-08-17 01:30:29" style SQL timestamps
             try:
                 dt = datetime.strptime(text[:19], "%Y-%m-%d %H:%M:%S")
-            except ValueError:
+            except ValueError as exc:
+                # Not an ISO or SQL timestamp at all; the caller gets None.
+                # Per-row on history import — debug. The raw value is NOT logged.
+                _logger.debug(
+                    "[MT5] event=MT5_NORMALIZE_UTC_STRING_FAILED error_type=%s "
+                    "(string matches no accepted timestamp format; treated as unknown)",
+                    type(exc).__name__,
+                )
                 return None
         if dt.tzinfo is None:
             return dt.replace(tzinfo=UTC)
@@ -498,7 +512,13 @@ def _attr(obj: Any, name: str) -> Any:
     """Safe attribute read (returns None on missing attribute)."""
     try:
         return getattr(obj, name)
-    except Exception:
+    except Exception as exc:
+        # A broker object whose __getattr__ raises: the field reads as absent.
+        _logger.debug(
+            "[MT5] event=MT5_ATTR_READ_FAILED error_type=%s "
+            "(broker object attribute read raised; field treated as absent)",
+            type(exc).__name__,
+        )
         return None
 
 
