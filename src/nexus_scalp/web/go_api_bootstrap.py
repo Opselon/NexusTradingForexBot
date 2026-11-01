@@ -493,7 +493,7 @@ def _force_kill(pid: int | None) -> None:
         import signal
 
         try:
-            os.kill(pid, signal.SIGKILL)
+            os.kill(pid, getattr(signal, "SIGKILL", signal.SIGTERM))
         except OSError as exc:
             logger.debug(
                 "[GO-API] event=GO_API_SIGKILL_FAILED error_type=%s "
