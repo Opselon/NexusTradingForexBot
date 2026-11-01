@@ -50,6 +50,20 @@ from nexus_scalp.database.review_lock import install_review_write_guard
 
 install_review_write_guard()
 
+# =============================================================================
+# Windows taskbar/console identity (WINDOWS-UX-001): pin the AppUserModelID
+# and the console window title BEFORE any rendering so a source checkout
+# (`python NexusTradingForexBot.py`) brands as NexusTraderBot on the taskbar
+# exactly like the packaged EXE (packaged_main.py applies the same call).
+# No-op on non-Windows platforms; never blocks the boot on failure.
+# =============================================================================
+try:
+    from nexus_scalp.platform.windows_identity import apply_windows_identity
+
+    apply_windows_identity()
+except Exception as identity_err:  # anti-crash: allow (branding is cosmetic — a failure here must never stop the boot; the packaged_main call site uses the same suppress-and-continue contract)
+    print(f"[identity] windows branding unavailable: {identity_err}", file=sys.stderr)
+
 # ==============================================================================
 # Runtime dependency gate: verify the DECLARED closure BEFORE importing the
 # third-party runtime stack below.

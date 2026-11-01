@@ -173,13 +173,11 @@ def test_legacy_launcher_sets_identity_before_banner() -> None:
     src = _source_text(REPO / "NexusTradingForexBot.py")
     idx_identity = src.index("apply_windows_identity()")
     idx_banner = src.index("def display_startup_banner")
-    # apply_windows_identity() is at module import, display_startup_banner at
-    # first render — module-level code always runs first by construction; pin
-    # that ordering so a future move of the call AFTER the banner is caught.
+    # apply_windows_identity() runs at module import (before the banner
+    # definition is even reached), pinning the AppUserModelID + console
+    # title via the platform identity layer. Pin that the call stays ABOVE
+    # the banner so a future move AFTER first render is caught.
     assert idx_identity < idx_banner
-    # The banner itself pins the VISIBLE label (window title = taskbar text
-    # once the AppUserModelID has pinned the entry).
-    assert 'console.set_window_title("NexusTraderBot")' in src[idx_banner:]
 
 
 def _py_files_with_pattern(pattern: str) -> list[str]:
@@ -253,10 +251,14 @@ def test_pyinstaller_builds_pass_version_file() -> None:
     """Both PyInstaller invocations embed the PE version-info resource."""
     iss_space = "   "
     src = _source_text(REPO / ".github" / "workflows" / "release.yml")
-    assert '--version-file "installer\\version_info.txt"' in src, (
-        "release.yml onedir build must pass --version-file"
-    )
+    # The workflow anchors the resource at the absolute repo path
+    # ("$PWD\installer\version_info.txt"); assert the INVARIANT (both builds
+    # pass --version-file pointing at installer\version_info.txt) instead of
+    # a brittle literal that breaks when the path spelling is improved.
     assert src.count("--version-file") >= 2, "onedir AND onefile CLI must both brand the PE"
+    assert re.search(r'--version-file\s+"\$PWD\\installer\\version_info\.txt"', src), (
+        "release.yml builds must pass --version-file at installer\\version_info.txt"
+    )
     # The local orchestrator must do the same (keeps local builds honest).
     ps1 = _source_text(REPO / "scripts" / "build" / "build_release.ps1")
     assert "--version-file $VersionInfoPath" in ps1
@@ -304,9 +306,20 @@ def test_no_duplicate_launcher_created() -> None:
 
 
 def test_console_title_pinned_to_product_label() -> None:
-    """The visible console window text is NexusTraderBot."""
-    src = _source_text(REPO / "NexusTradingForexBot.py")
-    assert 'console.set_window_title("NexusTraderBot")' in src
+    """The visible console window text is NexusTraderBot.
+
+    The title is set by the platform identity layer
+    (``platform/windows_identity.py`` via ``SetConsoleTitleW(TASKBAR_APP_NAME)``)
+    and applied at every entrypoint (``packaged_main`` for the frozen EXE).
+    Assert the INVARIANT — the constant plus an apply call site — rather than
+    a launcher-local ``console.set_window_title`` call that moved when the
+    responsibility migrated to the platform layer.
+    """
+    ident = _source_text(REPO / "src" / "nexus_scalp" / "platform" / "windows_identity.py")
+    assert 'TASKBAR_APP_NAME = "NexusTraderBot"' in ident
+    assert "SetConsoleTitleW(TASKBAR_APP_NAME)" in ident
+    packaged = _source_text(REPO / "src" / "nexus_scalp" / "release" / "packaged_main.py")
+    assert "apply_windows_identity()" in packaged
 
 
 # ---------------------------------------------------------------------------

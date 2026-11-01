@@ -223,7 +223,7 @@ var configSchemaSections = []ConfigSectionSchema{
 		Name:     "mt5",
 		Required: false,
 		Type:     "MT5Config",
-		Fields:   []string{"account", "password", "path", "portable_mode", "retries", "server", "timeout_ms"},
+		Fields:   []string{"account", "mcp", "password", "path", "portable_mode", "retries", "server", "timeout_ms"},
 	},
 	{
 		Name:     "model",
@@ -235,7 +235,7 @@ var configSchemaSections = []ConfigSectionSchema{
 		Name:     "algo",
 		Required: false,
 		Type:     "AlgoConfig",
-		Fields:   []string{"ai_flip_exit_enabled", "ai_flip_min_delta", "ai_flip_relative_bias_threshold", "ai_zone_confidence_threshold", "atr_sl_buffer_multiplier", "default_recovery_horizon_sec", "fvg_mitigation_sensitivity", "giveback_arm_r", "high_confidence_threshold", "max_recovery_horizon_sec", "max_spread_atr_ratio", "max_spread_pct_of_tp", "min_confirmation_duration", "min_observation_count", "min_recovery_horizon_sec", "min_risk_reward_ratio", "min_rr_high_confidence", "order_block_lookback_bars", "recovery_budget_pct_of_r", "regime_state_max_age_sec", "spread_session_gate_enabled", "spread_session_percentile", "trail_atr_multiplier", "w_drawdown_velocity", "w_hold_score", "w_market_reversal", "w_pnl_trajectory", "w_profit_retention", "w_recovery_probability"},
+		Fields:   []string{"ai_flip_exit_enabled", "ai_flip_min_delta", "ai_flip_relative_bias_threshold", "ai_zone_confidence_threshold", "atr_sl_buffer_multiplier", "default_recovery_horizon_sec", "exit_policy_v2_enabled", "fvg_mitigation_sensitivity", "giveback_arm_r", "high_confidence_threshold", "max_recovery_horizon_sec", "max_spread_atr_ratio", "max_spread_pct_of_tp", "min_confirmation_duration", "min_observation_count", "min_pending_stop_distance", "min_recovery_horizon_sec", "min_risk_reward_ratio", "min_rr_high_confidence", "order_block_lookback_bars", "recovery_budget_pct_of_r", "regime_state_max_age_sec", "spread_session_gate_enabled", "spread_session_percentile", "trail_atr_multiplier", "w_drawdown_velocity", "w_hold_score", "w_market_reversal", "w_pnl_trajectory", "w_profit_retention", "w_recovery_probability"},
 	},
 	{
 		Name:     "news",
