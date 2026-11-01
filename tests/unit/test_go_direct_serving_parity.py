@@ -321,6 +321,25 @@ def test_system_capabilities_parity(go_direct_server: str, py_client: TestClient
     assert go_data["pagination"]["max_page_size"] == py_data["pagination"]["max_page_size"] == 200
 
 
+def _expected_product_version() -> str:
+    """Single source of truth: pyproject.toml [project] version.
+
+    The Go API plane compiles ``DefaultVersion`` from the same release cut,
+    so asserting the pyproject value (instead of a hardcoded literal) keeps
+    this parity test honest across version bumps — a stale literal silently
+    drifted after v9.0.14 and the test asserted ``9.0.14`` long after the
+    release moved on.
+    """
+    import re
+
+    pyproject = REPO_ROOT / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+    m = re.search(r'^version\s*=\s*["\']([^"\']+)["\']', text, re.MULTILINE)
+    if not m:
+        pytest.fail(f"cannot read [project] version from {pyproject}")
+    return m.group(1)
+
+
 def test_system_version_parity(go_direct_server: str, py_client: TestClient) -> None:
     path = "/api/v1/system/version"
     py_resp = py_client.get(path)
@@ -338,7 +357,8 @@ def test_system_version_parity(go_direct_server: str, py_client: TestClient) -> 
     # Invariant product metadata must match
     assert go_data["product"] == py_data["product"] == "NexusScalpEngine"
     assert go_data["product_display"] == py_data["product_display"] == "Nexus Trading Forex Bot"
-    assert go_data["version"] == py_data["version"] == "9.0.14"
+    expected_version = _expected_product_version()
+    assert go_data["version"] == py_data["version"] == expected_version
     assert isinstance(go_data["channel"], str) and len(go_data["channel"]) > 0
     assert isinstance(go_data["commit"], str)
     assert len(go_data["commit"]) > 0

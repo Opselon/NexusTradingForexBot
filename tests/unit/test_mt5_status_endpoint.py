@@ -81,7 +81,14 @@ class _FakeShadowAdapter(PaperMT5Adapter):
 
 
 @pytest.fixture()
-def paper_engine(tmp_path: Path):
+def paper_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # AUTH-SESSION-ISOLATION: /api/status is NOT a public path, so the
+    # middleware enforces the token contract and every assertion in this
+    # module surfaces a 401 UNAUTHORIZED (KeyError: 'state_version') when no
+    # token is resolved. Pin a deterministic token for the app lifetime via
+    # the documented NSE_WEB_AUTH_* knob (the same lever conftest scrubs per
+    # test), so the exercise is hermetic on every machine/CI leg.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "paper-engine-test-token")
     cfg = _make_config(tmp_path)
     adapter = PaperMT5Adapter(symbol="XAUUSD", initial_balance=10000.0)
     adapter.connect()
@@ -89,18 +96,19 @@ def paper_engine(tmp_path: Path):
     engine._account_snapshot = adapter.get_account_snapshot()
     engine._update_runtime_mode()
     app = create_app(engine_ref=engine)
-    return engine, TestClient(app)
+    return engine, TestClient(app, headers={"x-nse-token": "paper-engine-test-token"})
 
 
 @pytest.fixture()
-def offline_engine(tmp_path: Path):
+def offline_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "paper-engine-test-token")
     cfg = _make_config(tmp_path, mode="LIVE")
     adapter = _FakeShadowAdapter(symbol="XAUUSD", initial_balance=10000.0)
     engine = LiveEngine(config=cfg, adapter=adapter, force_fresh_model=True)
     engine._account_snapshot = None
     engine._update_runtime_mode()
     app = create_app(engine_ref=engine)
-    return engine, TestClient(app)
+    return engine, TestClient(app, headers={"x-nse-token": "paper-engine-test-token"})
 
 
 class TestMt5StatusEndpoint:
@@ -178,9 +186,12 @@ class TestMt5StatusEndpoint:
             assert "Traceback" not in r.text
             assert 'File "' not in r.text
 
-    def test_engine_offline_safe_payload(self, tmp_path: Path) -> None:
+    def test_engine_offline_safe_payload(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "paper-engine-test-token")
         app = create_app(engine_ref=None)
-        client = TestClient(app)
+        client = TestClient(app, headers={"x-nse-token": "paper-engine-test-token"})
         r = client.get("/api/mt5/status")
         assert r.status_code == 200
         body = r.json()
