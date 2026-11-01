@@ -272,7 +272,10 @@ def _sync_file(path: Path) -> None:
 
 def _sync_dir(path: Path) -> None:
     if os.name != "nt":
-        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+        # O_DIRECTORY is POSIX-only; on platforms lacking it, sync the file
+        # alone (Linux's fsync on a dir fd is the durability guarantee).
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        fd = os.open(path, flags)
         try:
             os.fsync(fd)
         finally:
