@@ -572,23 +572,37 @@ class HealthEngine:
         # RUNTIME PASS on an installation where `import uvicorn` raised
         # ModuleNotFoundError for its transitive `click`. Read-only probe,
         # derived from pyproject/installed metadata — never a hard-coded list.
-        try:
-            from nexus_scalp.release.runtime_deps import verify_runtime_closure
+        #
+        # FROZEN BUNDLE NOTE: a PyInstaller bundle ships its dependency
+        # closure inside the archive; the dist-info metadata that
+        # ``verify_runtime_closure`` walks is only partially present there
+        # (only the distributions explicitly collected with --copy-metadata
+        # are visible to importlib.metadata). Running the metadata walk
+        # inside a frozen app therefore reports a FALSE "dependency closure
+        # incomplete" and tells a brand-new end user to reinstall an
+        # installation that is actually complete. The startup gate
+        # (run_startup_dependency_gate) skips for exactly the same reason;
+        # the release build owns frozen-bundle closure verification.
+        from nexus_scalp.release import paths
 
-            report = verify_runtime_closure()
-            if not report.ok:
-                names = ", ".join(report.missing_names[:6])
-                return HealthEntry(
-                    "RUNTIME",
-                    "FAIL",
-                    f"{detail} · dependency closure incomplete: {names}",
-                    "Reinstall the application (pip install -e . for a source "
-                    "checkout) — the installation is missing declared runtime "
-                    "dependencies.",
-                    state=ERROR,
-                )
-        except Exception as dep_err:  # never let the probe break the category
-            logger.warning("dependency closure probe unavailable: %s", dep_err)
+        if not paths.is_frozen():
+            try:
+                from nexus_scalp.release.runtime_deps import verify_runtime_closure
+
+                report = verify_runtime_closure()
+                if not report.ok:
+                    names = ", ".join(report.missing_names[:6])
+                    return HealthEntry(
+                        "RUNTIME",
+                        "FAIL",
+                        f"{detail} · dependency closure incomplete: {names}",
+                        "Reinstall the application (pip install -e . for a source "
+                        "checkout) — the installation is missing declared runtime "
+                        "dependencies.",
+                        state=ERROR,
+                    )
+            except Exception as dep_err:  # never let the probe break the category
+                logger.warning("dependency closure probe unavailable: %s", dep_err)
         return HealthEntry("RUNTIME", "PASS", detail)
 
     def check_configuration(self) -> HealthEntry:
