@@ -312,6 +312,12 @@ jobs:
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
             --hidden-import "psycopg" --hidden-import "psycopg.rows" `
             --hidden-import "psycopg_pool" --hidden-import "psycopg_pool.pool" `
+            --copy-metadata "nexus-scalp-engine" --copy-metadata "fastapi" --copy-metadata "uvicorn" `
+            --copy-metadata "starlette" --copy-metadata "pydantic" --copy-metadata "pydantic-core" `
+            --copy-metadata "feedparser" --copy-metadata "Pygments" --copy-metadata "annotated-types" `
+            --copy-metadata "PyNaCl" --copy-metadata "MetaTrader5" --copy-metadata "click" `
+            --copy-metadata "structlog" --copy-metadata "psycopg" --copy-metadata "psycopg-pool" `
+            --copy-metadata "psycopg-binary" --copy-metadata "numpy" --copy-metadata "torch" `
             --distpath "release\build\windows-x64\onedir" `
             --workpath "release\build\windows-x64\work" `
             --specpath "release\build\windows-x64" `
@@ -332,6 +338,12 @@ jobs:
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
             --hidden-import "psycopg" --hidden-import "psycopg.rows" `
             --hidden-import "psycopg_pool" --hidden-import "psycopg_pool.pool" `
+            --copy-metadata "nexus-scalp-engine" --copy-metadata "fastapi" --copy-metadata "uvicorn" `
+            --copy-metadata "starlette" --copy-metadata "pydantic" --copy-metadata "pydantic-core" `
+            --copy-metadata "feedparser" --copy-metadata "Pygments" --copy-metadata "annotated-types" `
+            --copy-metadata "PyNaCl" --copy-metadata "MetaTrader5" --copy-metadata "click" `
+            --copy-metadata "structlog" --copy-metadata "psycopg" --copy-metadata "psycopg-pool" `
+            --copy-metadata "psycopg-binary" --copy-metadata "numpy" --copy-metadata "torch" `
             --distpath "release\build\windows-x64\onefile" `
             --workpath "release\build\windows-x64\work-cli" `
             --specpath "release\build\windows-x64" `
