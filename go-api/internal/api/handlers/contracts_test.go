@@ -292,8 +292,14 @@ func TestConfigSchemaDirect(t *testing.T) {
 			if !ok {
 				t.Fatal("section 'algo' missing")
 			}
-			if len(algo.Fields) != 29 {
-				t.Errorf("algo.fields len = %d, want 29", len(algo.Fields))
+			// Mirror the Python authority (configuration.AlgoConfig): 31 fields.
+			// exit_policy_v2_enabled + min_pending_stop_distance were added on the
+			// Python side after the Go schema was last regenerated; the parity
+			// suite (tests/unit/test_go_direct_serving_parity.py) enforces the
+			// exact field set across the language boundary, so this count must
+			// track the Python model, not drift away from it.
+			if len(algo.Fields) != 31 {
+				t.Errorf("algo.fields len = %d, want 31", len(algo.Fields))
 			}
 
 			news, ok := sectionMap["news"]
