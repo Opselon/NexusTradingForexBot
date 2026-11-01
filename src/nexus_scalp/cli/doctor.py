@@ -1691,6 +1691,22 @@ def _late_block() -> None:
         from nexus_scalp.features.schema import FEATURE_SCHEMAS
         from nexus_scalp.model_generation import DatasetFactory
 
+        # A default of "." (empty -> cwd) points the reader at a DIRECTORY,
+        # which makes polars scan every file in it and die with
+        # InvalidOperationError "directory contained paths with different file
+        # extensions" -- a raw traceback for a fresh user who simply omitted
+        # --bars. Refuse the directory and the missing file up-front instead.
+        if bars_csv.is_dir():
+            console.print(
+                _error_panel(
+                    "No bars file given",
+                    f"--bars points at a directory: {bars_csv}",
+                    hint="Pass an explicit file, e.g. --bars data/raw/XAUUSD_M1.parquet "
+                    "(build one with: nexus data-restore --source data/raw/XAUUSD_D1.csv)",
+                )
+            )
+            raise typer.Exit(xc.EXIT_USAGE) from None
+
         # BUG-176: --schema was DECLARED BUT IGNORED (the value never reached
         # DatasetFactory/SampleFactory, which default to scalp_v1), so a bogus
         # id was silently accepted and a DIFFERENT schema was built (exit 0).
