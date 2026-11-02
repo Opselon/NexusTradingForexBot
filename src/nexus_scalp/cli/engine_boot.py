@@ -968,16 +968,19 @@ def _run_engine_locked(
     # so check_data hard-FAILs, the /health verdict reads NOT READY, and the
     # Control Center launch gate times out ("SERVER NOT READY ... Control
     # Center not opened") even though the engine itself booted fine on its
-    # live feed. Acquire real history BEFORE any health probe can judge it:
-    # LIVE MT5 terminal when one is available (the operator's own broker
-    # history wins), else the seed capture shipped in the bundle. Never
-    # fabricates candles — an unprovisionable machine keeps the honest FAIL.
-    # Failure-isolated like the model gate: a data fault must never brick the
-    # boot; the DATA health category surfaces it truthfully.
+    # live feed. Acquire real history BEFORE any health probe can judge it —
+    # and the ONLY real history is the operator's own broker: the console
+    # asks them to open MetaTrader 5 and log in, then we fetch fresh M1 bars
+    # from that terminal. Never a static/shipped dataset (per-broker and
+    # time-sensitive), never fabricated candles — an unprovisioned machine
+    # keeps the honest FAIL. Failure-isolated like the model gate: a data
+    # fault must never brick the boot; the DATA health category surfaces it
+    # truthfully. --json / non-tty contexts never block on a human: the seam
+    # itself detects a non-tty stdin and skips the operator prompt.
     try:
         from nexus_scalp.release.data_bootstrap import ensure_canonical_bars
 
-        bars_outcome = ensure_canonical_bars()
+        bars_outcome = ensure_canonical_bars(console=console)
         action = bars_outcome.get("action", "")
         if action == "fetched-live":
             console.print(
@@ -985,17 +988,6 @@ def _run_engine_locked(
                     "Historical bars acquired from MT5 terminal",
                     f"{bars_outcome.get('rows', 0)} bars -> {bars_outcome.get('path', '')}",
                     border="green",
-                )
-            )
-        elif action == "seeded":
-            console.print(
-                Panel(
-                    "[bold]Offline historical bars installed[/bold]\n"
-                    f"{bars_outcome.get('rows', 0)} captured XAUUSD M1 bars seeded into "
-                    "data/raw/ from the shipped capture.\n"
-                    "For live-fresh history run [bold]nexus data-fetch[/bold] with a "
-                    "logged-in MetaTrader 5 terminal.",
-                    border_style="cyan",
                 )
             )
         elif action == "none":

@@ -306,7 +306,6 @@ jobs:
             --add-data "$PWD\docs;docs" --add-data "$PWD\build-info.json;." `
             --add-data "$PWD\frontend\dist;frontend/dist" `
             --add-data "$PWD\release\build\windows-x64\go-api;go-api" `
-            --add-data "$PWD\data_seed;data-seed" `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "feedparser" `
             --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `
@@ -334,7 +333,6 @@ jobs:
             --icon "$PWD\installer\NexusScalpEngine.ico" `
             --version-file "$PWD\installer\version_info.txt" `
             --add-data "$PWD\build-info.json;." `
-            --add-data "$PWD\data_seed;data-seed" `
             --collect-submodules "uvicorn" --collect-submodules "fastapi" `
             --collect-submodules "psycopg" --collect-submodules "psycopg_pool" `
             --hidden-import "MetaTrader5" --hidden-import "torch" --hidden-import "polars" `
