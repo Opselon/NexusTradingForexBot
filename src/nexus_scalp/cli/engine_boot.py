@@ -676,7 +676,7 @@ def start_cmd(
         from nexus_scalp.settings.service import SettingsService
 
         svc = SettingsService()
-        svc.set("execution.mode", chosen.value, actor="cli:start")  # type: ignore[attr-defined]
+        svc.set("execution.mode", chosen.value, actor="cli:start")
     except Exception as exc:
         logger.debug(
             "[CLI] event=CLI_START_MODE_PERSIST_FAILED op=start_cmd error_type=%s (the explicit start mode is not recorded; boot continues on the requested mode)",
@@ -963,6 +963,53 @@ def _run_engine_locked(
                 )
             )
             raise typer.Exit(xc.EXIT_RUNTIME) from None
+    # BUG-293 FIRST-RUN DATA GATE (mirror of the model starter seam): a clean
+    # install has NO data/raw/<SYM>_<TF>.parquet (the tick lake is gitignored),
+    # so check_data hard-FAILs, the /health verdict reads NOT READY, and the
+    # Control Center launch gate times out ("SERVER NOT READY ... Control
+    # Center not opened") even though the engine itself booted fine on its
+    # live feed. Acquire real history BEFORE any health probe can judge it:
+    # LIVE MT5 terminal when one is available (the operator's own broker
+    # history wins), else the seed capture shipped in the bundle. Never
+    # fabricates candles — an unprovisionable machine keeps the honest FAIL.
+    # Failure-isolated like the model gate: a data fault must never brick the
+    # boot; the DATA health category surfaces it truthfully.
+    try:
+        from nexus_scalp.release.data_bootstrap import ensure_canonical_bars
+
+        bars_outcome = ensure_canonical_bars()
+        action = bars_outcome.get("action", "")
+        if action == "fetched-live":
+            console.print(
+                _success_panel(
+                    "Historical bars acquired from MT5 terminal",
+                    f"{bars_outcome.get('rows', 0)} bars -> {bars_outcome.get('path', '')}",
+                    border="green",
+                )
+            )
+        elif action == "seeded":
+            console.print(
+                Panel(
+                    "[bold]Offline historical bars installed[/bold]\n"
+                    f"{bars_outcome.get('rows', 0)} captured XAUUSD M1 bars seeded into "
+                    "data/raw/ from the shipped capture.\n"
+                    "For live-fresh history run [bold]nexus data-fetch[/bold] with a "
+                    "logged-in MetaTrader 5 terminal.",
+                    border_style="cyan",
+                )
+            )
+        elif action == "none":
+            logger.warning(
+                "[FIRST-RUN] event=BARS_UNPROVISIONED reason=%s (DATA gate stays loud)",
+                str(bars_outcome.get("reason", ""))[:200],
+            )
+    except Exception as bars_err:
+        console.print(
+            Panel(
+                f"[yellow]Historical bars bootstrap skipped[/yellow]\\n[dim]{bars_err}[/dim]",
+                border_style="yellow",
+            )
+        )
     # Heavy engine imports are local so the slim onefile CLI (which excludes
     # torch/polars/MetaTrader5) never pays for them unless actually starting.
     try:

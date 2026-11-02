@@ -197,10 +197,54 @@ def _champion_artifact_info() -> dict[str, Any]:
         artifact_path = ""
     candidates: list[Path] = []
     if artifact_path:
-        candidates.append(Path(artifact_path))
-    # Well-known champion dir.
-    candidates.append(root / "artifacts" / "models" / "scalp" / "XAUUSD" / "v1.0.0" / "model.pt")
-    candidates.append(Path("artifacts") / "models" / "scalp" / "XAUUSD" / "v1.0.0" / "model.pt")
+        p_art = Path(artifact_path)
+        candidates.append(p_art)
+        if not p_art.is_absolute():
+            candidates.append(root / p_art)
+            try:
+                from nexus_scalp.release.paths import get_runtime_workspace
+
+                candidates.append(get_runtime_workspace() / p_art)
+            except Exception as exc:
+                logger.debug("[FORENSICS] get_runtime_workspace probe failed: %s", exc)
+
+    # Well-known champion dirs (70d_liquidity and v1.0.0)
+    for model_sub in ("70d_liquidity", "v1.0.0"):
+        candidates.append(
+            root / "artifacts" / "models" / "scalp" / "XAUUSD" / model_sub / "model.pt"
+        )
+        candidates.append(
+            Path("artifacts") / "models" / "scalp" / "XAUUSD" / model_sub / "model.pt"
+        )
+        try:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            candidates.append(
+                get_runtime_workspace()
+                / "artifacts"
+                / "models"
+                / "scalp"
+                / "XAUUSD"
+                / model_sub
+                / "model.pt"
+            )
+        except Exception as exc:
+            logger.debug("[FORENSICS] champion candidate probe failed: %s", exc)
+
+    # Dynamic fallback to serving artifact discovery
+    try:
+        from nexus_scalp.release.health import _resolve_serving_artifact
+
+        for m_dir in (
+            root / "artifacts" / "models" / "scalp" / "XAUUSD",
+            Path("artifacts") / "models" / "scalp" / "XAUUSD",
+        ):
+            if m_dir.exists():
+                resolved = _resolve_serving_artifact(m_dir)
+                if resolved:
+                    candidates.append(resolved)
+    except Exception as exc:
+        logger.debug("[FORENSICS] resolve serving artifact failed: %s", exc)
     seen: set[Path] = set()
     for cand in candidates:
         try:

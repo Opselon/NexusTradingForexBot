@@ -174,7 +174,12 @@ class DirectMT5Adapter(IMT5Port):
         self._account = account
         self._password = password
         self._server = server
-        self._path = path
+        if path is not None:
+            self._path = path
+        elif sys.platform == "win32":
+            self._path = self._auto_discover_terminal_path()
+        else:
+            self._path = None
         self._timeout = timeout
         self._retries = max(1, int(retries))
         self._connected = False
@@ -194,6 +199,52 @@ class DirectMT5Adapter(IMT5Port):
             logger.warning(
                 "Windows system detected but 'MetaTrader5' package is missing from Python environment."
             )
+
+    @staticmethod
+    def _auto_discover_terminal_path() -> str | None:
+        """Auto-detect MetaTrader 5 terminal executable on Windows.
+
+        Passing an explicit path to mt5.initialize(path=...) allows the
+        native MetaTrader5 driver to launch the terminal if it is not currently
+        running. When path is None, initialize() only attaches to an already
+        running terminal instance.
+        """
+        import os
+        from pathlib import Path
+
+        env_path = os.environ.get("NSE_MT5_TERMINAL_PATH") or os.environ.get("MT5_PATH")
+        if env_path and Path(env_path).is_file():
+            return env_path
+
+        candidates = (
+            r"C:\Program Files\MetaTrader 5\terminal64.exe",
+            r"C:\Program Files\MetaTrader 5\terminal.exe",
+            r"C:\Program Files (x86)\MetaTrader 5\terminal64.exe",
+            r"C:\Program Files (x86)\MetaTrader 5\terminal.exe",
+        )
+        for cand in candidates:
+            if Path(cand).is_file():
+                return cand
+
+        # Registry probe on Windows
+        try:
+            import winreg  # type: ignore[import-not-found]
+
+            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):  # type: ignore[attr-defined]
+                try:
+                    with winreg.OpenKey(  # type: ignore[attr-defined]
+                        root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\terminal64.exe"
+                    ) as key:
+                        val, _ = winreg.QueryValueEx(key, "")  # type: ignore[attr-defined]
+                        if val and Path(str(val)).is_file():
+                            return str(val)
+                except OSError as exc:
+                    logger.debug("[MT5] registry probe skipped key: %s", exc)
+                    continue
+        except Exception as exc:
+            logger.debug("[MT5] terminal path registry probe failed: %s", exc)
+
+        return None
 
     # ------------------------------------------------------------------
     # BROKER IDENTITY (magic + bot symbol) — runtime-configured, not hardcoded.

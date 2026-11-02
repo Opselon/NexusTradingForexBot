@@ -16,6 +16,7 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from nexus_scalp.database.config import DatabaseConfig
@@ -282,6 +283,8 @@ class PostgresToSqliteMigrator:
             report.validation = val.status
             report.provider_switch_ready = val.status == "PASS"
             report.status = "SUCCESS" if report.provider_switch_ready else "FAILED"
+            if not report.provider_switch_ready and val.errors:
+                report.errors.extend(val.errors)
         except Exception as exc:
             logger.exception("Reverse migration failed: %s", exc)
             report.status = "FAILED"
@@ -436,20 +439,46 @@ class PostgresToSqliteMigrator:
         }
 
     @staticmethod
-    def _table_digest(driver: Any, table: str, columns: list[str], order: str) -> str:
+    def _normalize_digest_val(v: Any) -> Any:
+        if isinstance(v, bool):
+            return int(v)
+        if isinstance(v, (int, type(None))):
+            return v
+        if isinstance(v, float):
+            return round(v, 6)
+        if isinstance(v, datetime):
+            if v.tzinfo is not None:
+                v = v.astimezone(UTC)
+            return v.strftime("%Y-%m-%d %H:%M:%S")
+        if isinstance(v, str):
+            s = v.strip()
+            if len(s) >= 19 and s[10] in ("T", " "):
+                try:
+                    dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+                    if dt.tzinfo is not None:
+                        dt = dt.astimezone(UTC)
+                    return dt.strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    pass
+            return s
+        return v
+
+    @classmethod
+    def _table_digest(cls, driver: Any, table: str, columns: list[str], order: str) -> str:
         """Create a deterministic digest of primary-key/value rows."""
         digest = hashlib.sha256()
         col_sql = ", ".join(f'"{c}"' for c in columns)
         for row in driver.query(f'SELECT {col_sql} FROM "{table}" ORDER BY "{order}" ASC'):
+            norm_dict = {c.lower(): cls._normalize_digest_val(row.get(c)) for c in columns}
             digest.update(
                 json.dumps(
-                    [row.get(c) for c in columns],
+                    norm_dict,
                     sort_keys=True,
                     default=str,
                     separators=(",", ":"),
                 ).encode("utf-8")
             )
-            digest.update(b"\\n")
+            digest.update(b"\n")
         return digest.hexdigest()
 
     def validate(self) -> ReverseMigrationValidationResult:

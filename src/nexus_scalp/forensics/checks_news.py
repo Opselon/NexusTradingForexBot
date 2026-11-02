@@ -188,9 +188,29 @@ def check_news_availability_matrix() -> CheckResult:
     # completeness: news context requires news DB; liquidity requires frozen
     # algorithm + references.
     incomplete: list[str] = []
-    if news_on and not Path("artifacts/news.db").exists():
+
+    def _db_exists(rel: str) -> bool:
+        if Path(rel).exists():
+            return True
+        try:
+            from nexus_scalp.release.paths import get_runtime_workspace
+
+            if (get_runtime_workspace() / rel).exists():
+                return True
+        except Exception as exc:
+            _log.debug("[FORENSICS] workspace probe failed: %s", exc)
+        try:
+            from nexus_scalp.release.paths import app_data_root
+
+            if (Path(app_data_root()) / rel).exists():
+                return True
+        except Exception as exc:
+            _log.debug("[FORENSICS] app_data_root probe failed: %s", exc)
+        return False
+
+    if news_on and not _db_exists("artifacts/news.db"):
         incomplete.append("news enabled but news.db missing")
-    if liq_on and not Path("artifacts/candle_intel.db").exists():
+    if liq_on and not _db_exists("artifacts/candle_intel.db"):
         incomplete.append("liquidity enabled but candle_intel.db missing")
     if liq_on and len(FEATURE_REF_REGISTRY) == 0:
         incomplete.append("liquidity enabled but no frozen reference distribution")
