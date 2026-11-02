@@ -228,14 +228,14 @@ class DirectMT5Adapter(IMT5Port):
 
         # Registry probe on Windows
         try:
-            import winreg
+            import winreg  # type: ignore[import-not-found]
 
-            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+            for root in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):  # type: ignore[attr-defined]
                 try:
-                    with winreg.OpenKey(
+                    with winreg.OpenKey(  # type: ignore[attr-defined]
                         root, r"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\terminal64.exe"
                     ) as key:
-                        val, _ = winreg.QueryValueEx(key, "")
+                        val, _ = winreg.QueryValueEx(key, "")  # type: ignore[attr-defined]
                         if val and Path(str(val)).is_file():
                             return str(val)
                 except OSError as exc:
