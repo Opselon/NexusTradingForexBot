@@ -439,6 +439,36 @@ class SettingsService:
         self.secrets = secret_store or SecureSecretStore()
         self.state = self.db.health()
 
+    def get(self, key: str) -> SettingValue | None:
+        """Fetch setting value from the underlying database."""
+        return self.db.get(key)
+
+    def set(
+        self,
+        key: str,
+        value: Any,
+        *,
+        value_type: str | None = None,
+        source: str = "USER_SETTINGS",
+        actor: str = "cli",
+        correlation_id: str | None = None,
+        audit: bool = True,
+        old_safe: str | None = None,
+        new_safe: str | None = None,
+    ) -> SettingValue:
+        """Set a setting value, delegating to the underlying database."""
+        return self.db.set(
+            key,
+            value,
+            value_type=value_type,
+            source=source,
+            actor=actor,
+            correlation_id=correlation_id,
+            audit=audit,
+            old_safe=old_safe,
+            new_safe=new_safe,
+        )
+
     # ------------------------------------------------------------ Telegram
     def telegram_config_status(self) -> dict[str, Any]:
         """Truthful config forensics WITHOUT exposing the token."""

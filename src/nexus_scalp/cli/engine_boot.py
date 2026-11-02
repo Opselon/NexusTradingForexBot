@@ -676,7 +676,7 @@ def start_cmd(
         from nexus_scalp.settings.service import SettingsService
 
         svc = SettingsService()
-        svc.set("execution.mode", chosen.value, actor="cli:start")  # type: ignore[attr-defined]
+        svc.set("execution.mode", chosen.value, actor="cli:start")
     except Exception as exc:
         logger.debug(
             "[CLI] event=CLI_START_MODE_PERSIST_FAILED op=start_cmd error_type=%s (the explicit start mode is not recorded; boot continues on the requested mode)",

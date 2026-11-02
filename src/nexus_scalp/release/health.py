@@ -1188,7 +1188,7 @@ class HealthEngine:
             if configured:
                 p = Path(configured)
                 artifact = p if p.is_absolute() else self.workspace / p
-        if artifact is None:
+        if artifact is None or not artifact.exists():
             # Same helper as check_model / check_model_contract
             # (NSE-HEALTHFIX-001): the FEATURE_SCHEMA truth must be read from
             # the SAME serving bundle the other two checks introspect.

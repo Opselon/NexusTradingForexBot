@@ -9,6 +9,7 @@ Enforces Sections 13 and 14 of the Dual Database Architecture:
 from __future__ import annotations
 
 import tempfile
+from datetime import UTC
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -408,3 +409,46 @@ class TestDivergenceDetection:
         assert div.diverged is True
         assert div.unmigrated_rows_estimate > 0
         assert "warning" in div.warning.lower()
+
+    def test_reverse_migration_table_digest_cross_provider_parity(self) -> None:
+        """Cross-provider digest parity test (PG bool/datetime vs SQLite int/ISO-str)."""
+        from datetime import datetime, timezone
+
+        from nexus_scalp.database.migrate_reverse import PostgresToSqliteMigrator
+
+        # Simulated PostgreSQL driver row (native bool, native datetime, lowercase cols)
+        pg_driver = MagicMock()
+        pg_driver.query.return_value = [
+            {
+                "rule_name": "max_spread",
+                "is_enabled": False,
+                "category": "RISK",
+                "created_at": datetime(2026, 11, 2, 4, 12, tzinfo=UTC),
+                "val": 12.5000001,
+            }
+        ]
+
+        # Simulated SQLite driver row (integer 0, ISO string with 'T', different column order)
+        sqlite_driver = MagicMock()
+        sqlite_driver.query.return_value = [
+            {
+                "category": "RISK",
+                "val": 12.5,
+                "created_at": "2026-11-02T04:12:00+00:00",
+                "is_enabled": 0,
+                "rule_name": "max_spread",
+            }
+        ]
+
+        pg_cols = ["rule_name", "is_enabled", "category", "created_at", "val"]
+        sqlite_cols = ["category", "val", "created_at", "is_enabled", "rule_name"]
+
+        pg_digest = PostgresToSqliteMigrator._table_digest(
+            pg_driver, "trading_rules_config", pg_cols, "rule_name"
+        )
+        sqlite_digest = PostgresToSqliteMigrator._table_digest(
+            sqlite_driver, "trading_rules_config", sqlite_cols, "rule_name"
+        )
+
+        assert pg_digest == sqlite_digest
+        assert len(pg_digest) == 64
