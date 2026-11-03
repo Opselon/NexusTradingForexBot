@@ -640,22 +640,7 @@ def start_cmd(
 
     # Daemonize before welcome (welcome is the foreground ceremony)
     if daemon:
-        cmd = [
-            sys.executable,
-            "-m",
-            "nexus_scalp.cli.main",
-            "start",
-            "--mode",
-            mode_key,
-        ]
-        if config_path is not None:
-            cmd += ["--config", str(config_path)]
-        if gateway:
-            cmd.append("--gateway")
-        if no_browser:
-            # The daemon child re-enters `start` in ITS OWN process, where this
-            # process's seam state no longer exists - propagate the flag.
-            cmd.append("--no-browser")
+        cmd = _daemon_command(mode_key, config_path, gateway, no_browser)
         # daemon is silent + no animate + no welcome
         if json_mode:
             _emit(
@@ -709,6 +694,37 @@ def start_cmd(
     _resolve_facade_seam("_run_engine", _run_engine)(
         cfg, gateway=gateway, port=port, mode_override=chosen
     )
+
+
+def _daemon_command(
+    mode_key: str,
+    config_path: Path | None,
+    gateway: bool,
+    no_browser: bool,
+) -> list[str]:
+    """The daemon child re-enters `start` in ITS OWN fresh process.
+
+    Source/dev runs re-enter through `python -m nexus_scalp.cli.main`. A
+    frozen (PyInstaller) build MUST re-enter through the executable's own
+    argv convention (`NexusScalpEngine.exe start --mode shadow`): the
+    frozen entry point IS the Typer app, so `-m nexus_scalp.cli.main` was
+    parsed as an unknown option and the child died instantly with
+    "No such option: -m" while the parent reported the spawn as OK
+    (silently broken `nexus start --daemon` in every packaged release).
+    """
+    if getattr(sys, "frozen", False):
+        cmd = [sys.executable, "start", "--mode", mode_key]
+    else:
+        cmd = [sys.executable, "-m", "nexus_scalp.cli.main", "start", "--mode", mode_key]
+    if config_path is not None:
+        cmd += ["--config", str(config_path)]
+    if gateway:
+        cmd.append("--gateway")
+    if no_browser:
+        # The child re-enters `start` in ITS OWN process, where this
+        # process's seam state no longer exists - propagate the flag.
+        cmd.append("--no-browser")
+    return cmd
 
 
 def _spawn_daemon(cmd: list[str]) -> None:
