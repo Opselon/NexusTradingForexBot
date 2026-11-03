@@ -58,32 +58,156 @@ def get_broker_server_utc_offset_minutes() -> int:
     """Effective broker server-UTC offset in minutes (runtime configurable).
 
     Precedence: env NSE_BROKER_SERVER_UTC_OFFSET_MINUTES (validated int in
-    0..1440) > module default BROKER_SERVER_UTC_OFFSET_MINUTES (180). An
-    invalid env value (non-integer, or out of range) is ignored: the default
-    applies and one WARNING is logged per offending read. With no env set the
-    result is byte-identical to the pre-G1 constant read.
+    0..1440) > stream auto-detection (see _BrokerOffsetAutoDetector) > module
+    default BROKER_SERVER_UTC_OFFSET_MINUTES (180). An invalid env value
+    (non-integer, or out of range) is ignored: the next-best source applies
+    and one WARNING is logged per offending read.
     """
     raw = os.environ.get(BROKER_SERVER_UTC_OFFSET_MINUTES_ENV)
-    if raw is None:
-        return BROKER_SERVER_UTC_OFFSET_MINUTES
-    if not _BROKER_OFFSET_RE.match(raw):
-        _logger.warning(
-            "BROKER_OFFSET_INVALID_ENV %s=%r is not an integer; keeping default %d min",
-            BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
-            raw,
-            BROKER_SERVER_UTC_OFFSET_MINUTES,
-        )
-        return BROKER_SERVER_UTC_OFFSET_MINUTES
-    value = int(raw)
-    if not 0 <= value <= 1440:
-        _logger.warning(
-            "BROKER_OFFSET_OUT_OF_RANGE %s=%d outside 0..1440; keeping default %d min",
-            BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
-            value,
-            BROKER_SERVER_UTC_OFFSET_MINUTES,
-        )
-        return BROKER_SERVER_UTC_OFFSET_MINUTES
-    return value
+    if raw is not None:
+        if not _BROKER_OFFSET_RE.match(raw):
+            _logger.warning(
+                "BROKER_OFFSET_INVALID_ENV %s=%r is not an integer; ignoring env override",
+                BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
+                raw,
+            )
+        else:
+            value = int(raw)
+            if not 0 <= value <= 1440:
+                _logger.warning(
+                    "BROKER_OFFSET_OUT_OF_RANGE %s=%d outside 0..1440; ignoring env override",
+                    BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
+                    value,
+                )
+            else:
+                return value
+    adopted = _BROKER_OFFSET_AUTODETECT.current_offset_minutes()
+    if adopted is not None:
+        return adopted
+    return BROKER_SERVER_UTC_OFFSET_MINUTES
+
+
+class _BrokerOffsetAutoDetector:
+    """Adopts the broker server-UTC offset from the LIVE tick/bar stream.
+
+    MT5 tick/bar epochs are server-wall-clock seconds. The correct UTC
+    conversion subtracts the SERVER's current UTC offset — which changes when
+    the broker switches DST (EEST +3 -> EET +2) or when the operator re-points
+    NSE at a different broker. The static default (180) silently poisons every
+    timestamp after such a transition: charts land an hour in the past and the
+    freshness gate freezes the engine (BLOCKED_BY_STALE) — observed live on
+    the v9.0.20 install on 2026-11-04 with MetaQuotes-Demo on winter time.
+
+    Detection law: while the broker stream ADVANCES in real time, the newest
+    raw epoch minus the real UTC wall clock IS the offset. A stale stream
+    (market closed, frozen feed) proves nothing and is never adopted. An
+    explicit env override always wins (get_broker_server_utc_offset_minutes
+    never consults the detector when the operator pinned the env var).
+    """
+
+    #: Consecutive agreeing candidates required before adoption.
+    ADOPT_AFTER_AGREEING = 3
+    #: The stream must advance by more than 0 and at most this many seconds
+    #: between consecutive observations to count as "advancing in real time".
+    ADVANCE_MAX_SECONDS = 120.0
+    #: The newest observation must be this close to real "now" (under the
+    #: candidate offset) to prove liveness — kills the market-closed trap.
+    LIVENESS_WINDOW_SECONDS = 90.0
+    #: Only adopt when the candidate disagrees with the active offset by at
+    #: least this much (prevents flapping on arrival-latency jitter).
+    ADOPT_DELTA_MINUTES = 30
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.RLock()
+        self._adopted_minutes: int | None = None
+        self._last_epoch: float | None = None
+        self._candidate_minutes: int | None = None
+        self._agreeing = 0
+
+    def note_broker_epoch(self, epoch_seconds: float | int | None) -> None:
+        """Observe one raw broker epoch (hot path — every conversion feeds it).
+
+        Never raises and never blocks the caller beyond the mutex: a broken
+        detector must never take the tick path down.
+        """
+        if epoch_seconds is None:
+            return
+        try:
+            epoch = float(epoch_seconds)
+        except (TypeError, ValueError):
+            return
+        if math.isnan(epoch) or math.isinf(epoch) or epoch <= 0:
+            return
+        with self._lock:
+            previous = self._last_epoch
+            self._last_epoch = epoch
+            if previous is None or epoch <= previous:
+                # Not advancing (stale/backwards) — proves nothing about liveness.
+                self._candidate_minutes = None
+                self._agreeing = 0
+                return
+            advance = epoch - previous
+            if advance > self.ADVANCE_MAX_SECONDS:
+                self._candidate_minutes = None
+                self._agreeing = 0
+                return
+            import time as _time
+
+            candidate = round((epoch - _time.time()) / 60.0)
+            if not 0 <= candidate <= 1440:
+                self._candidate_minutes = None
+                self._agreeing = 0
+                return
+            # Liveness: the observation must be fresh under the candidate.
+            if abs(epoch - candidate * 60 - _time.time()) > self.LIVENESS_WINDOW_SECONDS:
+                self._candidate_minutes = None
+                self._agreeing = 0
+                return
+            active = (
+                self._adopted_minutes
+                if self._adopted_minutes is not None
+                else BROKER_SERVER_UTC_OFFSET_MINUTES
+            )
+            if abs(candidate - active) < self.ADOPT_DELTA_MINUTES:
+                # Agrees with what is already in force — nothing to correct.
+                self._candidate_minutes = None
+                self._agreeing = 0
+                return
+            if candidate == self._candidate_minutes:
+                self._agreeing += 1
+            else:
+                self._candidate_minutes = candidate
+                self._agreeing = 1
+            if self._agreeing >= self.ADOPT_AFTER_AGREEING:
+                old = active
+                self._adopted_minutes = candidate
+                self._candidate_minutes = None
+                self._agreeing = 0
+                _logger.warning(
+                    "BROKER_OFFSET_AUTO_CORRECTED old_minutes=%s new_minutes=%d "
+                    "(server UTC offset re-detected from the live broker stream; "
+                    "set %s to pin it explicitly)",
+                    old,
+                    candidate,
+                    BROKER_SERVER_UTC_OFFSET_MINUTES_ENV,
+                )
+
+    def current_offset_minutes(self) -> int | None:
+        with self._lock:
+            return self._adopted_minutes
+
+    def reset(self) -> None:
+        """Test/ops seam: forget the adopted offset and in-flight candidate."""
+        with self._lock:
+            self._adopted_minutes = None
+            self._candidate_minutes = None
+            self._agreeing = 0
+            self._last_epoch = None
+
+
+_BROKER_OFFSET_AUTODETECT = _BrokerOffsetAutoDetector()
 
 
 def detect_server_utc_offset_minutes(
@@ -91,7 +215,9 @@ def detect_server_utc_offset_minutes(
 ) -> int:
     """Derive the broker server-UTC offset from two known points (PURE).
 
-    Contract (audit G1 detection helper; NOT wired into the live engine):
+    Contract (audit G1 detection helper; the LIVE engine re-derives the same
+    quantity continuously via _BrokerOffsetAutoDetector, which watches the
+    raw broker stream through broker_epoch_to_utc):
       * terminal_now_utc  - the terminal-reported server wall clock rendered
         as if it were UTC, e.g. from a terminal_info()/server-clock read
         (naive or UTC-tagged; naive is treated as UTC).
@@ -140,13 +266,18 @@ def broker_epoch_to_utc(epoch: float | int | None) -> datetime | None:
     if epoch is None:
         return None
     try:
-        epoch = float(epoch)
+        epoch_f = float(epoch)
     except (TypeError, ValueError):
         return None
-    if math.isnan(epoch) or math.isinf(epoch):
+    if math.isnan(epoch_f) or math.isinf(epoch_f):
         return None
+    # Feed the auto-detector the RAW server epoch (pre-conversion): while the
+    # stream advances in real time this re-derives the server's current UTC
+    # offset and self-corrects broker DST transitions. Never raises.
+    with contextlib.suppress(Exception):
+        _BROKER_OFFSET_AUTODETECT.note_broker_epoch(epoch_f)
     try:
-        return datetime.fromtimestamp(epoch - get_broker_server_utc_offset_minutes() * 60, tz=UTC)
+        return datetime.fromtimestamp(epoch_f - get_broker_server_utc_offset_minutes() * 60, tz=UTC)
     except (OverflowError, OSError, ValueError):
         return None
 

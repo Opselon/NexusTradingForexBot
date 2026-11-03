@@ -159,6 +159,7 @@ class InferenceService:
         # mapping shadow70 and the debug feature matrix already use) is the
         # single projection for live inference.
         news10: list[float]
+        news_ctx_available = False
         try:
             from nexus_scalp.shadow.shadow70.news_provider import build_news_10
 
@@ -177,8 +178,10 @@ class InferenceService:
                 from nexus_scalp.governance.alignment import vectorize_news_context
 
                 news10, _ = build_news_10(vectorize_news_context(news_ctx))
+                news_ctx_available = True
         except Exception:
             news10 = [0.0] * 10
+            news_ctx_available = False
         _t_news = _time.perf_counter()
 
         # Liquidity 10D (indices 60..69): real, causal, causality-checked.
@@ -213,6 +216,20 @@ class InferenceService:
             vec70 = build_70d_vector(base50, family_10=news10, liquidity_10=liq10)
         except Exception as e:
             raise RuntimeError(f"70D assembly failed: {e}") from e
+        # DEBUG-TRUTH (70D panel): publish the EXACT tensor this inference
+        # consumes plus the per-family source statuses, so /api/debug/features
+        # renders what the model really sees (news/liquidity families were
+        # rendered UNAVAILABLE from the base-50 fallback vector even while the
+        # 70D champion served live values — the operator saw a ready model
+        # reported as not ready).
+        self._last_live_tensor_values = [float(v) for v in vec70]
+        self._last_news10_values = [float(v) for v in news10]
+        self._last_liq10_values = [float(v) for v in liq10]
+        # Family truth comes from the SOURCES (context present / governor
+        # causal verdict), never from the values: a legitimately quiet news
+        # tape is available-and-zero, not unavailable.
+        self._last_news_family_available = bool(news_ctx_available)
+        self._last_liquidity_family_available = causal == "VALID"
         _t_asm = _time.perf_counter()
         try:
             from nexus_scalp.features.schema_contract import (
