@@ -865,6 +865,24 @@ def _run_engine_locked(
                 border_style="yellow",
             )
         )
+    # Early logging configuration: ensure log directory and files exist
+    # so all pre-flight events (migrations, model provisioning, data bootstrap)
+    # are captured in logs/ instead of being lost if a pre-flight step exits.
+    try:
+        from nexus_scalp.observability.logging import configure_logging
+        from nexus_scalp.release.paths import get_engine_log_root
+
+        configure_logging(
+            log_level=os.getenv("NSE_LOG_LEVEL", "INFO").strip().upper(),
+            json_format=False,
+            log_to_file=True,
+            log_file_path=get_engine_log_root(),
+        )
+    except Exception as early_log_err:
+        logger.debug(
+            "[BOOT] event=EARLY_LOGGING_SETUP_FAILED error_type=%s",
+            type(early_log_err).__name__,
+        )
     # TASK-10 startup migration gate: apply safe pending schema migrations
     # BEFORE the engine enters READY (§6/§7). Same canonical engine as `nexus db`.
     try:

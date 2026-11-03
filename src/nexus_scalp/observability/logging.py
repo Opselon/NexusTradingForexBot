@@ -842,7 +842,15 @@ def configure_logging(
         retention_days: Per-severity retention overrides (defaults above).
     """
     numeric_level = getattr(logging, str(log_level).upper(), logging.INFO)
-    base_dir = Path(log_file_path) if log_file_path else LOG_DIR
+    if log_file_path is not None:
+        base_dir = Path(log_file_path)
+    else:
+        try:
+            from nexus_scalp.release.paths import get_engine_log_root
+
+            base_dir = get_engine_log_root()
+        except Exception:
+            base_dir = LOG_DIR
     _set_state(base_dir, retention_days)
 
     _configure_stdout()

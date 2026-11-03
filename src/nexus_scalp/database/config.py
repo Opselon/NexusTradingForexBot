@@ -341,7 +341,7 @@ class DatabaseConfig:
             # it here is safe and makes to_dict's include_secret_ref contract
             # unnecessary for the read path.
             cfg = cls(
-                provider=DatabaseProvider.parse(raw.get("provider")),
+                provider=DatabaseProvider.parse(raw.get("provider") or "postgresql"),
                 domain=raw.get("domain") or domain,
                 host=str(raw.get("host") or ""),
                 port=int(raw.get("port") or 0),
@@ -510,6 +510,7 @@ def load_database_config(
         try:
             db = SettingsDatabase(db_path=Path(settings_db_path) if settings_db_path else None)
             prov = db.get(PROVIDER_SETTING_KEY)
+            selected = None
             if prov is not None:
                 selected = DatabaseProvider.parse(prov.value)
                 if selected.is_postgresql:
@@ -542,7 +543,7 @@ def load_database_config(
                         f"{type(parsed).__name__}."
                     )
                 pg = DatabaseConfig.from_dict(parsed, domain)
-                if pg.is_postgresql:
+                if (selected is None or selected.is_postgresql) and pg.is_postgresql:
                     pg.domain = domain
                     if not pg.sqlite_path:
                         pg.sqlite_path = cfg.sqlite_path

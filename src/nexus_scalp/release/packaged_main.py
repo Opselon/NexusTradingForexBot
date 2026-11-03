@@ -26,6 +26,18 @@ from nexus_scalp.platform.windows_identity import (
 
 apply_windows_identity()
 
+try:
+    import os
+    from nexus_scalp.observability.logging import configure_logging
+    from nexus_scalp.release.paths import get_engine_log_root
+
+    configure_logging(
+        log_level=os.getenv("NSE_LOG_LEVEL", "INFO").strip().upper(),
+        log_file_path=get_engine_log_root(),
+    )
+except Exception:  # anti-crash: allow (early bootstrap logging failure must not kill launch)
+    pass
+
 from nexus_scalp.cli.main import app  # noqa: E402
 from nexus_scalp.release.metadata import CLI_PROGRAM_NAME  # noqa: E402
 
