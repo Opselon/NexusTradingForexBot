@@ -231,8 +231,15 @@ def test_install_includes_locked_application_stack(monkeypatch, tmp_path):
 
     monkeypatch.setattr(te.subprocess, "run", run)
     manager.install("cpu")
-    assert len(calls) == 2
-    app = calls[1]
+    # training_env does `import subprocess`, so te.subprocess IS the global
+    # module: `calls` also captures unrelated subprocess traffic racing
+    # through the same xdist worker (e.g. lazy git provenance probes from
+    # release.metadata on a CI runner). Scope the contract to the manager's
+    # own pip invocations — exactly two: the backend variant and the locked
+    # application runtime.
+    pip_calls = [c for c in calls if c[:3] == ["/env/python", "-m", "pip"]]
+    assert len(pip_calls) == 2
+    app = pip_calls[1]
     assert app[:3] == ["/env/python", "-m", "pip"]
     assert "--require-virtualenv" in app
     assert app[app.index("--index-url") + 1] == "https://pypi.org/simple"
