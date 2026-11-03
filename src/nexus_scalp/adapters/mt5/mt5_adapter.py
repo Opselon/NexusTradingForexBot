@@ -1008,6 +1008,9 @@ class DirectMT5Adapter(IMT5Port):
         }
         mt5_tf = tf_map.get(timeframe.upper(), mt5.TIMEFRAME_M1)
         req_count = max(1, min(int(count), 100_000))
+        resolved_sym = self.resolve_symbol(symbol) or symbol
+        with contextlib.suppress(Exception):
+            mt5.symbol_select(resolved_sym, True)
 
         if from_utc is not None:
             from_dt = normalize_utc(from_utc)
@@ -1015,21 +1018,45 @@ class DirectMT5Adapter(IMT5Port):
                 return []
             raw, diag = run_mt5_call(
                 "copy_rates_range",
-                lambda: mt5.copy_rates_range(symbol, mt5_tf, from_dt, datetime.now(UTC)),
+                lambda: mt5.copy_rates_range(resolved_sym, mt5_tf, from_dt, datetime.now(UTC)),
                 mt5_module=mt5,
                 context={
-                    "symbol": symbol,
+                    "symbol": resolved_sym,
                     "timeframe": str(timeframe).upper(),
                     "requested_bars": req_count,
                 },
             )
         else:
+
+            def _copy_chunked() -> Any:
+                chunk_size = 50_000
+                if req_count <= chunk_size:
+                    return mt5.copy_rates_from_pos(resolved_sym, mt5_tf, 0, req_count)
+                chunks: list[Any] = []
+                fetched = 0
+                while fetched < req_count:
+                    req = min(chunk_size, req_count - fetched)
+                    r = mt5.copy_rates_from_pos(resolved_sym, mt5_tf, fetched, req)
+                    if r is None or len(r) == 0:
+                        break
+                    chunks.append(r)
+                    fetched += len(r)
+                    if len(r) < req:
+                        break
+                if not chunks:
+                    return None
+                if len(chunks) == 1:
+                    return chunks[0]
+                import numpy as np
+
+                return np.concatenate(list(reversed(chunks)))
+
             raw, diag = run_mt5_call(
                 "copy_rates_from_pos",
-                lambda: mt5.copy_rates_from_pos(symbol, mt5_tf, 0, req_count),
+                _copy_chunked,
                 mt5_module=mt5,
                 context={
-                    "symbol": symbol,
+                    "symbol": resolved_sym,
                     "timeframe": str(timeframe).upper(),
                     "requested_bars": req_count,
                 },
