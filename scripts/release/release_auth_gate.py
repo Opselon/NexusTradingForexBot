@@ -98,8 +98,43 @@ def _fetch_json(url: str, token: str, timeout: int) -> dict:
             "User-Agent": "nse-release-gate",
         },
     )
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    last_exc: Exception | None = None
+    import time
+
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_exc = exc
+            time.sleep(1.0 * (attempt + 1))
+
+    # Fallback to curl.exe if Python SSL handshake fails on Windows
+    import shutil
+    import subprocess
+
+    curl = shutil.which("curl.exe") or shutil.which("curl")
+    if curl:
+        cmd = [
+            curl,
+            "-s",
+            "--max-time",
+            str(timeout),
+            "-H",
+            f"Authorization: Bearer {token}",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "User-Agent: nse-release-gate",
+            url,
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode == 0 and res.stdout.strip():
+            try:
+                return json.loads(res.stdout)
+            except Exception as j_exc:
+                last_exc = j_exc
+    raise last_exc or RuntimeError("fetch failed")
 
 
 def collect_check_runs(repo: str, sha: str, token: str, timeout: int = 30) -> list[dict]:
