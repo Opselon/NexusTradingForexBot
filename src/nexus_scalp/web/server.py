@@ -266,7 +266,13 @@ def _recent_predictions_cached(app: Any, engine: Any) -> list[dict[str, Any]]:
     if not isinstance(store, dict):
         store = {"high_water": -1, "rows": []}
         app.state._predictions_memo = store
-    repo = engine.audit if engine is not None else AuditRepository()
+    if engine is not None:
+        repo = engine.audit
+    else:
+        repo = getattr(app.state, "_standalone_audit_repo", None)
+        if repo is None:
+            repo = AuditRepository()
+            app.state._standalone_audit_repo = repo
     try:
         hw = repo.ledger_high_water_mark()
     except Exception:
@@ -3829,106 +3835,128 @@ def create_app(engine_ref: Any = None) -> FastAPI:
             sse_diag["connection"] = "CONNECTED"
             sse_diag["connected_at"] = datetime.now(UTC).isoformat()
             sse_diag["reconnect_count"] = int(sse_diag.get("reconnect_count", 0)) + 1
-            while True:
-                if await request.is_disconnected():
-                    sse_diag["connection"] = "DISCONNECTED"
-                    break
-                try:
-                    payload = get_system_state()
-                    version = int(payload.get("state_version") or 0)
-                    # Emit a full-state event at connect, on first tick after
-                    # an idle gap, and every 30 cycles (heartbeat cadence).
-                    is_full = version <= last_full or last_full == 0 or (version - last_full) > 30
-                    if is_full:
-                        event_name = "state"
-                        last_full = version
-                    else:
-                        event_name = "tick"
-                        # Incremental: drop the heavyweight lists the UI keeps
-                        # between full snapshots (bars/features/predictions).
-                        payload = dict(payload)
-                        payload.pop("bars", None)
-                        payload.pop("features", None)
-                        payload.pop("predictions", None)
-
+            # HEADERS-FIRST (SSE-CONNECT-001): flush the response start and an
+            # immediate keepalive frame BEFORE the first heavy snapshot. Two
+            # hard hangs lived below this point: (a) request.is_disconnected()
+            # never resolves for a request wrapped by _TokenAuthMiddleware
+            # (BaseHTTPMiddleware does not proxy disconnect messages into the
+            # generator's receive channel), and (b) the first full snapshot
+            # build blocks the first chunk for seconds, so clients behind the
+            # same middleware saw no response headers at all — EventSource
+            # timed out and every dashboard showed "Connection lost" even
+            # while REST polling stayed healthy. Client disconnects are now
+            # handled by generator cancellation (finally), the standard
+            # Starlette path, instead of the is_disconnected probe.
+            yield "event: heartbeat\ndata: {}\n\n"
+            try:
+                while True:
                     try:
-                        frame = canonical_json(payload)
-                    except TypeError as ser_err:
-                        # Structured, observable serialization diagnostic —
-                        # never a silent drop (BUG-110): identify which field
-                        # failed and let recoverable frames continue.
-                        failed_fields = _find_non_json_fields(payload)
-                        # CodeQL #76 (information exposure): wire carries a
-                        # generic code + field names; detail stays in the log.
-                        diag = {
-                            "event": "SSE_SERIALIZATION_ERROR",
-                            "correlation_id": f"sse-{version}",
-                            "event_type": event_name,
-                            "error": "SSE_SERIALIZATION_ERROR",
-                            "failed_fields": failed_fields,
-                        }
-                        logger.error(
-                            "[SSE] event=SERIALIZATION_ERROR version=%s fields=%s error=%r",
-                            version,
-                            failed_fields,
-                            ser_err,
+                        payload = get_system_state()
+                        version = int(payload.get("state_version") or 0)
+                        # Emit a full-state event at connect, on first tick after
+                        # an idle gap, and every 30 cycles (heartbeat cadence).
+                        is_full = (
+                            version <= last_full or last_full == 0 or (version - last_full) > 30
                         )
-                        # Record in the debug console diagnostics (brief 27).
-                        sse_diag["serialization_errors"] = (
-                            int(sse_diag.get("serialization_errors", 0)) + 1
-                        )
-                        sse_diag["serialization_error"] = {
-                            "correlation_id": diag["correlation_id"],
-                            "error": "SSE_SERIALIZATION_ERROR",
-                            "failed_fields": failed_fields,
-                            "event_type": event_name,
-                        }
-                        frame = canonical_json(diag)
-                        # Stream the diagnostic as a dedicated event so the
-                        # UI can surface it; do NOT send corrupted JSON.
-                        yield f"event: error\ndata: {frame}\n\n"
-                        await asyncio.sleep(0.2)
-                        continue
-                    # SSE observability counters (brief 27).
-                    sse_diag["last_event"] = event_name
-                    sse_diag["event_count"] = int(sse_diag.get("event_count", 0)) + 1
-                    sse_diag["last_latency_ms"] = None
-                    yield f"event: {event_name}\ndata: {frame}\n\n"
-                    # Keep a bounded replay ring for reconnect resynchronization.
-                    app.state.stream_history.append(
-                        {"event": event_name, "version": version, "frame": frame}
-                    )
+                        if is_full:
+                            event_name = "state"
+                            last_full = version
+                        else:
+                            event_name = "tick"
+                            # Incremental: drop the heavyweight lists the UI keeps
+                            # between full snapshots (bars/features/predictions).
+                            payload = dict(payload)
+                            payload.pop("bars", None)
+                            payload.pop("features", None)
+                            payload.pop("predictions", None)
 
-                    # Broadcast to active WebSocket clients too.
-                    for ws in list(active_connections):
                         try:
-                            await ws.send_json(
-                                {"event": event_name, **payload}
-                                if event_name == "tick"
-                                else payload
+                            frame = canonical_json(payload)
+                        except TypeError as ser_err:
+                            # Structured, observable serialization diagnostic —
+                            # never a silent drop (BUG-110): identify which field
+                            # failed and let recoverable frames continue.
+                            failed_fields = _find_non_json_fields(payload)
+                            # CodeQL #76 (information exposure): wire carries a
+                            # generic code + field names; detail stays in the log.
+                            diag = {
+                                "event": "SSE_SERIALIZATION_ERROR",
+                                "correlation_id": f"sse-{version}",
+                                "event_type": event_name,
+                                "error": "SSE_SERIALIZATION_ERROR",
+                                "failed_fields": failed_fields,
+                            }
+                            logger.error(
+                                "[SSE] event=SERIALIZATION_ERROR version=%s fields=%s error=%r",
+                                version,
+                                failed_fields,
+                                ser_err,
                             )
-                        except Exception as exc:
-                            # WIN-DISCONNECT-001: a client that has gone away
-                            # is dropped silently — this is the ordinary
-                            # disconnect path for a live dashboard socket.
-                            # Unexpected failures (protocol/encoding errors,
-                            # server-side faults) still reach the structured
-                            # web-error log so they never disappear.
-                            if not is_transport_disconnect_exception(exc):
-                                log_web_error(
-                                    logger,
-                                    "/api",
-                                    None,
-                                    exc,
-                                    context={"msg": "WebSocket broadcast failed"},
-                                )
-                            active_connections.discard(ws)
-                except Exception as e:
-                    log_web_error(
-                        logger, "/api", None, e, context={"msg": "SSE stream serialization warning"}
-                    )
+                            # Record in the debug console diagnostics (brief 27).
+                            sse_diag["serialization_errors"] = (
+                                int(sse_diag.get("serialization_errors", 0)) + 1
+                            )
+                            sse_diag["serialization_error"] = {
+                                "correlation_id": diag["correlation_id"],
+                                "error": "SSE_SERIALIZATION_ERROR",
+                                "failed_fields": failed_fields,
+                                "event_type": event_name,
+                            }
+                            frame = canonical_json(diag)
+                            # Stream the diagnostic as a dedicated event so the
+                            # UI can surface it; do NOT send corrupted JSON.
+                            yield f"event: error\ndata: {frame}\n\n"
+                            await asyncio.sleep(0.2)
+                            continue
+                        # SSE observability counters (brief 27).
+                        sse_diag["last_event"] = event_name
+                        sse_diag["event_count"] = int(sse_diag.get("event_count", 0)) + 1
+                        sse_diag["last_latency_ms"] = None
+                        yield f"event: {event_name}\ndata: {frame}\n\n"
+                        # Keep a bounded replay ring for reconnect resynchronization.
+                        app.state.stream_history.append(
+                            {"event": event_name, "version": version, "frame": frame}
+                        )
 
-                await asyncio.sleep(0.2)
+                        # Broadcast to active WebSocket clients too.
+                        for ws in list(active_connections):
+                            try:
+                                await ws.send_json(
+                                    {"event": event_name, **payload}
+                                    if event_name == "tick"
+                                    else payload
+                                )
+                            except Exception as exc:
+                                # WIN-DISCONNECT-001: a client that has gone away
+                                # is dropped silently — this is the ordinary
+                                # disconnect path for a live dashboard socket.
+                                # Unexpected failures (protocol/encoding errors,
+                                # server-side faults) still reach the structured
+                                # web-error log so they never disappear.
+                                if not is_transport_disconnect_exception(exc):
+                                    log_web_error(
+                                        logger,
+                                        "/api",
+                                        None,
+                                        exc,
+                                        context={"msg": "WebSocket broadcast failed"},
+                                    )
+                                active_connections.discard(ws)
+                    except Exception as e:
+                        log_web_error(
+                            logger,
+                            "/api",
+                            None,
+                            e,
+                            context={"msg": "SSE stream serialization warning"},
+                        )
+
+                    await asyncio.sleep(0.2)
+            finally:
+                # Generator cancellation (client went away / response closed) is
+                # the Starlette disconnect path behind _TokenAuthMiddleware —
+                # the is_disconnected() probe never fires there (see above).
+                sse_diag["connection"] = "DISCONNECTED"
 
         return StreamingResponse(event_generator(), media_type="text/event-stream")
 

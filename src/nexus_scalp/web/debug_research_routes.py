@@ -169,29 +169,77 @@ def register_debug_research_routes(
         except Exception:
             _debug_feature_names = list(FEATURE_NAMES)
 
+        # DEBUG-TRUTH (70D panel): when a 70D champion is serving, the values
+        # below MUST be the exact assembled inference tensor
+        # (engine._last_live_tensor_values: base50 + news10 + liquidity10)
+        # with the families' real source statuses — NOT the base-50 feature
+        # vector zero-padded to 70. Serving the padded base vector rendered
+        # every news/liquidity dimension as 0.0/UNAVAILABLE while the 70D
+        # model actually consumed live family values, so the operator saw a
+        # ready model reported as not ready.
+        eff_dim = len(_debug_feature_names)
+        tensor_values: list[Any] | None = None
+        family_status: dict[str, Any] | None = None
+        if eff_dim == 70 and engine is not None:
+            _tensor = getattr(engine, "_last_live_tensor_values", None)
+            if isinstance(_tensor, list) and len(_tensor) == 70:
+                tensor_values = _tensor
+                news_ok = bool(getattr(engine, "_last_news_family_available", False))
+                liq_ok = bool(getattr(engine, "_last_liquidity_family_available", False))
+                family_status = {
+                    "base": {"available": True, "status": "FEATURE_AVAILABLE"},
+                    "news": {
+                        "available": news_ok,
+                        "status": "FEATURE_AVAILABLE" if news_ok else "FEATURE_UNAVAILABLE",
+                    },
+                    "liquidity": {
+                        "available": liq_ok,
+                        "status": "FEATURE_AVAILABLE" if liq_ok else "FEATURE_UNAVAILABLE",
+                    },
+                    "source": "LIVE_INFERENCE_TENSOR",
+                }
+
+        def _family_of(idx: int) -> tuple[str, bool]:
+            if eff_dim == 70 and family_status is not None:
+                if idx >= 60:
+                    return "liquidity", bool(family_status["liquidity"]["available"])
+                if idx >= 50:
+                    return "news", bool(family_status["news"]["available"])
+                return "base", True
+            return "base", True
+
         for idx, name in enumerate(_debug_feature_names):
-            raw = raw_values[idx] if idx < len(raw_values) else 0.0
+            _source = tensor_values if tensor_values is not None else raw_values
+            raw = _source[idx] if idx < len(_source) else 0.0
             value, status = _classify_feature(raw)
+            family_name, family_available = _family_of(idx)
             if status == "NAN":
                 nan_count += 1
             elif status == "INF":
                 inf_count += 1
-            features_payload.append(
-                {
-                    "index": idx,
-                    "key": f"feat_{idx}",
-                    "name": name,
-                    "value": value,
-                    "status": status,
-                    "is_valid": status == "VALID",
-                }
-            )
+            entry: dict[str, Any] = {
+                "index": idx,
+                "key": f"feat_{idx}",
+                "name": name,
+                "value": value,
+                "status": status,
+                "is_valid": status == "VALID",
+                "family": family_name,
+            }
+            if eff_dim == 70 and family_status is not None and not family_available:
+                # Honest per-dimension unavailability: the dimension exists in
+                # the schema but its family producer had no data for this
+                # inference — the value on display is the actual neutral fill
+                # the model consumed, never a fabricated reading.
+                entry["family_available"] = False
+                entry["source_status"] = "FEATURE_UNAVAILABLE"
+            features_payload.append(entry)
 
         # A snapshot older than 15s means the tick pipeline is not feeding the model.
         STALE_THRESHOLD_SEC = 15.0
         is_stale = (age_seconds is None) or (age_seconds > STALE_THRESHOLD_SEC)
 
-        return {
+        payload: dict[str, Any] = {
             "engine_online": engine_online,
             "feature_count": len(features_payload),
             "features": features_payload,
@@ -204,6 +252,10 @@ def register_debug_research_routes(
             "is_stale": is_stale,
             "stale_threshold_seconds": STALE_THRESHOLD_SEC,
         }
+        if family_status is not None:
+            payload["vector_source"] = "LIVE_INFERENCE_TENSOR"
+            payload["family_status"] = family_status
+        return payload
 
     @app.post("/api/debug/model-test")
     def post_debug_model_test(req: ModelTestRequest) -> dict[str, Any]:
