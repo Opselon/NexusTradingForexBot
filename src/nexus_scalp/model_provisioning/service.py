@@ -452,6 +452,27 @@ class FirstRunCoordinator:
         under the slot lock and returns the servability receipt; the
         coordinator must trust that receipt instead of re-probing afterwards
         (a post-lock probe races other writers and could never roll back)."""
+        # SECURITY GATE: official model downloads require platform-verified
+        # GitHub star status (fail-closed, live recheck; see platform_link).
+        from nexus_scalp.platform_link import (
+            LinkStatus,
+            PlatformAuthorizationRequiredError,
+            VerificationState,
+            get_platform_link_service,
+        )
+
+        try:
+            get_platform_link_service().require_download_authorization()
+        except PlatformAuthorizationRequiredError:
+            raise
+        except Exception as gate_exc:  # storage/infra failure -> fail CLOSED
+            logger.warning("[FIRST-RUN] event=PLATFORM_GATE_ERROR error=%s", gate_exc)
+            raise PlatformAuthorizationRequiredError(
+                LinkStatus(
+                    state=VerificationState.VERIFICATION_UNAVAILABLE,
+                    reason="verification state could not be read; retry",
+                )
+            ) from gate_exc
         write_provisioner_state(LifecycleState.DOWNLOADING.value, path="official")
         try:
             verified = self.official.download_and_verify(
@@ -535,6 +556,15 @@ class FirstRunCoordinator:
                 logger.warning(
                     "[FIRST-RUN] event=OFFICIAL_UNAVAILABLE fallback=starter error=%s",
                     str(exc)[:200],
+                )
+            except Exception as exc:  # platform gate denial — never a bypass
+                from nexus_scalp.platform_link import PlatformAuthorizationRequiredError
+
+                if not isinstance(exc, PlatformAuthorizationRequiredError):
+                    raise
+                logger.warning(
+                    "[FIRST-RUN] event=OFFICIAL_UNAUTHORIZED fallback=starter state=%s",
+                    exc.status.state.value,
                 )
         prov = rb.mint_starter_bundle(serving)
         if prov.get("provisioned"):

@@ -45,6 +45,7 @@ from nexus_scalp.model_provisioning import (
     service as prov,
 )
 from nexus_scalp.observability.logging import get_logger
+from nexus_scalp.platform_link import PlatformAuthorizationRequiredError
 from nexus_scalp.position_adviser.paths import resolve_within_trusted_roots
 
 logger = get_logger("nexus_scalp.web.provisioning_routes")
@@ -513,6 +514,69 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Mount the provisioning endpoints on the web app (same seams as peers)."""
     router = app
 
+    # ------------------------------------------------------------------
+    # Platform link (GitHub star verification via NSE-Platform).
+    # All endpoints ride the standard web-auth middleware; the browser-open
+    # step happens client-side (user consent), the platform state lives here.
+    # ------------------------------------------------------------------
+    @router.get("/api/provisioning/platform")
+    def provisioning_platform_status() -> dict[str, Any]:
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            status = get_platform_link_service().status().as_dict()
+            return {"success": True, "platform": status}
+        except Exception as exc:
+            _log_err(exc, "platform status failed", endpoint="/api/provisioning/platform")
+            return _err(code="PLATFORM_STATUS_ERROR")
+
+    @router.post("/api/provisioning/platform/connect/start")
+    def provisioning_platform_connect_start() -> dict[str, Any]:
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            svc = get_platform_link_service()
+            status = svc.start_connect()
+            # Browser opening is the CLIENT's decision (user consent); the
+            # backend only hands back the URL + short code.
+            return {"success": True, "platform": status.as_dict()}
+        except Exception as exc:
+            _log_err(exc, "platform connect start failed", endpoint="/api/provisioning/platform/connect/start")
+            return _err(code="PLATFORM_CONNECT_START_ERROR")
+
+    @router.post("/api/provisioning/platform/connect/poll")
+    def provisioning_platform_connect_poll() -> dict[str, Any]:
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            status = get_platform_link_service().poll_once().as_dict()
+            return {"success": True, "platform": status}
+        except Exception as exc:
+            _log_err(exc, "platform poll failed", endpoint="/api/provisioning/platform/connect/poll")
+            return _err(code="PLATFORM_CONNECT_POLL_ERROR")
+
+    @router.post("/api/provisioning/platform/reverify")
+    def provisioning_platform_reverify() -> dict[str, Any]:
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            status = get_platform_link_service().reverify().as_dict()
+            return {"success": True, "platform": status}
+        except Exception as exc:
+            _log_err(exc, "platform reverify failed", endpoint="/api/provisioning/platform/reverify")
+            return _err(code="PLATFORM_REVERIFY_ERROR")
+
+    @router.post("/api/provisioning/platform/disconnect")
+    def provisioning_platform_disconnect() -> dict[str, Any]:
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            status = get_platform_link_service().disconnect().as_dict()
+            return {"success": True, "platform": status}
+        except Exception as exc:
+            _log_err(exc, "platform disconnect failed", endpoint="/api/provisioning/platform/disconnect")
+            return _err(code="PLATFORM_DISCONNECT_ERROR")
+
     @router.get("/api/provisioning/status")
     def provisioning_status() -> dict[str, Any]:
         try:
@@ -751,6 +815,22 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 coord = prov.FirstRunCoordinator(official=OfficialBundleSource(base))
             out = coord.download_official()
             return {"success": True, "ok": bool(out.get("servable")), **out}
+        except PlatformAuthorizationRequiredError as exc:
+            # Fail-closed: no official download without platform-verified star.
+            logger.info(
+                "[PROVISION-WEB] event=OFFICIAL_DENIED state=%s", exc.status.state.value
+            )
+            return _err(
+                code=PlatformAuthorizationRequiredError.code,
+                state=exc.status.state.value,
+                github_login=exc.status.github_login,
+                repository=exc.status.repository,
+                message=exc.message,
+                remedy=(
+                    "Use the GitHub verification panel above: connect, star "
+                    "Opselon/NexusTradingForexBot, verify, then retry the download."
+                ),
+            )
         except OfficialBundleError as exc:
             # Fail-closed: nothing was installed. The client gets the stable
             # step CODE (safe enum); the full verification detail (URLs,

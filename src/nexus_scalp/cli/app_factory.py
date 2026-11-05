@@ -156,6 +156,15 @@ app.add_typer(
     name="risk",
     help="Runtime safety state: inspect and explicitly release persisted halts.",
 )
+# PLATFORM LINK (``nexus platform status|connect|verify|disconnect``) — GitHub
+# star verification via the trusted NSE-Platform; gates official model access.
+from nexus_scalp.cli.platform_commands import platform_app as _platform_app  # noqa: E402
+
+app.add_typer(
+    _platform_app,
+    name="platform",
+    help="GitHub star verification: connect, verify, disconnect (official model access).",
+)
 # MODEL STUDIO — Neural inspection, prediction, stress testing, and training
 # (ML-UI-001). LAZY (EU-03, wave-6 perf): importing this module eagerly pulled
 # nexus_scalp.web.model_studio_routes -> torch (~4s), which every CLI invocation

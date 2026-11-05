@@ -46,6 +46,7 @@ from nexus_scalp.model_provisioning import (
     OfficialBundleSource,
 )
 from nexus_scalp.model_provisioning import service as prov
+from nexus_scalp.platform_link import PlatformAuthorizationRequiredError
 from nexus_scalp.release import exit_codes as xc
 
 
@@ -218,10 +219,37 @@ def model_official_cmd(
 
 
 def official_main(*, base_url: str = "", json_mode: bool = False) -> None:
+    # SECURITY GATE (fail-closed): official downloads require platform-verified
+    # GitHub star status. The gate inside download_official is authoritative;
+    # this pre-check only upgrades the CLI UX (state panel before the attempt).
+    from nexus_scalp.cli.platform_commands import guard_official_download
+
+    guard_official_download()
     source = OfficialBundleSource(base_url or None)
     coordinator = prov.FirstRunCoordinator(official=source)
     try:
         out = coordinator.download_official()
+    except PlatformAuthorizationRequiredError as exc:
+        if json_mode:
+            _emit(
+                {
+                    "error": exc.message,
+                    "code": exc.code,
+                    "state": exc.status.state.value,
+                    "exit_code": xc.EXIT_ENVIRONMENT,
+                },
+                True,
+            )
+        else:
+            console.print(
+                _error_panel(
+                    "Official model download requires GitHub verification",
+                    exc.message,
+                    hint="Run: nexus platform connect",
+                    exit_code=xc.EXIT_ENVIRONMENT,
+                )
+            )
+        raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
     except OfficialBundleError as e:
         msg = str(e)
         if json_mode:

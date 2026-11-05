@@ -17,6 +17,7 @@ import type {
   ModelInventoryResponse,
   OfficialRequest,
   OfficialResponse,
+  PlatformResponse,
   ProvisioningEnvironmentResponse,
   ProvisioningStatusResponse,
   TrainBackend,
@@ -110,3 +111,32 @@ export const provisioningApi = {
 };
 
 export type { TrainBackend, TrainSource };
+
+// ---------------------------------------------------------------------------
+// Platform link (GitHub star verification) — same legacy RAW-JSON lane.
+// ---------------------------------------------------------------------------
+
+const PLATFORM_BASE = `${BASE}/platform`;
+
+export const platformApi = {
+  /** GET /api/provisioning/platform — cached state-machine snapshot. */
+  status: (signal?: AbortSignal): Promise<PlatformResponse> =>
+    getLegacy<PlatformResponse>(PLATFORM_BASE, signal),
+
+  /** POST .../connect/start — create the connect session (browser open is the
+   * CLIENT's consented action; the backend only returns the URL + code). */
+  connectStart: (): Promise<PlatformResponse> =>
+    send<PlatformResponse>(`${PLATFORM_BASE}/connect/start`, {}),
+
+  /** POST .../connect/poll — one poll step (pending → authorized | expired). */
+  connectPoll: (): Promise<PlatformResponse> =>
+    send<PlatformResponse>(`${PLATFORM_BASE}/connect/poll`, {}),
+
+  /** POST .../reverify — fresh platform check (authoritative). */
+  reverify: (): Promise<PlatformResponse> =>
+    send<PlatformResponse>(`${PLATFORM_BASE}/reverify`, {}),
+
+  /** POST .../disconnect — drop the local link. */
+  disconnect: (): Promise<PlatformResponse> =>
+    send<PlatformResponse>(`${PLATFORM_BASE}/disconnect`, {}),
+};

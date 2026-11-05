@@ -99,7 +99,7 @@ def test_wizard_distinguishes_configured_source_from_publication():
     assert "install includes the inference runtime" in html
 
 
-def test_coordinator_uses_transaction_result_and_cleans_download(monkeypatch, tmp_path):
+def test_coordinator_uses_transaction_result_and_cleans_download(monkeypatch, tmp_path, verified_platform_gate):
     from types import SimpleNamespace
 
     from nexus_scalp.model_provisioning import official as off
@@ -133,7 +133,7 @@ def test_coordinator_uses_transaction_result_and_cleans_download(monkeypatch, tm
     assert not stage.exists()
 
 
-def test_coordinator_install_failure_cleans_download(monkeypatch, tmp_path):
+def test_coordinator_install_failure_cleans_download(monkeypatch, tmp_path, verified_platform_gate):
     from types import SimpleNamespace
 
     from nexus_scalp.model_provisioning import official as off

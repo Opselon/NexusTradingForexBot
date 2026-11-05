@@ -62,6 +62,7 @@ import type {
 } from "../model";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
 import { DbHealthBadge } from "./DbHealthBadge";
+import { PlatformVerificationPanel } from "./PlatformVerificationPanel";
 import { shouldRenderDbHealth, useDbHealth } from "./useDbHealth";
 import {
   CANDLE_OPTIONS,
@@ -386,6 +387,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   const [installing, setInstalling] = useState<boolean>(false);
   const [installStart, setInstallStart] = useState<number | null>(null);
   const [officialBusy, setOfficialBusy] = useState<boolean>(false);
+  // Platform link gate: null = unknown (panel still loading) — the backend
+  // enforces fail-closed regardless; the button hint mirrors the state.
+  const [platformVerified, setPlatformVerified] = useState<boolean | null>(null);
   const [officialStart, setOfficialStart] = useState<number | null>(null);
   const [training, setTraining] = useState<boolean>(false);
   const [runStart, setRunStart] = useState<number | null>(null);
@@ -695,6 +699,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   }, []);
 
   const busy = installing || officialBusy || training;
+  const officialLocked = platformVerified === false;
   const busyReason = training
     ? t("provisioning.train.busy_reason", "a training run is active")
     : officialBusy
@@ -1099,6 +1104,9 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           </div>
         </Panel>
 
+        {/* --------------------------------------- platform verification */}
+        <PlatformVerificationPanel onVerifiedChange={setPlatformVerified} />
+
         {/* --------------------------------------------- official model card */}
         <Panel title={t("provisioning.official.title2", "Model Slot & Official Model")}>
           <p className="small muted">
@@ -1160,7 +1168,7 @@ export default function ProvisioningPage(_props: ShellPageProps) {
             <button
               type="button"
               className="btn"
-              disabled={busy}
+              disabled={busy || officialLocked}
               onClick={() => void onOfficial()}
               title={t(
                 "provisioning.official.btn_title",
@@ -1171,6 +1179,14 @@ export default function ProvisioningPage(_props: ShellPageProps) {
                 ? t("provisioning.official.downloading", "Downloading & verifying…")
                 : t("provisioning.official.download", "Download & verify official model")}
             </button>
+            {officialLocked ? (
+              <span className="small muted" aria-live="polite">
+                {t(
+                  "provisioning.official.locked_hint",
+                  "Locked — complete GitHub verification above to unlock official downloads.",
+                )}
+              </span>
+            ) : null}
             {officialBusy && officialStart !== null ? (
               <span className="pv-elapsed">
                 {t("provisioning.env.elapsed", "elapsed {time}", {

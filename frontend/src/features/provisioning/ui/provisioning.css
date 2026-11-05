@@ -838,3 +838,26 @@
 .pv-dbh-note {
   color: var(--text-faint);
 }
+
+/* ---------------------------------- platform verification panel ---------- */
+.pv-platform-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 10px 0 4px;
+}
+.pv-platform-row .badge .state-label { font-weight: 600; }
+.pv-platform-code {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  padding: 8px 16px;
+  margin-top: 6px;
+  display: inline-block;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-inset);
+  color: var(--text);
+}

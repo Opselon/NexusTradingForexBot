@@ -296,3 +296,44 @@ export interface ModelInventoryResponse {
   /** Present only when success is false. */
   code?: string;
 }
+
+// ---------------------------------------------------------------------------
+// Platform link (GitHub star verification via NSE-Platform)
+// ---------------------------------------------------------------------------
+
+/** The 7-state verification machine mirrored from the backend. */
+export type PlatformState =
+  | "NOT_CONNECTED"
+  | "AUTHENTICATION_PENDING"
+  | "VERIFICATION_PENDING"
+  | "STARRED_VERIFIED"
+  | "NOT_STARRED"
+  | "VERIFICATION_EXPIRED"
+  | "VERIFICATION_UNAVAILABLE";
+
+export interface PlatformStatus {
+  state: PlatformState;
+  github_login: string | null;
+  repository: string | null;
+  entitlement_state: string | null;
+  installation_id: string | null;
+  checked_at: number | null;
+  reason: string | null;
+  verification_url: string | null;
+}
+
+export interface PlatformResponse {
+  success: boolean;
+  platform?: PlatformStatus;
+  /** Present only when success is false. */
+  code?: string;
+}
+
+export interface PlatformError {
+  success: false;
+  code?: string;
+  message?: string;
+  state?: string;
+  repository?: string | null;
+  remedy?: string | null;
+}
