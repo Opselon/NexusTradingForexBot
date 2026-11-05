@@ -66,9 +66,7 @@ class DiagnosticsShipper:
             if self.queue_path.stat().st_size > MAX_QUEUE_BYTES:
                 lines = self.queue_path.read_text(encoding="utf-8").splitlines()
                 keep = lines[len(lines) // 2 :]
-                self.queue_path.write_text(
-                    "".join(line + "\n" for line in keep), encoding="utf-8"
-                )
+                self.queue_path.write_text("".join(line + "\n" for line in keep), encoding="utf-8")
         except OSError:
             logger.debug("[DIAG] queue write failed", exc_info=True)
             return
@@ -162,9 +160,7 @@ class DiagnosticsShipper:
     def start(self) -> None:
         if self._thread is not None and self._thread.is_alive():
             return
-        self._thread = threading.Thread(
-            target=self._run, name="nexus-diagnostics", daemon=True
-        )
+        self._thread = threading.Thread(target=self._run, name="nexus-diagnostics", daemon=True)
         self._thread.start()
 
     def stop(self, timeout: float = 2.0) -> None:

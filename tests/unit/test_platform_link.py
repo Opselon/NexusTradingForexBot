@@ -47,7 +47,10 @@ def isolated_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> PlatformL
     from nexus_scalp.settings.service import SettingsDatabase, SettingsService
 
     monkeypatch.setenv("NSE_USER_DATA_DIR", str(tmp_path))
-    settings = SettingsService(db=SettingsDatabase(db_path=tmp_path / "settings.db"), secret_store=SecureSecretStore(root=tmp_path))
+    settings = SettingsService(
+        db=SettingsDatabase(db_path=tmp_path / "settings.db"),
+        secret_store=SecureSecretStore(root=tmp_path),
+    )
     return PlatformLinkStore(settings=settings, secrets=SecureSecretStore(root=tmp_path))
 
 
@@ -101,9 +104,7 @@ def _client_for(handler_cls: type[BaseHTTPRequestHandler]) -> PlatformClient:
     server = _MockServer(handler_cls)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    config = PlatformLinkConfig(
-        base_url=server.url, connect_timeout=2.0, read_timeout=2.0
-    )
+    config = PlatformLinkConfig(base_url=server.url, connect_timeout=2.0, read_timeout=2.0)
     client = PlatformClient(config)
     client._server = server  # type: ignore[attr-defined] (keep alive on client)
     return client
@@ -220,7 +221,9 @@ class _FixedClient:
     def start_desktop_session(self, installation_id: str) -> dict:  # pragma: no cover
         raise AssertionError("not expected in gate tests")
 
-    def poll_desktop_session(self, session_id: str, session_secret: str) -> dict:  # pragma: no cover
+    def poll_desktop_session(
+        self, session_id: str, session_secret: str
+    ) -> dict:  # pragma: no cover
         raise AssertionError("not expected in gate tests")
 
     def client_me(self, token: str) -> dict:
@@ -242,7 +245,9 @@ def test_gate_denies_without_token(svc: PlatformLinkService) -> None:
     assert excinfo.value.status.state is VerificationState.NOT_CONNECTED
 
 
-def test_gate_allows_when_verified(svc: PlatformLinkService, isolated_store: PlatformLinkStore) -> None:
+def test_gate_allows_when_verified(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
     isolated_store.save_client_token("nsc_good")
     svc.client = _FixedClient(
         me_payload={
@@ -256,17 +261,25 @@ def test_gate_allows_when_verified(svc: PlatformLinkService, isolated_store: Pla
     assert status.state is VerificationState.STARRED_VERIFIED
 
 
-def test_gate_denies_when_not_starred(svc: PlatformLinkService, isolated_store: PlatformLinkStore) -> None:
+def test_gate_denies_when_not_starred(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
     isolated_store.save_client_token("nsc_nostar")
     svc.client = _FixedClient(
-        me_payload={"verification_state": "NotStarred", "entitlement_state": "NotStarred", "github_login": "octocat"}
+        me_payload={
+            "verification_state": "NotStarred",
+            "entitlement_state": "NotStarred",
+            "github_login": "octocat",
+        }
     )  # type: ignore[assignment]
     with pytest.raises(PlatformAuthorizationRequiredError) as excinfo:
         svc.require_download_authorization()
     assert excinfo.value.status.state is VerificationState.NOT_STARRED
 
 
-def test_gate_denies_when_token_rejected(svc: PlatformLinkService, isolated_store: PlatformLinkStore) -> None:
+def test_gate_denies_when_token_rejected(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
     isolated_store.save_client_token("nsc_expired")
     svc.client = _FixedClient(error=PlatformTokenRejectedError("rejected"))  # type: ignore[assignment]
     with pytest.raises(PlatformAuthorizationRequiredError) as excinfo:
@@ -276,7 +289,9 @@ def test_gate_denies_when_token_rejected(svc: PlatformLinkService, isolated_stor
     assert isolated_store.client_token() is None
 
 
-def test_gate_offline_grace_within_ttl(svc: PlatformLinkService, isolated_store: PlatformLinkStore) -> None:
+def test_gate_offline_grace_within_ttl(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
     isolated_store.save_client_token("nsc_cached")
     svc.client = _FixedClient(
         me_payload={

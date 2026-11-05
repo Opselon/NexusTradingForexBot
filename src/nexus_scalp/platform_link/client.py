@@ -52,7 +52,9 @@ class PlatformClient:
         self.config = config or PlatformLinkConfig.from_env()
 
     # ------------------------------------------------------------------ verbs
-    def _request(self, path: str, payload: dict[str, Any] | None = None, token: str | None = None) -> dict[str, Any]:
+    def _request(
+        self, path: str, payload: dict[str, Any] | None = None, token: str | None = None
+    ) -> dict[str, Any]:
         url = f"{self.config.base_url}{path}"
         data = None
         headers = {"Accept": "application/json", "User-Agent": "NexusTradingForexBot"}
@@ -61,7 +63,9 @@ class PlatformClient:
             headers["Content-Type"] = "application/json"
         if token:
             headers["Authorization"] = f"Bearer {token}"
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST" if data is not None else "GET")
+        req = urllib.request.Request(
+            url, data=data, headers=headers, method="POST" if data is not None else "GET"
+        )
         try:
             with urllib.request.urlopen(
                 req, timeout=self.config.connect_timeout + self.config.read_timeout
@@ -75,7 +79,9 @@ class PlatformClient:
             except OSError:  # pragma: no cover - defensive
                 body = b""
             if status in (401, 403):
-                raise PlatformTokenRejectedError(f"platform rejected credentials (HTTP {status})") from exc
+                raise PlatformTokenRejectedError(
+                    f"platform rejected credentials (HTTP {status})"
+                ) from exc
             if status == 429:
                 raise PlatformRateLimitedError("platform rate limited this client") from exc
             if status >= 500:
@@ -99,9 +105,7 @@ class PlatformClient:
     def start_desktop_session(self, installation_id: str) -> dict[str, Any]:
         """Create the one-click auth session. Returns the OFFICIAL GitHub
         authorize URL; the session secret is opaque and never user-visible."""
-        out = self._request(
-            "/api/desktop/session/start", {"installation_id": installation_id}
-        )
+        out = self._request("/api/desktop/session/start", {"installation_id": installation_id})
         for field in ("session_id", "session_secret", "authorize_url"):
             if not isinstance(out.get(field), str) or not out[field]:
                 raise PlatformInvalidResponseError(f"desktop/session/start missing {field}")

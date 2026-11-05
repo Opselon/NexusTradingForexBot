@@ -951,10 +951,8 @@ def _run_engine_locked(
         # slot is empty and official models are locked, offer the [Y/n]
         # browser flow right here. TTY-only; failures never break boot.
         try:
-            from nexus_scalp.model_provisioning import (
-                classify_serving_slot,
-                serving_model_path,
-            )
+            from nexus_scalp.model_provisioning import classify_serving_slot
+            from nexus_scalp.model_provisioning.service import serving_model_path
             from nexus_scalp.platform_link import (
                 VerificationState,
                 get_platform_link_service,

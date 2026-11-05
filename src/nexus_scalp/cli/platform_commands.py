@@ -160,7 +160,7 @@ def run_connect_flow(svc: PlatformLinkService, timeout: float = 600.0) -> LinkSt
 def platform_connect(
     timeout: float = typer.Option(
         600.0, "--timeout", help="How long to wait for the GitHub flow (seconds)."
-    )
+    ),
 ) -> None:
     """Connect GitHub: ONE click — the official GitHub page opens, done."""
     run_connect_flow(_service(), timeout=timeout)

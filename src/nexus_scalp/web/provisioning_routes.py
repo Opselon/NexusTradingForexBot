@@ -541,7 +541,11 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             # backend only hands back the URL + short code.
             return {"success": True, "platform": status.as_dict()}
         except Exception as exc:
-            _log_err(exc, "platform connect start failed", endpoint="/api/provisioning/platform/connect/start")
+            _log_err(
+                exc,
+                "platform connect start failed",
+                endpoint="/api/provisioning/platform/connect/start",
+            )
             return _err(code="PLATFORM_CONNECT_START_ERROR")
 
     @router.post("/api/provisioning/platform/connect/poll")
@@ -552,7 +556,9 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             status = get_platform_link_service().poll_once().as_dict()
             return {"success": True, "platform": status}
         except Exception as exc:
-            _log_err(exc, "platform poll failed", endpoint="/api/provisioning/platform/connect/poll")
+            _log_err(
+                exc, "platform poll failed", endpoint="/api/provisioning/platform/connect/poll"
+            )
             return _err(code="PLATFORM_CONNECT_POLL_ERROR")
 
     @router.post("/api/provisioning/platform/reverify")
@@ -563,7 +569,9 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             status = get_platform_link_service().reverify().as_dict()
             return {"success": True, "platform": status}
         except Exception as exc:
-            _log_err(exc, "platform reverify failed", endpoint="/api/provisioning/platform/reverify")
+            _log_err(
+                exc, "platform reverify failed", endpoint="/api/provisioning/platform/reverify"
+            )
             return _err(code="PLATFORM_REVERIFY_ERROR")
 
     @router.post("/api/provisioning/platform/disconnect")
@@ -574,7 +582,9 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             status = get_platform_link_service().disconnect().as_dict()
             return {"success": True, "platform": status}
         except Exception as exc:
-            _log_err(exc, "platform disconnect failed", endpoint="/api/provisioning/platform/disconnect")
+            _log_err(
+                exc, "platform disconnect failed", endpoint="/api/provisioning/platform/disconnect"
+            )
             return _err(code="PLATFORM_DISCONNECT_ERROR")
 
     @router.get("/api/provisioning/status")
@@ -817,9 +827,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
             return {"success": True, "ok": bool(out.get("servable")), **out}
         except PlatformAuthorizationRequiredError as exc:
             # Fail-closed: no official download without platform-verified star.
-            logger.info(
-                "[PROVISION-WEB] event=OFFICIAL_DENIED state=%s", exc.status.state.value
-            )
+            logger.info("[PROVISION-WEB] event=OFFICIAL_DENIED state=%s", exc.status.state.value)
             return _err(
                 code=PlatformAuthorizationRequiredError.code,
                 state=exc.status.state.value,

@@ -163,9 +163,7 @@ def _shipper(tmp_path: Path, settings, url: str) -> DiagnosticsShipper:
     from nexus_scalp.platform_link.store import PlatformLinkStore
     from nexus_scalp.settings.secret_store import SecureSecretStore
 
-    store = PlatformLinkStore(
-        settings=settings, secrets=SecureSecretStore(root=tmp_path)
-    )
+    store = PlatformLinkStore(settings=settings, secrets=SecureSecretStore(root=tmp_path))
     store.installation_id()
     client = PlatformClient(config)
     return DiagnosticsShipper(

@@ -140,9 +140,7 @@ class PlatformLinkService:
             return status
         connected = self.store.has_client_token()
         state = (
-            VerificationState.VERIFICATION_PENDING
-            if connected
-            else VerificationState.NOT_CONNECTED
+            VerificationState.VERIFICATION_PENDING if connected else VerificationState.NOT_CONNECTED
         )
         return LinkStatus(
             state=state,
@@ -219,7 +217,9 @@ class PlatformLinkService:
             token = str(payload.get("client_token") or "")
             if not token:
                 return self._cache(
-                    LinkStatus(state=VerificationState.VERIFICATION_UNAVAILABLE, reason="missing token")
+                    LinkStatus(
+                        state=VerificationState.VERIFICATION_UNAVAILABLE, reason="missing token"
+                    )
                 )
             self.store.save_client_token(token)
             try:
@@ -231,7 +231,9 @@ class PlatformLinkService:
             return self.reverify()
 
         return self._cache(
-            LinkStatus(state=VerificationState.VERIFICATION_UNAVAILABLE, reason=f"unknown status {status}")
+            LinkStatus(
+                state=VerificationState.VERIFICATION_UNAVAILABLE, reason=f"unknown status {status}"
+            )
         )
 
     def await_verification(
@@ -354,7 +356,9 @@ class PlatformLinkService:
             previous = LinkStatus.from_cache(cached)
             checked_at = cached.get("checked_at")
             age_hours = (
-                (self._now() - float(checked_at)) / 3600.0 if isinstance(checked_at, (int, float)) else None
+                (self._now() - float(checked_at)) / 3600.0
+                if isinstance(checked_at, (int, float))
+                else None
             )
             if (
                 previous.state.allows_official_download

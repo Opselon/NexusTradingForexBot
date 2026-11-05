@@ -29,8 +29,8 @@
     "index_url": "https://pypi.org/simple",
     "packages": [
       "structlog==26.1.0",
-      "pydantic==2.14.2",
-      "pydantic-core==2.50.2",
+      "pydantic==2.14.3",
+      "pydantic-core==2.50.4",
       "pydantic-settings==2.16.2",
       "PyYAML==6.0.3",
       "python-dotenv==1.2.4",
