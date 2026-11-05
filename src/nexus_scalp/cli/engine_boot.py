@@ -947,6 +947,33 @@ def _run_engine_locked(
     # serves live-money paths). Serving gates are never relaxed.
     _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
     if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
+        # ONE-CLICK BOOT OFFER (first run and every time): when the serving
+        # slot is empty and official models are locked, offer the [Y/n]
+        # browser flow right here. TTY-only; failures never break boot.
+        try:
+            from nexus_scalp.model_provisioning import (
+                classify_serving_slot,
+                serving_model_path,
+            )
+            from nexus_scalp.platform_link import (
+                VerificationState,
+                get_platform_link_service,
+            )
+
+            if not classify_serving_slot(serving_model_path()).servable:
+                _svc = get_platform_link_service()
+                _status = _svc.status()
+                if (
+                    not _status.state.allows_official_download
+                    and _status.state is not VerificationState.AUTHENTICATION_PENDING
+                    and sys.stdin.isatty()
+                    and os.environ.get("NSE_NO_BROWSER") != "1"
+                ):
+                    from nexus_scalp.cli.platform_commands import offer_boot_connect
+
+                    offer_boot_connect(_svc, _status)
+        except Exception:  # pragma: no cover - the offer is strictly optional
+            pass
         try:
             from nexus_scalp.model_provisioning import FirstRunCoordinator
 

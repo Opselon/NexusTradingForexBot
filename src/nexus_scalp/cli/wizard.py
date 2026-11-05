@@ -201,6 +201,26 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     # whole validated config is safer than regex surgery).
     _write_effective_config(config_path, cfg)
 
+    # PLATFORM STEP (parity with `nexus platform`): pretty panel + the same
+    # one-click [Y/n] flow. Skippable; never blocks setup; only answers the
+    # single authorize question the user expects.
+    try:
+        if sys.stdin.isatty():
+            from nexus_scalp.cli.platform_commands import (
+                offer_boot_connect,
+                render_status_panel,
+            )
+            from nexus_scalp.platform_link import get_platform_link_service
+
+            _svc = get_platform_link_service()
+            _status = _svc.status()
+            if not _status.state.allows_official_download:
+                offer_boot_connect(_svc, _status)
+            else:
+                console.print(render_status_panel(_status, _svc))
+    except Exception:
+        pass  # the platform step is strictly optional in setup
+
     health = rhealth.HealthEngine(config_path=config_path)
     verdict2, entries = health.overall()
     return {

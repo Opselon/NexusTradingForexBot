@@ -222,6 +222,11 @@ class PlatformLinkService:
                     LinkStatus(state=VerificationState.VERIFICATION_UNAVAILABLE, reason="missing token")
                 )
             self.store.save_client_token(token)
+            try:
+                days = int(payload.get("expires_in_days") or 30)
+            except (TypeError, ValueError):
+                days = 30
+            self.store.save_token_meta(self._iso_in_days(days))
             self.store.clear_desktop_session()
             return self.reverify()
 
@@ -235,15 +240,29 @@ class PlatformLinkService:
         stop: Callable[[], bool] | None = None,
         on_tick: Callable[[LinkStatus], None] | None = None,
     ) -> LinkStatus:
-        """Blocking poll loop for the CLI wizard."""
+        """Resilient blocking poll for the CLI.
+
+        Terminal states end the wait: STARRED_VERIFIED, NOT_STARRED (recovery
+        is shown to the user), NOT_CONNECTED (session expired), and
+        VERIFICATION_EXPIRED. Transient platform failures keep polling with a
+        gentle backoff — the user may open the link themselves at any time,
+        so we wait as long as the deadline allows.
+        """
         deadline = self._now() + (timeout or self.config.await_timeout)
         latest = self.status()
+        consecutive_errors = 0
         while self._now() < deadline:
             if stop is not None and stop():
                 return latest
             latest = self.poll_once()
             if on_tick is not None:
                 on_tick(latest)
+            if latest.state is VerificationState.VERIFICATION_UNAVAILABLE:
+                # Resilience: transient outage/rate limit — back off, retry.
+                consecutive_errors += 1
+                time.sleep(min(self.config.poll_interval * consecutive_errors, 15.0))
+                continue
+            consecutive_errors = 0
             if latest.state not in (
                 VerificationState.AUTHENTICATION_PENDING,
                 VerificationState.VERIFICATION_PENDING,
@@ -251,6 +270,19 @@ class PlatformLinkService:
                 return latest
             time.sleep(self.config.poll_interval)
         return latest
+
+    def token_status(self) -> tuple[str, str] | None:
+        """(masked token, expires ISO) when a client token exists, else None."""
+        token = self.store.client_token()
+        if token is None:
+            return None
+        masked = f"{token[:8]}…{token[-4:]}" if len(token) > 16 else token
+        return masked, self.store.load_token_meta() or ""
+
+    def _iso_in_days(self, days: int) -> str:
+        import datetime as _dt
+
+        return (_dt.datetime.now(_dt.UTC) + _dt.timedelta(days=days)).isoformat()
 
     # ------------------------------------------------------------- verify
     def reverify(self) -> LinkStatus:

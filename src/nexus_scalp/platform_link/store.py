@@ -20,6 +20,7 @@ from nexus_scalp.settings.secret_store import SecureSecretStore
 from nexus_scalp.settings.service import SettingsService
 
 SECRET_CLIENT_TOKEN = "platform_client_token"
+SECRET_TOKEN_EXPIRES_AT = "platform_token_expires_at"
 SECRET_SESSION_SECRET = "platform_session_secret"
 SECRET_SESSION_ID = "platform_session_id"
 SETTING_INSTALLATION_ID = "platform.installation_id"
@@ -57,6 +58,15 @@ class PlatformLinkStore:
     def clear_client_token(self) -> None:
         if self.secrets.has_secret(SECRET_CLIENT_TOKEN):
             self.secrets.delete_secret(SECRET_CLIENT_TOKEN)
+        if self.secrets.has_secret(SECRET_TOKEN_EXPIRES_AT):
+            self.secrets.delete_secret(SECRET_TOKEN_EXPIRES_AT)
+
+    def save_token_meta(self, expires_at_iso: str) -> None:
+        self.secrets.set_secret(SECRET_TOKEN_EXPIRES_AT, expires_at_iso)
+
+    def load_token_meta(self) -> str | None:
+        value = self.secrets.get_secret(SECRET_TOKEN_EXPIRES_AT)
+        return value or None
 
     def has_client_token(self) -> bool:
         return self.secrets.has_secret(SECRET_CLIENT_TOKEN)

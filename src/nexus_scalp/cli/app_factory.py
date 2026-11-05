@@ -165,6 +165,15 @@ app.add_typer(
     name="platform",
     help="GitHub star verification: connect, verify, disconnect (official model access).",
 )
+# DIAGNOSTICS (``nexus diagnostics status|enable|disable|test``) — opt-in
+# Warning/Error log shipping to the Nexus server; consent-gated.
+from nexus_scalp.cli.diagnostics_commands import diagnostics_app as _diagnostics_app  # noqa: E402
+
+app.add_typer(
+    _diagnostics_app,
+    name="diagnostics",
+    help="Opt-in diagnostics: send only Warning/Error logs to the Nexus server.",
+)
 # MODEL STUDIO — Neural inspection, prediction, stress testing, and training
 # (ML-UI-001). LAZY (EU-03, wave-6 perf): importing this module eagerly pulled
 # nexus_scalp.web.model_studio_routes -> torch (~4s), which every CLI invocation

@@ -220,11 +220,12 @@ def model_official_cmd(
 
 def official_main(*, base_url: str = "", json_mode: bool = False) -> None:
     # SECURITY GATE (fail-closed): official downloads require platform-verified
-    # GitHub star status. The gate inside download_official is authoritative;
-    # this pre-check only upgrades the CLI UX (state panel before the attempt).
-    from nexus_scalp.cli.platform_commands import guard_official_download
+    # GitHub star status. Interactive recovery: on denial, offer the one-click
+    # [Y/n] browser flow and re-run the gate once.
+    from nexus_scalp.cli.platform_commands import guard_official_download_interactive
+    from nexus_scalp.platform_link import PlatformLinkService
 
-    guard_official_download()
+    guard_official_download_interactive(PlatformLinkService())
     source = OfficialBundleSource(base_url or None)
     coordinator = prov.FirstRunCoordinator(official=source)
     try:
