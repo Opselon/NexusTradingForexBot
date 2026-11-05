@@ -1308,7 +1308,17 @@ jobs:
   mt5-wine-runtime:
     name: MetaTrader 5 Wine Runtime
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    # 2026-11-05 run 42116643396 (release bump 9.0.22): the job was killed
+    # INSIDE "Install Wine staging + Xvfb" at the 15m cap - "The operation
+    # was canceled", not a timeout verdict, the same signature as the
+    # quality-job incident at its 20m cap (see the comment above `quality`).
+    # winehq-staging --install-recommends pulls ~1.5 GB of amd64+i386 debs
+    # through two apt updates, and on a contended shared runner that alone
+    # can eat the whole budget, so the torch install, MT5 download and the
+    # 120s soak never even started; the verdict job then failed on the
+    # cancelled runtime line and blocked the release. The cap measures
+    # runner contention, not test correctness.
+    timeout-minutes: 40
 
     env:
       NEXUS_MT5_DISPLAY: "99"
@@ -1321,14 +1331,17 @@ jobs:
       - name: Install Wine staging + Xvfb
         run: |
           set -euo pipefail
+          # Transient mirror stalls (WineHQ/Ubuntu) must retry, not consume
+          # the job budget: run 42116643396 died inside this step.
+          APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
           sudo dpkg --add-architecture i386
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
+          sudo apt-get update "${APT_OPTS[@]}"
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install "${APT_OPTS[@]}" -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
           sudo mkdir -pm755 /etc/apt/keyrings
           wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
           sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
-          sudo apt-get update
-          sudo apt-get install -y --install-recommends winehq-staging
+          sudo apt-get update "${APT_OPTS[@]}"
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install "${APT_OPTS[@]}" -y --install-recommends winehq-staging
           wine --version
 
       - name: Prepare isolated MT5 runtime root
