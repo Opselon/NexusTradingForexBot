@@ -26,6 +26,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# PS 5.1 promotes native stderr (e.g. Python DeprecationWarnings) into
+# terminating NativeCommandErrors inside conditionals — silence Python
+# warnings for every probe in this script.
+$env:PYTHONWARNINGS = "ignore"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $Root
 
@@ -206,7 +210,8 @@ if (-not ($closureOut -match 'runtime closure')) {
     Fail "runtime dependency closure is incomplete: click and uvicorn must both import before packaging"
 }
 Pass "runtime dependency closure: click + uvicorn importable"
-if (-not (& $Py -c "import psycopg, psycopg_pool" 2>$null)) {
+$psycopgOut = (& $Py -c "import psycopg, psycopg_pool; print('psycopg closure ok')" 2>&1 | Out-String)
+if (-not ($psycopgOut -match 'psycopg closure ok')) {
     Fail "psycopg/psycopg_pool not importable after install — the release bundle would die on a provider=postgresql boot"
 }
 Pass "postgres driver + pool importable (bundled by PyInstaller below)"
