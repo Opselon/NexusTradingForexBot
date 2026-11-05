@@ -40,7 +40,7 @@ const (
 	// TestDefaultVersionMatchesPyproject (system_direct_test.go) fails
 	// otherwise — the gate that stops it rotting, which is exactly how main
 	// went red when pyproject bumped to 9.0.15 and this stayed 9.0.14.
-	DefaultVersion = "9.0.21"
+	DefaultVersion = "9.0.22"
 	// DefaultChannel is the release distribution channel.
 	DefaultChannel = "production"
 
