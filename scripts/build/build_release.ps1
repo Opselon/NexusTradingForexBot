@@ -239,8 +239,16 @@ if (-not $GoExe) {
 }
 Write-Host "[RELEASE] go toolchain: $GoExe ($(& $GoExe version))" -ForegroundColor DarkGray
 
-& $GoExe build -o (Join-Path $GoApiShipDir $GoApiBinaryName) "./cmd/nexus-api"
-if ($LASTEXITCODE -ne 0) { Fail "go api build failed (exit $LASTEXITCODE) - the release cannot ship without the API plane binary" }
+# The Go module lives at <root>/go-api — build from there (repo root has no
+# go.mod, so a root-level invocation fails with "cannot find main module").
+Push-Location (Join-Path $Root "go-api")
+try {
+    & $GoExe build -o (Join-Path $GoApiShipDir $GoApiBinaryName) "./cmd/nexus-api"
+    $GoExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+if ($GoExit -ne 0) { Fail "go api build failed (exit $GoExit) - the release cannot ship without the API plane binary" }
 $GoApiBinary = Join-Path $GoApiShipDir $GoApiBinaryName
 if (-not (Test-Path $GoApiBinary)) { Fail "go build reported success but $GoApiBinary is missing" }
 if ((Get-Item $GoApiBinary).Length -le 0) { Fail "go api build produced a zero-byte $GoApiBinary" }
