@@ -26,6 +26,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+# PS 5.1 promotes native stderr (e.g. Python DeprecationWarnings) into
+# terminating NativeCommandErrors inside conditionals — silence Python
+# warnings for every probe in this script.
+$env:PYTHONWARNINGS = "ignore"
 $Root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 Set-Location $Root
 
@@ -201,11 +205,13 @@ if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install wit
 if ($LASTEXITCODE -ne 0) { Fail "postgres extra install failed — the release bundle would be unable to import psycopg_pool" }
 # Runtime closure gate: PyInstaller must never build an artifact from a venv
 # where uvicorn is present but its required click dependency is missing.
-if (-not (& $Py -c "import click, uvicorn; print('runtime closure: click=' + click.__version__ + ' uvicorn=' + uvicorn.__version__)" 2>$null)) {
+$closureOut = (& $Py -c "import warnings; warnings.filterwarnings('ignore'); import click, uvicorn; print('runtime closure: click=' + click.__version__ + ' uvicorn=' + uvicorn.__version__)" 2>&1 | Out-String)
+if (-not ($closureOut -match 'runtime closure')) {
     Fail "runtime dependency closure is incomplete: click and uvicorn must both import before packaging"
 }
 Pass "runtime dependency closure: click + uvicorn importable"
-if (-not (& $Py -c "import psycopg, psycopg_pool" 2>$null)) {
+$psycopgOut = (& $Py -c "import psycopg, psycopg_pool; print('psycopg closure ok')" 2>&1 | Out-String)
+if (-not ($psycopgOut -match 'psycopg closure ok')) {
     Fail "psycopg/psycopg_pool not importable after install — the release bundle would die on a provider=postgresql boot"
 }
 Pass "postgres driver + pool importable (bundled by PyInstaller below)"
@@ -233,8 +239,16 @@ if (-not $GoExe) {
 }
 Write-Host "[RELEASE] go toolchain: $GoExe ($(& $GoExe version))" -ForegroundColor DarkGray
 
-& $GoExe build -o (Join-Path $GoApiShipDir $GoApiBinaryName) "./cmd/nexus-api"
-if ($LASTEXITCODE -ne 0) { Fail "go api build failed (exit $LASTEXITCODE) - the release cannot ship without the API plane binary" }
+# The Go module lives at <root>/go-api — build from there (repo root has no
+# go.mod, so a root-level invocation fails with "cannot find main module").
+Push-Location (Join-Path $Root "go-api")
+try {
+    & $GoExe build -o (Join-Path $GoApiShipDir $GoApiBinaryName) "./cmd/nexus-api"
+    $GoExit = $LASTEXITCODE
+} finally {
+    Pop-Location
+}
+if ($GoExit -ne 0) { Fail "go api build failed (exit $GoExit) - the release cannot ship without the API plane binary" }
 $GoApiBinary = Join-Path $GoApiShipDir $GoApiBinaryName
 if (-not (Test-Path $GoApiBinary)) { Fail "go build reported success but $GoApiBinary is missing" }
 if ((Get-Item $GoApiBinary).Length -le 0) { Fail "go api build produced a zero-byte $GoApiBinary" }
@@ -339,9 +353,11 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
     --hidden-import "psycopg_pool.pool" `
     --exclude-module "torch" `
     --exclude-module "polars" `
-    --exclude-module "numpy" `
     --exclude-module "pyarrow" `
     --exclude-module "MetaTrader5" `
+    # NOTE: numpy must NOT be excluded — the CLI import chain
+    # (doctor -> configuration -> model_lifecycle -> experience.evaluator)
+    # imports numpy at module load; freezing without it breaks `--version`.
     --distpath (Join-Path $BuildDir "onefile") `
     --workpath (Join-Path $BuildDir "work-cli") `
     --specpath $BuildDir `

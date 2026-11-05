@@ -105,8 +105,11 @@ def test_train_start_rejects_bad_input(client: TestClient) -> None:
 
 
 def test_official_unconfigured_fails_closed(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, verified_platform_gate
 ) -> None:
+    # Platform gate is stubbed VERIFIED so this test isolates the
+    # unconfigured-source failure contract (the gate denial itself is pinned
+    # by test_official_download_denied_without_verification).
     hdr = _cookie(client)
     from nexus_scalp.model_provisioning import official as off
 

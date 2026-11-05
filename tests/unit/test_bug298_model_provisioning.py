@@ -186,7 +186,7 @@ class _CopySource(OfficialBundleSource):
 
 
 def test_official_path_a_end_to_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str, verified_platform_gate
 ) -> None:
     root = _build_fake_official_dir(tmp_path)
     workspace = tmp_path / "ws"
@@ -206,7 +206,7 @@ def test_official_path_a_end_to_end(
 
 
 def test_official_tampered_file_installs_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str, verified_platform_gate
 ) -> None:
     root = _build_fake_official_dir(tmp_path)
     workspace = tmp_path / "ws"
