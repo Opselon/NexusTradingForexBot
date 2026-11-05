@@ -201,7 +201,8 @@ if (-not (Test-Path $PyInstaller)) { Fail "pyinstaller not found — install wit
 if ($LASTEXITCODE -ne 0) { Fail "postgres extra install failed — the release bundle would be unable to import psycopg_pool" }
 # Runtime closure gate: PyInstaller must never build an artifact from a venv
 # where uvicorn is present but its required click dependency is missing.
-if (-not (& $Py -c "import click, uvicorn; print('runtime closure: click=' + click.__version__ + ' uvicorn=' + uvicorn.__version__)" 2>$null)) {
+$closureOut = (& $Py -c "import warnings; warnings.filterwarnings('ignore'); import click, uvicorn; print('runtime closure: click=' + click.__version__ + ' uvicorn=' + uvicorn.__version__)" 2>&1 | Out-String)
+if (-not ($closureOut -match 'runtime closure')) {
     Fail "runtime dependency closure is incomplete: click and uvicorn must both import before packaging"
 }
 Pass "runtime dependency closure: click + uvicorn importable"
