@@ -353,9 +353,11 @@ Pass "onedir build: $BuildDir\onedir\NexusScalpEngine\NexusScalpEngine.exe"
     --hidden-import "psycopg_pool.pool" `
     --exclude-module "torch" `
     --exclude-module "polars" `
-    --exclude-module "numpy" `
     --exclude-module "pyarrow" `
     --exclude-module "MetaTrader5" `
+    # NOTE: numpy must NOT be excluded — the CLI import chain
+    # (doctor -> configuration -> model_lifecycle -> experience.evaluator)
+    # imports numpy at module load; freezing without it breaks `--version`.
     --distpath (Join-Path $BuildDir "onefile") `
     --workpath (Join-Path $BuildDir "work-cli") `
     --specpath $BuildDir `
