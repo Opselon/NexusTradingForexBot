@@ -20,13 +20,13 @@ from typing import ClassVar
 
 import pytest
 
-from nexus_scalp.diagnostics import consent as consent_mod
-from nexus_scalp.diagnostics.collector import (
+from nexus_scalp.log_shipping import consent as consent_mod
+from nexus_scalp.log_shipping.collector import (
     DiagnosticCollector,
     DiagnosticLogHandler,
     redact_message,
 )
-from nexus_scalp.diagnostics.shipper import DiagnosticsShipper
+from nexus_scalp.log_shipping.shipper import DiagnosticsShipper
 from nexus_scalp.platform_link import PlatformLinkService, VerificationState
 from nexus_scalp.platform_link.config import PlatformLinkConfig
 from nexus_scalp.platform_link.service import LinkStatus

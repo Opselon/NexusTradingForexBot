@@ -12,7 +12,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
-from nexus_scalp.diagnostics.consent import (
+from nexus_scalp.log_shipping.consent import (
     is_enabled,
     set_consent,
     status_snapshot,
@@ -28,7 +28,7 @@ console = Console()
 @diagnostics_app.command("status")
 def diagnostics_status() -> None:
     """Show the consent state and pipeline activity."""
-    from nexus_scalp.diagnostics.shipper import get_session_shipper
+    from nexus_scalp.log_shipping.shipper import get_session_shipper
 
     snap = status_snapshot()
     lines = [
@@ -63,7 +63,7 @@ def diagnostics_disable() -> None:
     """Turn OFF log shipping immediately (queued unsent records are dropped)."""
     set_consent(False)
     try:
-        from nexus_scalp.diagnostics.shipper import reset_session_shipper
+        from nexus_scalp.log_shipping.shipper import reset_session_shipper
 
         reset_session_shipper()
     except Exception:  # pragma: no cover
@@ -79,7 +79,7 @@ def diagnostics_test() -> None:
         raise typer.Exit(code=1)
     import logging
 
-    from nexus_scalp.diagnostics.shipper import get_session_shipper
+    from nexus_scalp.log_shipping.shipper import get_session_shipper
 
     logging.getLogger("nexus.diagnostics.test").warning(
         "diagnostics self-test record (safe to ignore)"

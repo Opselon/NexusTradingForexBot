@@ -202,7 +202,7 @@ def _maybe_ask_diagnostics_consent() -> None:
     if not _interactive():
         return
     try:
-        from nexus_scalp.diagnostics import ensure_consent
+        from nexus_scalp.log_shipping import ensure_consent
 
         ensure_consent()
     except Exception:  # pragma: no cover - consent must never break the flow

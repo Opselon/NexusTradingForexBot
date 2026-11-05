@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import shutil
 import sys
 from collections.abc import Callable
@@ -218,8 +219,8 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
                 offer_boot_connect(_svc, _status)
             else:
                 console.print(render_status_panel(_status, _svc))
-    except Exception:
-        pass  # the platform step is strictly optional in setup
+    except Exception:  # the platform step is strictly optional in setup
+        logging.getLogger(__name__).debug("[SETUP] platform step skipped", exc_info=True)
 
     health = rhealth.HealthEngine(config_path=config_path)
     verdict2, entries = health.overall()

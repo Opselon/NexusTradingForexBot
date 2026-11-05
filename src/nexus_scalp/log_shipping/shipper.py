@@ -18,8 +18,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-from nexus_scalp.diagnostics.collector import DiagnosticCollector
-from nexus_scalp.diagnostics.consent import is_enabled
+from nexus_scalp.log_shipping.collector import DiagnosticCollector
+from nexus_scalp.log_shipping.consent import is_enabled
 from nexus_scalp.platform_link.client import PlatformClient, PlatformClientError
 from nexus_scalp.platform_link.store import PlatformLinkStore
 
@@ -71,6 +71,7 @@ class DiagnosticsShipper:
                 )
         except OSError:
             logger.debug("[DIAG] queue write failed", exc_info=True)
+            return
 
     def _drain_queue(self) -> list[list[dict[str, Any]]]:
         try:
@@ -87,6 +88,7 @@ class DiagnosticsShipper:
                     continue
             return out
         except OSError:
+            logger.debug("[DIAG] queue read failed", exc_info=True)
             return []
 
     def _clear_queue(self) -> None:
@@ -94,7 +96,7 @@ class DiagnosticsShipper:
             if self.queue_path.exists():
                 self.queue_path.unlink()
         except OSError:
-            pass
+            logger.debug("[DIAG] queue cleanup failed", exc_info=True)
 
     # ------------------------------------------------------------------ send
     def flush_once(self) -> int:
