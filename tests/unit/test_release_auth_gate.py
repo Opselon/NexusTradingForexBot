@@ -45,8 +45,7 @@ def _run(name: str, conclusion: str | None, status: str = "completed") -> dict:
 def _all_success() -> list[dict]:
     # Full release boundary: protection contexts + runtime certification.
     return [
-        _run(n, "success")
-        for n in (*REQUIRED_MAIN_CI_CHECKS, *REQUIRED_RELEASE_RUNTIME_CHECKS)
+        _run(n, "success") for n in (*REQUIRED_MAIN_CI_CHECKS, *REQUIRED_RELEASE_RUNTIME_CHECKS)
     ]
 
 

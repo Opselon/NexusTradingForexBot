@@ -39,11 +39,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
-
+import itertools
 import json
 import os
 import platform
-import re
 import sys
 import time
 from pathlib import Path
@@ -73,7 +72,7 @@ _RETCODE_DONE = 10009
 
 
 def _utcnow() -> str:
-    return _dt.datetime.now(_dt.timezone.utc).isoformat()
+    return _dt.datetime.now(_dt.UTC).isoformat()
 
 
 def _jsonable(value: Any) -> Any:
@@ -133,9 +132,7 @@ class CertResult:
         self.evidence: dict[str, Any] = {}
 
     def step(self, name: str, ok: bool, detail: str = "") -> None:
-        self.steps.append(
-            {"step": name, "status": "PASS" if ok else "FAIL", "detail": detail}
-        )
+        self.steps.append({"step": name, "status": "PASS" if ok else "FAIL", "detail": detail})
         marker = "PASS" if ok else "FAIL"
         print(f"  [{marker}] L{self.level} {name}" + (f" — {detail}" if detail else ""))
 
@@ -151,7 +148,10 @@ class CertResult:
             return True
         self.status = "PASS" if ok else "FAIL"
         self.detail = detail
-        print(f"  [{'PASS' if ok else 'FAIL'}] L{self.level} {self.title}" + (f" — {detail}" if detail else ""))
+        print(
+            f"  [{'PASS' if ok else 'FAIL'}] L{self.level} {self.title}"
+            + (f" — {detail}" if detail else "")
+        )
         return ok
 
     def to_json(self) -> dict[str, Any]:
@@ -294,7 +294,9 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
     """Levels 2/3 — demo connectivity and (gated) demo trade execution."""
     creds = _demo_credentials()
     if creds is None:
-        result.finish(False, skipped_reason="demo credentials not configured (MT5_DEMO_* secrets absent)")
+        result.finish(
+            False, skipped_reason="demo credentials not configured (MT5_DEMO_* secrets absent)"
+        )
         return
 
     from nexus_scalp.adapters.mt5.mt5_adapter import DirectMT5Adapter
@@ -329,7 +331,9 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
         result.step("re-initialize for demo login", False, f"last_error={mt5.last_error()}")
         result.finish(False, "terminal re-initialize failed")
         return
-    logged_in = bool(mt5.login(int(creds["login"]), password=creds["password"], server=creds["server"]))
+    logged_in = bool(
+        mt5.login(int(creds["login"]), password=creds["password"], server=creds["server"])
+    )
     result.step(
         "demo login",
         logged_in,
@@ -345,9 +349,11 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
         result.finish(False, "account_info unavailable after login")
         return
     trade_mode = int(getattr(account, "trade_mode", -1))
-    mode_name = {TRADE_MODE_DEMO: "DEMO", TRADE_MODE_CONTEST: "CONTEST", TRADE_MODE_REAL: "REAL"}.get(
-        trade_mode, f"UNKNOWN({trade_mode})"
-    )
+    mode_name = {
+        TRADE_MODE_DEMO: "DEMO",
+        TRADE_MODE_CONTEST: "CONTEST",
+        TRADE_MODE_REAL: "REAL",
+    }.get(trade_mode, f"UNKNOWN({trade_mode})")
     is_demo = trade_mode == TRADE_MODE_DEMO
     result.step(
         "account trade_mode == DEMO",
@@ -392,16 +398,19 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
         result.finish(False, f"symbol {symbol} not selectable/visible")
         return
 
-    now = _dt.datetime.now(_dt.timezone.utc)
+    now = _dt.datetime.now(_dt.UTC)
     ticks = mt5.copy_ticks_from(symbol, now - _dt.timedelta(hours=48), 20, mt5.COPY_TICKS_ALL)
     tick_count = 0 if ticks is None else len(ticks)
     latest_tick_time = None
     if tick_count:
         try:
-            latest_tick_time = _dt.datetime.fromtimestamp(int(ticks[-1]["time"]), tz=_dt.timezone.utc)
+            latest_tick_time = _dt.datetime.fromtimestamp(int(ticks[-1]["time"]), tz=_dt.UTC)
         except Exception:
             latest_tick_time = None
-    stale = latest_tick_time is None or (_dt.datetime.now(_dt.timezone.utc) - latest_tick_time) > TICK_STALENESS_LIMIT
+    stale = (
+        latest_tick_time is None
+        or (_dt.datetime.now(_dt.UTC) - latest_tick_time) > TICK_STALENESS_LIMIT
+    )
     result.step(
         "tick retrieval + timestamp sanity",
         tick_count > 0 and not stale,
@@ -416,12 +425,14 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
         monotonic = False
         if count >= 5:
             times = [int(b["time"]) for b in bars]
-            monotonic = all(a <= b for a, b in zip(times, times[1:]))
+            monotonic = all(a <= b for a, b in itertools.pairwise(times))
         rates_ok = rates_ok and count >= 5 and monotonic
         rate_summary.append(f"{tf_name}={count} bars monotonic={monotonic}")
     result.step("M1/M5 rate retrieval + timestamps", rates_ok, "; ".join(rate_summary))
 
-    recovered = bool(mt5.login(int(creds["login"]), password=creds["password"], server=creds["server"]))
+    recovered = bool(
+        mt5.login(int(creds["login"]), password=creds["password"], server=creds["server"])
+    )
     result.step("recovery re-login", recovered, "connection re-established after refusal leg")
     result.evidence["trade_allowed"] = bool(getattr(mt5.terminal_info(), "trade_allowed", False))
 
@@ -442,7 +453,9 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
         result.finish(True, "Level 2 passed; Level 3 explicitly disabled")
         return
 
-    result.note("Level 3 preconditions", "NSE_DEMO_TRADE_TEST=true — demo account re-verified above")
+    result.note(
+        "Level 3 preconditions", "NSE_DEMO_TRADE_TEST=true — demo account re-verified above"
+    )
 
     volume = NSE_CI_DEMO_VOLUME
     vol_min = float(getattr(symbol_info, "volume_min", 0.01) or 0.01)
@@ -532,8 +545,12 @@ def _run_level23(mt5: Any, result: CertResult, demo_trade_requested: bool) -> No
     for _ in range(15):
         positions = mt5.positions_get(symbol=symbol) or []
         orders = mt5.orders_get(symbol=symbol) or []
-        leftover_positions = len([p for p in positions if int(getattr(p, "magic", 0)) == NSE_CI_DEMO_MAGIC])
-        leftover_orders = len([o for o in orders if int(getattr(o, "magic", 0)) == NSE_CI_DEMO_MAGIC])
+        leftover_positions = len(
+            [p for p in positions if int(getattr(p, "magic", 0)) == NSE_CI_DEMO_MAGIC]
+        )
+        leftover_orders = len(
+            [o for o in orders if int(getattr(o, "magic", 0)) == NSE_CI_DEMO_MAGIC]
+        )
         if leftover_positions == 0 and leftover_orders == 0:
             break
         time.sleep(1)
@@ -590,14 +607,14 @@ def main(argv: list[str] | None = None) -> int:
     except SystemExit as exc:
         level1.finish(False, f"Level 1 failed (exit {exc.code})")
         overall_ok = False
-    except Exception as exc:  # noqa: BLE001 - certification must report, not crash silently
+    except Exception as exc:
         level1.finish(False, f"Level 1 unexpected failure: {type(exc).__name__}: {exc}")
         overall_ok = False
 
     demo_requested = levels in ("auto", "23")
     if demo_requested:
         try:
-            import MetaTrader5 as mt5  # noqa: PLC0415
+            import MetaTrader5 as mt5
         except Exception:
             mt5 = None  # type: ignore[assignment]
         if mt5 is None:
@@ -605,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             try:
                 _run_level23(mt5, level23, demo_trade_requested)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 level23.finish(False, f"demo leg unexpected failure: {type(exc).__name__}: {exc}")
                 with __import__("contextlib").suppress(Exception):
                     mt5.shutdown()
@@ -626,7 +643,9 @@ def main(argv: list[str] | None = None) -> int:
         "overall": "PASS" if overall_ok else "FAIL",
     }
     evidence_file = evidence_dir / "mt5_native_certification.json"
-    evidence_file.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    evidence_file.write_text(
+        json.dumps(payload, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8"
+    )
     print(f"evidence: {evidence_file}")
 
     print(f"NATIVE MT5 CERTIFICATION: {'PASS' if overall_ok else 'FAIL'}")
