@@ -1318,7 +1318,16 @@ jobs:
     # 120s soak never even started; the verdict job then failed on the
     # cancelled runtime line and blocked the release. The cap measures
     # runner contention, not test correctness.
-    timeout-minutes: 40
+    #
+    # 2026-11-06 PR #723 (release bump 9.0.23) hit the 40m cap INSIDE the
+    # same step again - this time NOT contention: dl.winehq.org itself
+    # delivered wine-staging-i386 (145 MB) + wine-staging-amd64 (148 MB) at
+    # ~150 KB/s (34 minutes of pure download; the same packages came down
+    # in ~3 minutes on the v9.0.22 re-run, so the winehq CDN is flaky).
+    # The full slow path is ~35m wine download + pip/torch install + MT5
+    # download + 120s soak, so 75m gives the slow path real headroom while
+    # the fast path still finishes in ~8m.
+    timeout-minutes: 75
 
     env:
       NEXUS_MT5_DISPLAY: "99"
