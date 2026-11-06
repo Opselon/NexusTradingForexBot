@@ -138,9 +138,9 @@ jobs:
   # ---------------------------------------------------------------------------
   # ---------------------------------------------------------------------------
   # QUALITY — split execution under ONE required verdict (DevOps audit 2026-11).
-  # The old serial quality job (install -> ruff -> format -> mypy -> pytest ->
-  # smoke -> runtime gates, 550s median, THE PR critical path) ran lint and
-  # tests on one clock. They are independent work: quality-lint and
+  # The old serial quality job ran install, ruff, format check, type check,
+  # pytest, smoke and the runtime gates on ONE clock (550s median - THE PR
+  # critical path). They are independent work: quality-lint and
   # quality-tests now run in PARALLEL and the required "Code Quality & Tests"
   # context stays a single fail-closed verdict job (branch protection and
   # release_auth_gate.REQUIRED_MAIN_CI_CHECKS untouched). A skipped child
