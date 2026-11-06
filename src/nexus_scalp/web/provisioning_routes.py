@@ -510,7 +510,7 @@ def _scan_dataset_root(root: Path) -> dict[str, Any]:
     return {"root": str(root), "exists": exists, "count": len(files), "files": files}
 
 
-def _invitation_settings():
+def _invitation_settings() -> Any:
     """Settings seam for invitation preference memory (never raises into routes)."""
     from nexus_scalp.settings.service import SettingsService
 
@@ -614,9 +614,7 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 "startup": snapshot.as_dict() if snapshot else None,
             }
         except Exception as exc:
-            _log_err(
-                exc, "platform startup failed", endpoint="/api/provisioning/platform/startup"
-            )
+            _log_err(exc, "platform startup failed", endpoint="/api/provisioning/platform/startup")
             return _err(code="PLATFORM_STARTUP_ERROR")
 
     @router.get("/api/provisioning/platform/recovery")

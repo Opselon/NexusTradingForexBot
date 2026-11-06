@@ -955,9 +955,7 @@ def _run_engine_locked(
     except Exception:  # pragma: no cover - strictly optional
         import logging as _logging
 
-        _logging.getLogger(__name__).debug(
-            "[PLATFORM-LINK] handshake not launched", exc_info=True
-        )
+        _logging.getLogger(__name__).debug("[PLATFORM-LINK] handshake not launched", exc_info=True)
     _eff_mode = mode_override if mode_override is not None else cfg.execution.mode
     if _eff_mode in (ExecutionMode.PAPER, ExecutionMode.SHADOW):
         # ONE-CLICK BOOT OFFER (first run and every time): when the serving

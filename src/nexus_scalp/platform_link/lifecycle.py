@@ -70,7 +70,7 @@ class StartupHandshake:
         return out
 
     @classmethod
-    def from_dict(cls, payload: dict[str, Any]) -> "StartupHandshake":
+    def from_dict(cls, payload: dict[str, Any]) -> StartupHandshake:
         try:
             state = VerificationState(payload.get("state", VerificationState.NOT_CONNECTED.value))
         except ValueError:
@@ -258,13 +258,15 @@ def run_handshake_snapshot() -> StartupHandshake:
         return _last_result
 
 
-def start_background_handshake(service: PlatformLinkService | None = None) -> threading.Thread | None:
+def start_background_handshake(
+    service: PlatformLinkService | None = None,
+) -> threading.Thread | None:
     """Launch THE startup handshake on a daemon thread (once per process).
 
     Entry points call this and forget it — failures are logged, never raised;
     the UI reads :func:`run_handshake_snapshot` / the web route when ready.
     """
-    global _handshake_thread, _last_result  # noqa: PLW0603
+    global _handshake_thread  # noqa: PLW0603
 
     def _run() -> None:
         global _last_result  # noqa: PLW0603
@@ -281,9 +283,7 @@ def start_background_handshake(service: PlatformLinkService | None = None) -> th
                     result.update_available,
                 )
             else:
-                logger.warning(
-                    "[PLATFORM-LINK] startup handshake unavailable: %s", result.reason
-                )
+                logger.warning("[PLATFORM-LINK] startup handshake unavailable: %s", result.reason)
         except Exception:  # pragma: no cover - absolute containment
             logger.warning("[PLATFORM-LINK] startup handshake crashed", exc_info=True)
 

@@ -12,12 +12,16 @@ Contract under test:
 
 from __future__ import annotations
 
-import threading
 from typing import Any
 
 import pytest
 
 from nexus_scalp.platform_link import PlatformLinkService, VerificationState
+from nexus_scalp.platform_link.client import (
+    PlatformRateLimitedError,
+    PlatformTokenRejectedError,
+    PlatformUnavailableError,
+)
 from nexus_scalp.platform_link.config import PlatformLinkConfig
 from nexus_scalp.platform_link.invitations import (
     DECISION_DECLINED,
@@ -31,19 +35,14 @@ from nexus_scalp.platform_link.lifecycle import (
     run_startup_handshake,
     start_background_handshake,
 )
-from nexus_scalp.platform_link.states import state_from_startup_payload
-from nexus_scalp.platform_link.store import PlatformLinkStore
-from nexus_scalp.platform_link.client import (
-    PlatformRateLimitedError,
-    PlatformTokenRejectedError,
-    PlatformUnavailableError,
-)
 from nexus_scalp.platform_link.setup_state import (
     SetupStage,
     load_stage,
     mark_stage,
     resume_hint,
 )
+from nexus_scalp.platform_link.states import state_from_startup_payload
+from nexus_scalp.platform_link.store import PlatformLinkStore
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +151,9 @@ def test_legacy_payload_still_maps_when_no_decision_present():
 
 def test_handshake_happy_path_maps_all_fields(svc, isolated_store):
     isolated_store.save_client_token("nsc_test-token-0000000000")
-    handshake = run_startup_handshake(_with_client(svc, dict(CANONICAL_PAYLOAD)), snapshot_store=isolated_store)
+    handshake = run_startup_handshake(
+        _with_client(svc, dict(CANONICAL_PAYLOAD)), snapshot_store=isolated_store
+    )
 
     assert handshake.ok is True
     assert handshake.state is VerificationState.STARRED_VERIFIED
@@ -213,7 +214,7 @@ def test_handshake_without_token_is_not_connected(svc):
 
 def test_handshake_update_available_false_when_current(svc, isolated_store, monkeypatch):
     isolated_store.save_client_token("nsc_test-token-0000000000")
-    import nexus_scalp.platform_link.lifecycle as lifecycle
+    from nexus_scalp.platform_link import lifecycle
 
     monkeypatch.setattr(lifecycle, "_installed_model_version", lambda: "9.0.22")
     handshake = run_startup_handshake(
@@ -230,7 +231,7 @@ def test_handshake_update_available_false_when_current(svc, isolated_store, monk
 
 def test_background_handshake_is_single_owner(svc, isolated_store, monkeypatch):
     reset_lifecycle()
-    import nexus_scalp.platform_link.lifecycle as lifecycle
+    from nexus_scalp.platform_link import lifecycle
 
     svc.store.save_client_token("nsc_test-token-0000000000")
     _with_client(svc, dict(CANONICAL_PAYLOAD))  # stub BEFORE the thread reads it
@@ -296,9 +297,7 @@ def test_resume_cancelled_is_restartable(isolated_store):
 
 def test_completed_setup_has_no_recovery_hint(isolated_store):
     mark_stage(isolated_store.settings, SetupStage.COMPLETED)
-    assert (
-        resume_hint(isolated_store.settings, VerificationState.STARRED_VERIFIED) is None
-    )
+    assert resume_hint(isolated_store.settings, VerificationState.STARRED_VERIFIED) is None
 
 
 def test_never_started_has_no_recovery_hint(isolated_store):
@@ -362,7 +361,7 @@ def test_shipper_records_server_ack_as_evidence(tmp_path, monkeypatch):
         def __init__(self) -> None:
             self.batches: list[list[dict[str, Any]]] = []
 
-        def _request(self, path, payload=None, token=None):  # noqa: ANN001
+        def _request(self, path, payload=None, token=None):
             self.batches.append(payload["records"])
             return {"received": len(payload["records"]), "id": "report-123"}
 
@@ -392,7 +391,7 @@ def test_shipper_failure_records_code_and_pending(tmp_path, monkeypatch):
     monkeypatch.setenv("NSE_USER_DATA_DIR", str(tmp_path))
 
     class _DeadClient:
-        def _request(self, path, payload=None, token=None):  # noqa: ANN001
+        def _request(self, path, payload=None, token=None):
             raise PlatformUnavailableError("connection refused")
 
     shipper = DiagnosticsShipper(

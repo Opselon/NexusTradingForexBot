@@ -27,7 +27,9 @@ _KEY_LATER_UNTIL = "platform.model_invite.{version}.later_until"
 class ModelInvitationPrefs:
     """Thin, testable preference store over the settings service."""
 
-    def __init__(self, settings: Any, *, later_cooldown_secs: float = DEFAULT_LATER_COOLDOWN_SECS) -> None:
+    def __init__(
+        self, settings: Any, *, later_cooldown_secs: float = DEFAULT_LATER_COOLDOWN_SECS
+    ) -> None:
         self.settings = settings
         self.later_cooldown_secs = later_cooldown_secs
 
@@ -73,9 +75,7 @@ class ModelInvitationPrefs:
     def record(self, version: str, decision: str, *, now: float | None = None) -> None:
         if decision not in (DECISION_DECLINED, DECISION_LATER):
             raise ValueError(f"unknown invitation decision: {decision!r}")
-        self.settings.set(
-            _KEY_DECISION.format(version=version), decision, value_type="string"
-        )
+        self.settings.set(_KEY_DECISION.format(version=version), decision, value_type="string")
         if decision == DECISION_LATER:
             until = (now if now is not None else time.time()) + self.later_cooldown_secs
             self.settings.set(

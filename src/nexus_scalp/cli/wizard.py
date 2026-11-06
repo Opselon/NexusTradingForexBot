@@ -99,7 +99,7 @@ def _package_inventory() -> list[dict[str, str]]:
     return rows
 
 
-def _setup_settings():
+def _setup_settings() -> Any:
     """Settings seam for the setup-stage machine (never raises into the wizard)."""
     from nexus_scalp.settings.service import SettingsService
 
