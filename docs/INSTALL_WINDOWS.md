@@ -247,6 +247,15 @@ nexus version
 nexus doctor
 ```
 
+**Where the `nexus` command comes from (2026-11 fix):** the installer writes
+`nexus.cmd` / `nse.cmd` shims into `%LOCALAPPDATA%\NexusScalpEngine\bin` and
+adds that directory to your **user PATH** (HKCU\Environment\Path,
+`ChangesEnvironment` broadcast). Terminals opened AFTER the install see `nexus`
+immediately; terminals that were ALREADY open must be restarted once.
+Reinstalling after an uninstall re-adds the PATH entry automatically — and the
+entry survives version upgrades because it points at the stable data-root
+`bin` directory, never at the versioned install folder.
+
 ## Uninstall boundaries
 
 Deleting `%LOCALAPPDATA%\Nexus\engine`, `venv`, `bin`, and `git` removes the

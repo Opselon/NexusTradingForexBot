@@ -24,6 +24,7 @@ Coverage:
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -307,3 +308,72 @@ def test_eu01_user_data_root_outside_bundle_is_never_touched(tmp_path: Path) -> 
     assert rc == 0, f"clean expected rc 0, got {rc}:\n{out}"
     assert user_db.read_bytes() == b"USER DATA - must survive", "user database deleted!"
     assert (user_root / "data" / "paper_state.json").is_file(), "user paper state deleted!"
+
+
+# ---------------------------------------------------------------------------
+# CLI-ON-PATH (2026-11): `nexus` must survive uninstall/reinstall in
+# PowerShell and CMD. Root cause of the user report: the installer never
+# touched PATH and never shipped a nexus shim — only the desktop shortcut
+# worked. Contract: stable shim dir OUTSIDE {app}, idempotent user-PATH
+# add/remove, ChangesEnvironment broadcast, honest finish-page messaging.
+# ---------------------------------------------------------------------------
+
+
+def test_installer_declares_changes_environment() -> None:
+    src = _iss_text()
+    assert re.search(r"^ChangesEnvironment=(yes|true)$", src, re.MULTILINE), (
+        "installer must broadcast WM_SETTINGCHANGE so new terminals see the PATH"
+    )
+
+
+def test_installer_ships_nexus_and_nse_shims() -> None:
+    src = _iss_text()
+    assert "procedure WriteCliShims" in src
+    assert "nexus.cmd" in src and "nse.cmd" in src, "both CLI aliases shipped"
+    # argument forwarding + quoted exe invocation (Programs path has a space)
+    assert "AppExe + '\" %*'" in src, "shim must quote the exe and forward all arguments"
+    assert "exit /b %ERRORLEVEL%" in src, "shim must preserve the exit code"
+
+
+def test_shim_dir_is_stable_across_installs() -> None:
+    """The PATH entry must NOT point inside {app}: an uninstall removes {app},
+    so a reinstall would leave a dead PATH entry (the exact user report)."""
+    src = _iss_text()
+    assert "NexusScalpEngine\\bin" in src
+    assert re.search(r"CliBinDirConstant = '\{localappdata\}\\NexusScalpEngine\\bin'", src), (
+        "shim dir anchored to the per-user data root (stable), not {app}"
+    )
+    # no line may ASSIGN or EXPAND a {app}\bin path (comments explaining the
+    # design decision are fine — only real usage would go stale)
+    assert not re.search(r"ExpandConstant\('{app}\\bin'\)|= *'{app}\\bin", src), (
+        "PATH entry inside {app} would go stale after uninstall"
+    )
+
+
+def test_installer_adds_and_removes_user_path_idempotently() -> None:
+    src = _iss_text()
+    assert "procedure AddBinToUserPath" in src
+    assert "procedure RemoveBinFromUserPath" in src
+    assert "function PathContainsEntry" in src, "re-install must never duplicate the PATH entry"
+    # HKCU user-scope only (installer is per-user, PrivilegesRequired=lowest)
+    assert src.count("HKEY_CURRENT_USER, 'Environment', 'Path'") >= 2
+    assert "RegWriteExpandStringValue" in src, "preserve REG_EXPAND_SZ semantics"
+    # both the install step AND the uninstall step call the pair
+    assert "AddBinToUserPath;" in src
+    assert "RemoveBinFromUserPath;" in src
+
+
+def test_uninstall_cleans_shims_written_outside_the_log() -> None:
+    """SaveStringToFile bypasses Inno's uninstall log — explicit cleanup."""
+    src = _iss_text()
+    uni_idx = src.find("procedure CurUninstallStepChanged")
+    assert uni_idx > 0
+    uninstall_body = src[uni_idx:]
+    assert "DeleteFile" in uninstall_body and "nexus.cmd" in uninstall_body
+    assert "RemoveDir" in uninstall_body
+
+
+def test_finish_page_documents_the_terminal_restart() -> None:
+    src = _iss_text()
+    assert "[Messages]" in src and "FinishedLabel=" in src
+    assert "restart" in src.lower(), "already-open terminals need a restart to see nexus"

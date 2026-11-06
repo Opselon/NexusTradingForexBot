@@ -55,9 +55,18 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; Idempotent re-install = upgrade path (user data untouched)
 CloseApplications=yes
 RestartApplications=no
+; CLI-ON-PATH (2026-11): broadcast WM_SETTINGCHANGE after install AND uninstall
+; so newly-opened PowerShell/CMD windows pick up the nexus shim PATH entry
+; without logging off (already-open terminals must be restarted — documented).
+ChangesEnvironment=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
+
+[Messages]
+; CLI-ON-PATH: set expectations honestly — new terminals get `nexus` from the
+; updated user PATH; terminals that were ALREADY open need a restart.
+FinishedLabel=Setup has finished installing [name] on your computer.%n%nLaunch it from the NexusTraderBot shortcut, or run the [name/2] CLI from any NEW PowerShell or CMD window:%n%n    nexus version%n    nexus doctor%n    nexus start%n%nTerminals that were already open need to be restarted to see the nexus command.
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Additional shortcuts:"; Flags: unchecked
@@ -108,6 +117,15 @@ Filename: "{app}\{#MyAppExeName}"; Parameters: "setup"; Description: "Open first
 Root: HKCU; Subkey: "Software\NexusScalpEngine"; ValueType: string; ValueName: "DataRoot"; ValueData: "{localappdata}\NexusScalpEngine"; Flags: uninsdeletekey
 
 [Code]
+const
+  // CLI-ON-PATH (2026-11): the shim directory is deliberately OUTSIDE {app}
+  // ({localappdata}\NexusScalpEngine\bin) so it is STABLE across installs,
+  // upgrades and version bumps — a PATH entry pointing at {app}\bin would go
+  // stale the moment {app} is removed by an uninstall/reinstall cycle (the
+  // exact "nexus is not recognized after reinstall" user report).
+  CliBinDirConstant = '{localappdata}\NexusScalpEngine\bin';
+  CliAppExeConstant = '{app}\NexusScalpEngine.exe';
+
 function InitializeSetup(): Boolean;
 begin
   if not Is64BitInstallMode then
@@ -121,6 +139,116 @@ begin
   Result := True;
 end;
 
+// ---------------------------------------------------------------------------
+// CLI-ON-PATH: nexus / nse shims + user PATH management
+// ---------------------------------------------------------------------------
+
+procedure WriteCliShims;
+var
+  BinDir, AppExe, CmdBody: string;
+begin
+  BinDir := ExpandConstant(CliBinDirConstant);
+  AppExe := ExpandConstant(CliAppExeConstant);
+  ForceDirectories(BinDir);
+  // NOTE: absolute {app} path baked at install time; quoted (Programs has a
+  // space); %* forwards every argument; exit code preserved for scripts/CI.
+  CmdBody := '@echo off' + #13#10 +
+             '"' + AppExe + '" %*' + #13#10 +
+             'exit /b %ERRORLEVEL%' + #13#10;
+  SaveStringToFile(BinDir + '\nexus.cmd', CmdBody, False);
+  SaveStringToFile(BinDir + '\nse.cmd', CmdBody, False);
+end;
+
+function PathContainsEntry(const UserPath, Entry: string): Boolean;
+var
+  Rest, Token: string;
+  SepPos: Integer;
+begin
+  Result := False;
+  Rest := UserPath;
+  while Length(Rest) > 0 do
+  begin
+    SepPos := Pos(';', Rest);
+    if SepPos > 0 then
+    begin
+      Token := Copy(Rest, 1, SepPos - 1);
+      Rest := Copy(Rest, SepPos + 1, Length(Rest));
+    end
+    else
+    begin
+      Token := Rest;
+      Rest := '';
+    end;
+    if UpperCase(Trim(Token)) = UpperCase(Entry) then
+    begin
+      Result := True;
+      Exit;
+    end;
+  end;
+end;
+
+procedure AddBinToUserPath;
+var
+  UserPath, BinDir: string;
+begin
+  BinDir := ExpandConstant(CliBinDirConstant);
+  // Idempotent: re-running the installer must never duplicate the entry
+  // (the reinstall-after-uninstall cycle re-adds it; upgrades keep one).
+  if RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', UserPath) then
+  begin
+    if not PathContainsEntry(UserPath, BinDir) then
+    begin
+      if Length(UserPath) > 0 then
+        UserPath := UserPath + ';';
+      UserPath := UserPath + BinDir;
+      RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', UserPath);
+    end;
+  end
+  else
+  begin
+    // No user Path value exists yet — create one with ONLY our entry.
+    RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', BinDir);
+  end;
+end;
+
+procedure RemoveBinFromUserPath;
+var
+  OldPath, NewPath, BinDir, Rest, Token: string;
+  SepPos: Integer;
+  Changed: Boolean;
+begin
+  BinDir := UpperCase(ExpandConstant(CliBinDirConstant));
+  if not RegQueryStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', OldPath) then
+    Exit;
+  NewPath := '';
+  Changed := False;
+  Rest := OldPath;
+  while Length(Rest) > 0 do
+  begin
+    SepPos := Pos(';', Rest);
+    if SepPos > 0 then
+    begin
+      Token := Copy(Rest, 1, SepPos - 1);
+      Rest := Copy(Rest, SepPos + 1, Length(Rest));
+    end
+    else
+    begin
+      Token := Rest;
+      Rest := '';
+    end;
+    if UpperCase(Trim(Token)) = BinDir then
+      Changed := True
+    else
+    begin
+      if Length(NewPath) > 0 then
+        NewPath := NewPath + ';';
+      NewPath := NewPath + Token;
+    end;
+  end;
+  if Changed then
+    RegWriteExpandStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', NewPath);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
@@ -128,6 +256,10 @@ begin
     // First-run marker: the CLI reads this to know the wizard should run.
     SaveStringToFile(ExpandConstant('{localappdata}\NexusScalpEngine\config\.first_run'),
                      '1', False);
+    // CLI-ON-PATH: shims + user PATH (idempotent; reinstall-after-uninstall
+    // re-adds everything the uninstall removed).
+    WriteCliShims;
+    AddBinToUserPath;
   end;
 end;
 
@@ -160,6 +292,14 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
   if CurUninstallStep = usUninstall then
   begin
+    // CLI-ON-PATH cleanup: the shim files were written OUTSIDE Inno's uninstall
+    // log (SaveStringToFile), so they are removed explicitly here together with
+    // the PATH entry. Order matters: PATH cleanup BEFORE the optional DelTree
+    // (which may remove the bin dir the shims live in).
+    RemoveBinFromUserPath;
+    DeleteFile(ExpandConstant('{localappdata}\NexusScalpEngine\bin\nexus.cmd'));
+    DeleteFile(ExpandConstant('{localappdata}\NexusScalpEngine\bin\nse.cmd'));
+    RemoveDir(ExpandConstant('{localappdata}\NexusScalpEngine\bin'));
     if not UninstallSilent then
     begin
       if RemoveDataPage.Values[0] then
