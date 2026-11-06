@@ -485,6 +485,15 @@ def start_cmd(
         raise typer.Exit(xc.EXIT_USAGE) from None
     chosen = MODE_ALIASES[mode_key]
 
+    # LOCAL-MODEL HANDSHAKE (2026-11): the desktop-shortcut launch lands here,
+    # so EVERY engine start (interactive TTY) shows the red local-model notice
+    # (trained locally — may not have verified edge/win-rate; star the repo to
+    # unlock official models). Cache-only + disk-cheap + failure-isolated:
+    # it can never slow or break the boot, and --json stays machine-clean.
+    from nexus_scalp.cli.handshake import maybe_show_handshake
+
+    maybe_show_handshake(json_mode=json_mode)
+
     # Download-ready: live.yaml is NEVER required. The operator can run a
     # fresh download with just `nexus start` — if no config file exists we
     # bootstrap from AppConfig defaults (PAPER, safe) and the persisted
