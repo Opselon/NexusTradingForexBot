@@ -1448,6 +1448,7 @@ jobs:
     needs:
       - full-runtime-provider
       - mt5-wine-runtime
+      - mt5-native
     runs-on: ubuntu-24.04
     timeout-minutes: 5
 
@@ -1482,8 +1483,9 @@ jobs:
 
       - name: Require every runtime line to pass
         run: |
-          echo "SQLite/PostgreSQL matrix: ${{ needs.full-runtime-provider.result }}"
-          echo "MT5/Wine line:             ${{ needs.mt5-wine-runtime.result }}"
+          echo "SQLite/PostgreSQL matrix:   ${{ needs.full-runtime-provider.result }}"
+          echo "MT5/Wine line:              ${{ needs.mt5-wine-runtime.result }}"
+          echo "MT5 native Windows line:    ${{ needs.mt5-native.result }}"
           if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
             echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
             exit 1
@@ -1492,7 +1494,25 @@ jobs:
             echo "::error::MetaTrader 5 Wine runtime failed"
             exit 1
           fi
+          if [ "${{ needs.mt5-native.result }}" != "success" ]; then
+            echo "::error::MetaTrader 5 native Windows IPC certification failed or was skipped"
+            exit 1
+          fi
           echo "FULL RUNTIME CERTIFICATION: PASS"
+
+  # ---------------------------------------------------------------------------
+  # NATIVE WINDOWS MT5 — the genuine Win32 IPC certification line
+  # (reusable workflow, see .github/workflows/mt5-native-windows.yml).
+  # Authenticode-verified official installer + real mt5.initialize() IPC +
+  # DirectMT5Adapter.connect() on a windows-latest runner, with NO broker
+  # credentials. Demo (Level 2/3) legs are dispatch-only and never run here.
+  # ---------------------------------------------------------------------------
+  mt5-native:
+    name: MetaTrader 5 Native Windows IPC
+    uses: ./.github/workflows/mt5-native-windows.yml
+    permissions:
+      contents: read
+    secrets: inherit
   # ---------------------------------------------------------------------------
   # TIER 2 — EXTENDED validation (brief section 19). Runs on MAIN PUSH
   # (post-merge evidence) and explicit dispatch, never on the PR lane. Holds
