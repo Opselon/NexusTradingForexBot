@@ -124,8 +124,8 @@ def _sleep_quiet(seconds: float) -> None:
         import time
 
         time.sleep(seconds)
-    except Exception:
-        pass
+    except Exception as exc:  # anti-crash: allow (auto-close countdown must never crash the wizard)
+        logger.debug("[SETUP] auto-close wait interrupted", error_type=type(exc).__name__)
 
 
 def _wizard_crash(exc: BaseException) -> None:
