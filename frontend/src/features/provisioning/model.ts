@@ -337,3 +337,83 @@ export interface PlatformError {
   repository?: string | null;
   remedy?: string | null;
 }
+
+// ---------------------------------------------------------------------------
+// Lifecycle coordinator DTOs (spec §3/§6/§11). Mirror
+// src/nexus_scalp/web/provisioning_routes.py platform/startup|recovery|
+// invitation and diagnostics/delivery.
+// ---------------------------------------------------------------------------
+
+/** Server lease verdict (NSE-Platform canonical startup response). */
+export type EntitlementDecision =
+  | "GrantedFresh"
+  | "GrantedStale"
+  | "Revoked"
+  | "Pending"
+  | "LeaseExpired";
+
+/** Newest official model release published by the platform. */
+export interface ModelRelease {
+  available: boolean;
+  id?: string;
+  version?: string;
+  dimension?: number;
+  sha256?: string;
+  size_bytes?: number;
+  release_notes?: string | null;
+  benchmark?: Record<string, unknown> | null;
+  published_at?: string | null;
+}
+
+/** GET /api/provisioning/platform/startup — one handshake snapshot. */
+export interface StartupHandshake {
+  ok: boolean;
+  state: PlatformState;
+  reason: string | null;
+  github_login: string | null;
+  installation_id: string | null;
+  entitlement_decision: EntitlementDecision | null;
+  access_allowed: boolean | null;
+  checked_at: string | null;
+  valid_until: string | null;
+  next_recheck_at: string | null;
+  latest_model: ModelRelease | null;
+  installed_model_version: string | null;
+  update_available: boolean | null;
+}
+
+/** GET /api/provisioning/platform/recovery — interrupted-setup resume hint. */
+export interface RecoveryHint {
+  stage: string;
+  headline: string;
+  actions: string[];
+}
+
+/** GET /api/provisioning/platform/invitation — invitation gating per release. */
+export interface InvitationStatus {
+  offer: boolean;
+  latest_version: string | null;
+  installed_version: string | null;
+}
+
+/** GET /api/provisioning/diagnostics/delivery — delivery evidence (§11). */
+export interface DiagnosticsDelivery {
+  last_attempt?: number;
+  last_success?: number;
+  last_acknowledged_id?: string;
+  pending_record_count?: number;
+  last_failure_code?: string;
+  consent_enabled?: boolean;
+}
+
+export interface LifecycleResponse<T> {
+  success: boolean;
+  startup?: T;
+  recovery?: RecoveryHint;
+  offer?: boolean;
+  delivery?: DiagnosticsDelivery;
+  latest_version?: string | null;
+  installed_version?: string | null;
+  /** Present only when success is false. */
+  code?: string;
+}

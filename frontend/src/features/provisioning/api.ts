@@ -12,12 +12,15 @@
 import { getLegacy, send } from "@/api/client";
 import type {
   DatasetListResponse,
+  DiagnosticsDelivery,
+  EntitlementDecision,
   InstallRequest,
   InstallResponse,
   ModelInventoryResponse,
   OfficialRequest,
   OfficialResponse,
   PlatformResponse,
+  PlatformState,
   ProvisioningEnvironmentResponse,
   ProvisioningStatusResponse,
   TrainBackend,
@@ -27,6 +30,32 @@ import type {
   TrainStartRequest,
   TrainStartResponse,
 } from "./model";
+
+/** Lifecycle coordinator (spec §3): the single startup handshake snapshot. */
+export interface StartupSnapshot {
+  ok: boolean;
+  state: PlatformState;
+  reason: string | null;
+  github_login: string | null;
+  installation_id: string | null;
+  entitlement_decision: EntitlementDecision | null;
+  access_allowed: boolean | null;
+  checked_at: string | null;
+  valid_until: string | null;
+  next_recheck_at: string | null;
+  latest_model: {
+    available: boolean;
+    id?: string;
+    version?: string;
+    sha256?: string;
+    size_bytes?: number;
+    release_notes?: string | null;
+    benchmark?: Record<string, unknown> | null;
+    published_at?: string | null;
+  } | null;
+  installed_model_version: string | null;
+  update_available: boolean | null;
+}
 
 const BASE = "/api/provisioning";
 
@@ -139,4 +168,26 @@ export const platformApi = {
   /** POST .../disconnect — drop the local link. */
   disconnect: (): Promise<PlatformResponse> =>
     send<PlatformResponse>(`${PLATFORM_BASE}/disconnect`, {}),
+
+  /** GET .../startup — canonical handshake snapshot (run-or-last). */
+  startup: (signal?: AbortSignal): Promise<{ success: boolean; startup?: StartupSnapshot; code?: string }> =>
+    getLegacy<{ success: boolean; startup?: StartupSnapshot; code?: string }>(`${PLATFORM_BASE}/startup`, signal),
+
+  /** GET .../recovery — interrupted-setup resume hint (never a forced re-OAuth). */
+  recovery: (signal?: AbortSignal): Promise<{ success: boolean; recovery?: { stage: string; headline: string; actions: string[] }; code?: string }> =>
+    getLegacy<{ success: boolean; recovery?: { stage: string; headline: string; actions: string[] }; code?: string }>(`${PLATFORM_BASE}/recovery`, signal),
+
+  /** GET .../invitation — may the invitation card show for this release? */
+  invitation: (signal?: AbortSignal): Promise<{ success: boolean; offer?: boolean; latest_version?: string | null; installed_version?: string | null; code?: string }> =>
+    getLegacy<{ success: boolean; offer?: boolean; latest_version?: string | null; installed_version?: string | null; code?: string }>(`${PLATFORM_BASE}/invitation`, signal),
+
+  /** POST .../invitation — record the user's per-release decision. */
+  invitationDecide: (version: string, decision: "declined" | "later"): Promise<{ success: boolean; code?: string }> =>
+    send<{ success: boolean; code?: string }>(`${PLATFORM_BASE}/invitation`, { version, decision }),
+};
+
+export const diagnosticsApi = {
+  /** GET /api/provisioning/diagnostics/delivery — delivery evidence (§11). */
+  delivery: (signal?: AbortSignal): Promise<{ success: boolean; delivery?: DiagnosticsDelivery; code?: string }> =>
+    getLegacy<{ success: boolean; delivery?: DiagnosticsDelivery; code?: string }>(`${BASE}/diagnostics/delivery`, signal),
 };

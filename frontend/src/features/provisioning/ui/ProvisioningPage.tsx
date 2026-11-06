@@ -60,8 +60,12 @@ import type {
   TrainBackend,
   TrainSource,
 } from "../model";
+import type { StartupSnapshot } from "../api";
+import { platformApi } from "../api";
 import { TRAIN_BACKENDS, TRAIN_SOURCES } from "../model";
 import { DbHealthBadge } from "./DbHealthBadge";
+import { OfficialModelInvitation } from "./OfficialModelInvitation";
+import { AccountStatusPanel } from "./AccountStatusPanel";
 import { PlatformVerificationPanel } from "./PlatformVerificationPanel";
 import { shouldRenderDbHealth, useDbHealth } from "./useDbHealth";
 import {
@@ -391,6 +395,11 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   // enforces fail-closed regardless; the button hint mirrors the state.
   const [platformVerified, setPlatformVerified] = useState<boolean | null>(null);
   const [officialStart, setOfficialStart] = useState<number | null>(null);
+  // Lifecycle coordinator (spec §3): one shared handshake snapshot for the
+  // account status panel + the official-model invitation card.
+  const [startupSnapshot, setStartupSnapshot] = useState<StartupSnapshot | null>(null);
+  const [invitationOffer, setInvitationOffer] = useState<boolean>(false);
+  const [recovery, setRecovery] = useState<{ stage: string; headline: string; actions: string[] } | null>(null);
   const [training, setTraining] = useState<boolean>(false);
   const [runStart, setRunStart] = useState<number | null>(null);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
@@ -436,6 +445,31 @@ export default function ProvisioningPage(_props: ShellPageProps) {
   useEffect(() => {
     void refreshEnv(backend);
   }, [backend, refreshEnv]);
+
+  // Lifecycle §3: load THE startup handshake once (the account panel polls
+  // its own refresh cadence; this snapshot seeds the invitation card).
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const out = await platformApi.startup();
+        if (cancelled || !out.success || !out.startup) return;
+        setStartupSnapshot(out.startup);
+      } catch {
+        /* handshake best-effort: the gate decides, not this card */
+      }
+      try {
+        const rec = await platformApi.recovery();
+        if (cancelled || !rec.success || !rec.recovery) return;
+        setRecovery(rec.recovery);
+      } catch {
+        /* recovery hint is optional UX */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // BUG-3 resume: probe the run on mount and adopt it when it is active.
   // An idle answer (active:false) is ignored — its result:{} must never be
@@ -1104,8 +1138,23 @@ export default function ProvisioningPage(_props: ShellPageProps) {
           </div>
         </Panel>
 
+        {recovery ? (
+          <div className="pv-callout warn">
+            <div className="head">{t("provisioning.recovery.headline", "Setup incomplete")}</div>
+            <p className="small">{recovery.headline}</p>
+          </div>
+        ) : null}
+
         {/* --------------------------------------- platform verification */}
         <PlatformVerificationPanel onVerifiedChange={setPlatformVerified} />
+
+        {/* ------------------------------ lifecycle: account status + invitation */}
+        <AccountStatusPanel snapshot={startupSnapshot} onInvitationChange={setInvitationOffer} />
+        <OfficialModelInvitation
+          offer={invitationOffer}
+          snapshot={startupSnapshot}
+          onInstall={() => void onInstall()}
+        />
 
         {/* --------------------------------------------- official model card */}
         <Panel title={t("provisioning.official.title2", "Model Slot & Official Model")}>
