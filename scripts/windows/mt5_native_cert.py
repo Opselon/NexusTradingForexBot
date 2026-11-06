@@ -737,6 +737,28 @@ def main(argv: list[str] | None = None) -> int:
     level1 = CertResult(1, "Native terminal + IPC (no credentials)")
     level23 = CertResult(23, "Demo connectivity / gated demo trade")
 
+    def _own_terminal_lifecycle() -> None:
+        """The certification run OWNS the terminal process deterministically.
+
+        Any terminal64.exe instance this run spawned or pre-launched is
+        terminated before the runner is released - on success and on every
+        failure path. Readiness itself is NEVER inferred from process
+        existence: only mt5.initialize()/terminal_info()/version() answer
+        (the IPC handshake) prove the terminal is actually ready.
+        """
+        try:
+            procs = _terminal_processes()
+            if procs:
+                _kill_terminal_instances()
+                level1.note(
+                    "terminal ownership", f"terminated {len(procs)} leftover terminal64 instance(s)"
+                )
+                level23.note(
+                    "terminal ownership", f"terminated {len(procs)} leftover terminal64 instance(s)"
+                )
+        except Exception as exc:
+            print(f"::warning::terminal ownership cleanup incomplete: {exc}")
+
     overall_ok = True
     try:
         _run_level1(level1)
@@ -770,6 +792,8 @@ def main(argv: list[str] | None = None) -> int:
                     "::warning::Demo certification leg FAILED — advisory "
                     "(network-dependent, not a mandatory PR gate)"
                 )
+
+    _own_terminal_lifecycle()
 
     payload = {
         "captured_at": _utcnow(),

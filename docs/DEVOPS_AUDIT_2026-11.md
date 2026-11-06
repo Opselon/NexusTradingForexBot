@@ -127,7 +127,40 @@ where committing regenerated locks requires it.
 | `nightly-e2e.yml` | last 3 scheduled runs failure, ~9-10m each |
 | `qa-deep-assurance.yml` | last 5 runs failure, ~3-4m each |
 
-## 7. Performance baseline (before) — see PR description for after
+## 7. Transition outcome + administrator actions (review round 1, 2026-11-06)
+
+Execution policy is now: **Windows primary and mandatory; Wine and macOS are
+compatibility platforms, weekly + dispatch, never blocking.**
+
+| Line | Execution policy |
+| :--- | :--- |
+| Native Windows MT5 IPC | Every PR + push via ci.yml → `mt5-native` (workflow_call); fail-closed member of `Full Runtime Overall Verdict`. **VERIFIED IN REAL CI**: run 42265803091 — Authenticode Valid, terminal build 6306, `mt5.initialize()` tiered attach (A credentialless ×3 → -10005; B pre-launched ×2 → -10005; **C startup-config → OK**), `mt5.version()`=(500, 6306, '6 Nov 2026'), `terminal_info() connected=True`, `DirectMT5Adapter.connect()` PASS. The discovered failure mode (fresh headless installs never reach IPC-ready credentiallessly) is pinned by `tests/ci/test_mt5_native_cert_contract.py` (7 tests). |
+| Wine | `mt5-wine-compat.yml` only — weekly cron + dispatch; the ci.yml job was REMOVED from the mandatory verdict. Wine never affects PRs, the verdict, or releases. First independent run: PASS 6m38s (run 42262434360). |
+| macOS | `tests-macos-compat.yml` only — weekly cron + dispatch, advisory. tests-os.yml keeps a transitional ALWAYS-SKIP-REPORT macOS leg solely to emit the context name branch protection still requires. |
+| Release gate | `REQUIRED_RELEASE_RUNTIME_CHECKS` = Full Runtime Overall Verdict + DB Fabric Certification; Wine never required directly or indirectly. |
+
+### Administrator migration bundle (repository settings — NOT executed by this task)
+
+Branch protection currently requires `Py Tests (macos-latest)` and does not
+require the runtime verdict. One authorized protection edit migrates both:
+
+1. **ADD** required status check context: `Full Runtime Overall Verdict`
+   (this makes the fail-closed provider + native Windows verdict a PR merge
+   gate — review item 5).
+2. **REMOVE** required status check context: `Py Tests (macos-latest)`
+   (its real coverage moved to tests-macos-compat.yml, advisory).
+3. Immediately after: delete the transitional macOS leg from tests-os.yml,
+   remove `"Py Tests (macos-latest)"` from
+   `scripts/release/release_auth_gate.py:REQUIRED_MAIN_CI_CHECKS`, regenerate
+   `artifacts/forensics/branch_protection_required_checks.json`, and update
+   `tests/unit/test_release_auth_gate.py::test_required_list_matches_live_branch_protection`
+   — the drift test stays truthful at every point in the sequence (it compares
+   the gate tuple against the LIVE protection snapshot).
+
+Until step 2 happens, the transitional leg is a ~15s no-op report and the
+release gate still honors the live protection contract.
+
+## 8. Performance baseline (before) — see PR description for after
 
 - PR wall 9m55s median; quality job 550s median (critical path).
 - Main-push Actions cost ~119 billable min (tests-os macOS 10× dominates).

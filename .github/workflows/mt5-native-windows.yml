@@ -60,7 +60,10 @@ jobs:
   mt5-native-ipc:
     name: MetaTrader 5 Native Windows IPC
     runs-on: windows-latest
-    timeout-minutes: 40
+    # Measured on run 42265803091 (first PASS): ~41m when the tiered attach
+    # exhausts A and B before C succeeds. 55m gives that slow path headroom;
+    # the fast path (C on first attempt after settle) is ~25m.
+    timeout-minutes: 55
 
     steps:
       - name: Checkout repository
@@ -212,7 +215,7 @@ jobs:
     # prerequisite: this leg executes only on explicit dispatch.
     if: github.event_name == 'workflow_dispatch' && inputs.demo_market_test == true
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
 
     env:
       MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}

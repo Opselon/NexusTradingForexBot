@@ -16,15 +16,14 @@ name: Tests (OS Matrix)
 #                ~1 min (DEC-0008 pattern — a required context must not go
 #                MISSING on PRs).
 #     main push: Windows runs the FULL critical suite (product-truth evidence
-#                on the commit that tags become releases from); macOS reports
-#                SKIP-REPORT (DevOps audit P9, 2026-11 - cost trim, drift
-#                detection stays on the Monday schedule).
-#     Monday schedule: full suite both OSes (platform drift catch-up).
+#                on the commit that tags become releases from).
+#     Monday schedule: Windows full suite (platform drift catch-up); the
+#                macOS full sweep moved to tests-macos-compat.yml
+#                (weekly + dispatch, advisory, non-blocking).
 #     workflow_dispatch: full suite (+ optional ci.yml-style full flag).
 #
-# Nothing ships for macOS (release.yml builds windows-x64 only) — its full-suite
-# role is early-warning drift detection, which the main-push lane provides
-# within minutes of merge instead of blocking the PR that caused it.
+# Nothing ships for macOS (release.yml builds windows-x64 only). Wine is also
+# a compatibility platform (mt5-wine-compat.yml, weekly + dispatch).
 
 on:
   push:
@@ -33,7 +32,8 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Monday 07:17 UTC platform drift sweep (full suite both OSes).
+    # Monday 07:17 UTC platform drift sweep (Windows full suite; the macOS
+    # full sweep runs in tests-macos-compat.yml on its own weekly schedule).
     - cron: "17 7 * * 1"
   workflow_dispatch:
     inputs:
@@ -81,18 +81,16 @@ jobs:
             pull_request)
               if [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT; else MODE=SKEW; fi ;;
             push)
-              # DevOps audit P9 (2026-11): on main pushes Windows runs the FULL
-              # critical suite; macOS returns to SKIP-REPORT. macOS ships
-              # nothing (release.yml builds windows-x64 only) and its FULL-suite
-              # role is platform-drift detection, which the Monday 07:17 UTC
-              # schedule (below) still runs on both OSes. Measured cost of the
-              # per-push macOS FULL leg: ~8m25s at the 10x macOS multiplier =
-              # ~84 of the ~119 billable minutes of a main-push tests-os run.
+              # Review policy (2026-11): Windows is the primary runtime
+              # platform; macOS is a compatibility platform whose FULL-suite
+              # drift sweep moved to tests-macos-compat.yml (weekly + dispatch,
+              # advisory). Measured cost of the per-push macOS FULL leg:
+              # ~8m25s at the 10x macOS multiplier = ~84 of the ~119 billable
+              # minutes of a main-push tests-os run.
               if [ "${{ github.ref_name }}" = "main" ]; then
                 if [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT; else MODE=FULL; fi
               elif [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT;
               else MODE=SKEW; fi ;;
-            schedule) MODE=FULL ;;
             workflow_dispatch)
               if [ "${{ inputs.full_suite }}" = "true" ] || [ "${{ matrix.os }}" = "windows-latest" ]; then MODE=FULL; else MODE=SKIP-REPORT; fi ;;
           esac
@@ -129,6 +127,15 @@ jobs:
               MODE=SKIP-REPORT
             fi
           fi
+          # macOS TRANSITIONAL context emitter: branch protection still
+          # requires the "Py Tests (macos-latest)" context name and repository
+          # settings are outside this task's authorization, so the macOS leg
+          # stays in the matrix ONLY to emit that context (always SKIP-REPORT;
+          # it installs nothing and runs no tests). The REAL macOS coverage
+          # lives in tests-macos-compat.yml (weekly + dispatch, advisory).
+          # After the documented admin migration removes the macOS context
+          # from protection, delete this leg entirely (PR description,
+          # admin-actions).
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}

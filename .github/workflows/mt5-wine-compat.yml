@@ -31,15 +31,10 @@ on:
   workflow_dispatch:
   schedule:
     # Weekly Wine compatibility soak (off-peak).
+    # Review policy (2026-11): Wine is a COMPATIBILITY platform - weekly +
+    # manual dispatch ONLY. No PR trigger: ordinary PRs never execute Wine,
+    # and a PR that only edits this workflow does not run it either.
     - cron: "23 3 * * 3"
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - "scripts/linux/**"
-      - "docs/linux_wsl2_mt5_platform.md"
-      - "tests/unit/test_wsl2_platform_registry.py"
-      - "tests/unit/test_linux_mt5_platform.py"
-      - ".github/workflows/mt5-wine-compat.yml"
 
 permissions:
   contents: read
