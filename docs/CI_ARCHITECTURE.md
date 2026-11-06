@@ -12,7 +12,10 @@ this file is the CI-specific companion.
 
 | Workflow | Trigger | Purpose | Lanes touched |
 | :--- | :--- | :--- | :--- |
-| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gate (ruff/mypy/pytest critical suite) + **CI self-integrity** + review-status | python, web, ci |
+| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gates (lint/types ∥ tests, split 2026-11 under one required verdict) + runtime provider matrix + DB fabric + **CI self-integrity** + review-status | python, web, ci |
+| `mt5-native-windows.yml` | `workflow_call` (from ci.yml); dispatch | **Native Windows MT5 certification** (primary runtime platform): Authenticode-verified installer + real `mt5.initialize()` IPC + `DirectMT5Adapter` connect; demo (Level 2/3) legs are dispatch-only | python/runtime |
+| `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
+| `tests-macos-compat.yml` | weekly cron + dispatch ONLY | macOS full critical suite (independent, advisory platform-drift sweep) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
 | `tests-os.yml` | push/PR main·develop·ci-tests; dispatch | Critical suite on Windows + macOS (not Ubuntu — covered by ci.yml) | python (cross-OS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |

@@ -1,0 +1,304 @@
+name: MT5 Native Windows Certification
+
+# ---------------------------------------------------------------------------
+# NATIVE Windows MetaTrader 5 certification (DevOps audit P1/P2, 2026-11).
+#
+# Why: the production Windows path is DirectMT5Adapter — the official
+# MetaTrader5 win32 wheel talking to a real terminal via IPC. Wine can never
+# certify that path (documented -10005 IPC timeout under Wine,
+# scripts/linux/README.md), so before this workflow the native surface had
+# ZERO CI evidence while Wine (a compatibility lane) was the only terminal
+# runtime gate.
+#
+# Level 1 (job `mt5-native-ipc`, MANDATORY runtime line, no credentials):
+#   1. official installer downloaded from the MetaQuotes CDN
+#   2. Authenticode signature verified (Status=Valid, signer=MetaQuotes)
+#      — downloading is NOT integration; a valid signature is the integrity
+#      gate for a vendor that ships moving builds
+#   3. silent /auto installation, terminal64.exe existence awaited
+#   4. scripts/windows/mt5_native_cert.py: real mt5.initialize(path)/
+#      version()/terminal_info(), shutdown + repeat-attach, and the
+#      production DirectMT5Adapter.connect() through the same IPC surface
+#
+# Level 2/3 (job `mt5-native-demo`, MANUAL dispatch only — network-dependent
+# demo trading is never a PR prerequisite):
+#   * demo login + account trade_mode==DEMO enforcement (real accounts hard-fail)
+#   * XAUUSD availability, tick stream + M1/M5 rate timestamps
+#   * Level 3 additionally requires --demo-trade AND NSE_DEMO_TRADE_TEST=true
+#     and sends exactly ONE 0.01-lot order under the dedicated test magic,
+#     closes it, and fails unless no test position/order remains.
+#
+# Called from ci.yml via workflow_call so `Full Runtime Overall Verdict`
+# fails closed when the native IPC line fails or is skipped.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      demo_market_test:
+        description: "Run Level 2 demo market connectivity (requires MT5_DEMO_* secrets)"
+        type: boolean
+        default: false
+      demo_trade_test:
+        description: "Run Level 3 demo order (also sets NSE_DEMO_TRADE_TEST=true; STILL requires explicit authorization)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+  MT5_INSTALLER_URL: "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  mt5-native-ipc:
+    name: MetaTrader 5 Native Windows IPC
+    runs-on: windows-latest
+    # Measured on run 42265803091 (first PASS): ~41m when the tiered attach
+    # exhausts A and B before C succeeds. 55m gives that slow path headroom;
+    # the fast path (C on first attempt after settle) is ~25m.
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download official MetaTrader 5 installer
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'mt5-native'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe = Join-Path $dir 'mt5setup.exe'
+          Invoke-WebRequest -Uri $env:MT5_INSTALLER_URL -OutFile $exe -MaximumRedirection 5
+          $size = (Get-Item $exe).Length
+          Write-Host "installer: $exe ($size bytes)"
+          if ($size -lt 1MB) { throw "MT5_INSTALLER_TOO_SMALL: $size bytes — download failed" }
+          Get-FileHash -Algorithm SHA256 -Path $exe | Format-List
+
+      - name: Verify installer Authenticode signature (official MetaQuotes)
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'mt5-native\mt5setup.exe'
+          $sig = Get-AuthenticodeSignature -FilePath $exe
+          Write-Host "status=$($sig.Status)"
+          Write-Host "signer =$($sig.SignerCertificate.Subject)"
+          $sig.StatusMessage | Write-Host
+          if ($sig.Status -ne 'Valid') {
+            throw "MT5_INSTALLER_SIGNATURE_INVALID: Authenticode status '$($sig.Status)' ($($sig.StatusMessage))"
+          }
+          if ($sig.SignerCertificate.Subject -notmatch 'MetaQuotes') {
+            throw "MT5_INSTALLER_SIGNER_MISMATCH: '$($sig.SignerCertificate.Subject)' is not a MetaQuotes certificate"
+          }
+          $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
+          New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+          [pscustomobject]@{
+            checked_at = (Get-Date).ToUniversalTime().ToString('o')
+            status = $sig.Status
+            signer_subject = $sig.SignerCertificate.Subject
+            signer_thumbprint = $sig.SignerCertificate.Thumbprint
+            not_before = $sig.SignerCertificate.NotBefore.ToString('o')
+            not_after = $sig.SignerCertificate.NotAfter.ToString('o')
+            sha256 = (Get-FileHash -Algorithm SHA256 -Path $exe).Hash
+          } | ConvertTo-Json | Set-Content (Join-Path $evidence 'installer-signature.json') -Encoding utf8
+          Write-Host "signature evidence written"
+
+      - name: Install MetaTrader 5 (silent /auto) and await terminal64.exe
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'mt5-native\mt5setup.exe'
+          $proc = Start-Process -FilePath $exe -ArgumentList '/auto' -PassThru
+          # /auto may return while the background installer is still extracting;
+          # the acceptance criterion is the materialized terminal binary.
+          $deadline = (Get-Date).AddMinutes(15)
+          $terminal = 'C:\Program Files\MetaTrader 5\terminal64.exe'
+          while (-not (Test-Path $terminal)) {
+            if ($proc.HasExited -and -not (Test-Path $terminal)) {
+              Write-Host "installer exited rc=$($proc.ExitCode); continuing to wait for extraction"
+            }
+            if ((Get-Date) -gt $deadline) {
+              throw "MT5_INSTALL_TIMEOUT: terminal64.exe did not appear within 15 minutes"
+            }
+            Start-Sleep -Seconds 5
+          }
+          $t = Get-Item $terminal
+          Write-Host "terminal installed: $terminal ($($t.Length) bytes) v$($t.VersionInfo.ProductVersion)"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install repository package (native adapter + MetaTrader5 wheel)
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          # pyproject pins MetaTrader5 behind the Windows platform marker, so
+          # this installs the genuine win32 IPC driver on this runner.
+          pip install -e ".[dev,web]"
+          python -c "import MetaTrader5, sys; print('MetaTrader5 wheel:', MetaTrader5.__version__, 'on', sys.platform)"
+
+      - name: Reset auto-started terminal (fresh IPC surface for certification)
+        run: |
+          # The /auto installer may leave a terminal instance running that
+          # never finished first-start initialization (no data folder, no
+          # API listener) - attaching to THAT instance is exactly the
+          # -10005 IPC timeout class observed on windows-latest
+          # (run 128040771175). Terminating it is environment SETUP, not
+          # certification: the certification script then launches a FRESH
+          # terminal itself and owns the whole attach evidence.
+          $running = Get-Process terminal64 -ErrorAction SilentlyContinue
+          if ($running) {
+            $running | ForEach-Object { Write-Host "terminating pre-existing terminal64 pid=$($_.Id) started=$($_.StartTime)" }
+            $running | Stop-Process -Force
+            Start-Sleep -Seconds 5
+          } else {
+            Write-Host "no pre-existing terminal64 process"
+          }
+
+
+      - name: Run native IPC certification (Level 1 — credentialless attach, secrets-gated fallback)
+        env:
+          # Tier C fallback: the fresh-install first-start wizard can block
+          # IPC-ready state headless (runs 128040771175, 128045834311). The
+          # Wine lane boots the terminal with a startup.ini for the same
+          # reason. The cert script prefers the credentialless tiers and
+          # records which strategy produced the IPC evidence; the config
+          # file is deleted immediately and never logged.
+          MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
+          python scripts/windows/mt5_native_cert.py --evidence-dir $evidence --levels 1
+          if ($LASTEXITCODE -ne 0) { throw "NATIVE_MT5_CERTIFICATION_FAILED (exit $LASTEXITCODE)" }
+
+      - name: Collect terminal diagnostic logs (on failure)
+        if: failure()
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
+          $out = Join-Path $evidence 'terminal-logs'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $roots = @(
+            "$env:APPDATA\MetaQuotes\Terminal",
+            'C:\Program Files\MetaTrader 5'
+          )
+          foreach ($root in $roots) {
+            if (Test-Path $root) {
+              Get-ChildItem -Path $root -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+                Select-Object -Last 12 |
+                ForEach-Object {
+                  Write-Host "=== $($_.FullName) (last 100 lines) ==="
+                  Get-Content $_.FullName -Tail 100 -ErrorAction SilentlyContinue
+                  Copy-Item $_.FullName (Join-Path $out ($_.Name)) -ErrorAction SilentlyContinue
+                }
+            }
+          }
+
+      - name: Upload native MT5 evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mt5-native-ipc-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/mt5-native/evidence/
+          if-no-files-found: error
+          retention-days: 14
+
+  mt5-native-demo:
+    name: MetaTrader 5 Native Demo Certification
+    needs: mt5-native-ipc
+    # Demo broker connectivity is network-dependent and is NEVER a PR
+    # prerequisite: this leg executes only on explicit dispatch.
+    if: github.event_name == 'workflow_dispatch' && inputs.demo_market_test == true
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    env:
+      MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+      MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+      MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
+      # Level 3 needs BOTH the dispatch input and this env var true; the cert
+      # script independently re-verifies the account is a DEMO account before
+      # sending anything and rejects real accounts hard.
+      NSE_DEMO_TRADE_TEST: ${{ inputs.demo_trade_test == true && 'true' || 'false' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download official MetaTrader 5 installer
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $dir = Join-Path $env:RUNNER_TEMP 'mt5-native'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe = Join-Path $dir 'mt5setup.exe'
+          Invoke-WebRequest -Uri $env:MT5_INSTALLER_URL -OutFile $exe -MaximumRedirection 5
+          if ((Get-Item $exe).Length -lt 1MB) { throw "MT5_INSTALLER_TOO_SMALL" }
+
+      - name: Verify installer Authenticode signature (official MetaQuotes)
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'mt5-native\mt5setup.exe'
+          $sig = Get-AuthenticodeSignature -FilePath $exe
+          if ($sig.Status -ne 'Valid') { throw "MT5_INSTALLER_SIGNATURE_INVALID: $($sig.Status)" }
+          if ($sig.SignerCertificate.Subject -notmatch 'MetaQuotes') { throw "MT5_INSTALLER_SIGNER_MISMATCH" }
+          Write-Host "signer=$($sig.SignerCertificate.Subject)"
+
+      - name: Install MetaTrader 5 (silent /auto) and await terminal64.exe
+        run: |
+          $exe = Join-Path $env:RUNNER_TEMP 'mt5-native\mt5setup.exe'
+          Start-Process -FilePath $exe -ArgumentList '/auto' -PassThru | Out-Null
+          $deadline = (Get-Date).AddMinutes(15)
+          $terminal = 'C:\Program Files\MetaTrader 5\terminal64.exe'
+          while (-not (Test-Path $terminal)) {
+            if ((Get-Date) -gt $deadline) { throw "MT5_INSTALL_TIMEOUT" }
+            Start-Sleep -Seconds 5
+          }
+          Write-Host "terminal installed: $terminal"
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install repository package (native adapter + MetaTrader5 wheel)
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,web]"
+
+      - name: Reset auto-started terminal (fresh IPC surface for certification)
+        run: |
+          $running = Get-Process terminal64 -ErrorAction SilentlyContinue
+          if ($running) {
+            $running | Stop-Process -Force
+            Start-Sleep -Seconds 5
+            Write-Host "pre-existing terminal64 terminated"
+          } else {
+            Write-Host "no pre-existing terminal64 process"
+          }
+
+      - name: Run demo certification (Level 2; Level 3 only when explicitly enabled)
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
+          if ($env:NSE_DEMO_TRADE_TEST -eq 'true') {
+            python scripts/windows/mt5_native_cert.py --evidence-dir $evidence --levels 23 --demo-trade
+          } else {
+            python scripts/windows/mt5_native_cert.py --evidence-dir $evidence --levels 23
+          }
+          # A demo-leg failure is a REAL failure (broker unreachable, account
+          # not demo, cleanup incomplete) — it must not be masked.
+          if ($LASTEXITCODE -ne 0) { throw "DEMO_MT5_CERTIFICATION_FAILED (exit $LASTEXITCODE)" }
+
+      - name: Upload demo MT5 evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mt5-native-demo-evidence-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/mt5-native/evidence/
+          if-no-files-found: error
+          retention-days: 14

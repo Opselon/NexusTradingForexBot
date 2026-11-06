@@ -86,6 +86,19 @@ REQUIRED_MAIN_CI_CHECKS: tuple[str, ...] = (
     "Validate documentation",
 )
 
+#: Runtime certification contexts that are NOT branch-protection-required on
+#: PRs but MUST be green on the exact release SHA anyway (DevOps audit P4,
+#: 2026-11): a release may never bypass the real-process SQLite/PostgreSQL
+#: runtime matrix + MT5 terminal runtime verdict, or the DB Fabric
+#: SQLite<->PostgreSQL certification lane. These run on every main push via
+#: ci.yml, so the evidence exists for any releasable commit; a missing or red
+#: runtime context fails the release authorization exactly like a failed
+#: required check (fail-closed).
+REQUIRED_RELEASE_RUNTIME_CHECKS: tuple[str, ...] = (
+    "Full Runtime Overall Verdict",
+    "DB Fabric Certification (SQLite ↔ PostgreSQL)",
+)
+
 _API_RE = re.compile(r"^https://api\.github\.com/repos/([^/]+/[^/]+)$")
 
 
@@ -170,11 +183,14 @@ def authorize(
 ) -> tuple[bool, list[str], list[str]]:
     """Return (authorized, failures, missing). Fail-closed on every gap.
 
-    A check name can appear more than once (re-runs). The verdict for a name
-    is: any completed attempt counts (a completed FAILURE cannot be masked by
-    a later queued re-run), and if any attempt is pending with no completed
-    attempt, the name is pending.
+    ``required`` defaults to the full release boundary: branch-protection
+    contexts PLUS the runtime certification contexts
+    (REQUIRED_RELEASE_RUNTIME_CHECKS). A check name can appear more than
+    once (re-runs). The verdict for a name is: any completed attempt counts
+    (a completed FAILURE cannot be masked by a later queued re-run), and if
+    any attempt is pending with no completed attempt, the name is pending.
     """
+    required = tuple(required) + REQUIRED_RELEASE_RUNTIME_CHECKS
     verdicts: dict[str, str] = {}
     for run in runs:
         name = str(run.get("name", ""))
@@ -243,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         "RELEASE AUTHORIZED: all required main-CI checks succeeded on this exact SHA "
-        f"({', '.join(REQUIRED_MAIN_CI_CHECKS)})"
+        f"({', '.join((*REQUIRED_MAIN_CI_CHECKS, *REQUIRED_RELEASE_RUNTIME_CHECKS))})"
     )
     return 0
 

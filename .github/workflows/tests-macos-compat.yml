@@ -1,0 +1,89 @@
+name: macOS Compatibility (Weekly)
+
+# ---------------------------------------------------------------------------
+# macOS COMPATIBILITY LINE (independent, advisory) — review policy 2026-11.
+#
+# macOS ships nothing (release.yml builds windows-x64 only) and the product's
+# primary runtime platform is Windows. The macOS full critical suite is
+# therefore a weekly platform-drift sweep, NOT part of ordinary PR or push
+# execution and NOT a required check:
+#
+#   * triggers: weekly schedule + manual dispatch ONLY (never on PRs/pushes)
+#   * result: fully visible here, with artifacts, but advisory/non-blocking -
+#     a macOS failure can never block a PR, the runtime verdict, or a release
+#
+# The transitional context note in tests-os.yml explains why tests-os.yml
+# still emits the (always-SKIP-REPORT) "Py Tests (macos-latest)" context on
+# PRs: branch protection still requires that context name and repository
+# settings are outside this task's authorization. Once an administrator
+# removes "Py Tests (macos-latest)" from the required contexts, the
+# transitional leg is deleted and this workflow is the only macOS lane.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Monday platform-drift sweep (replaces the macOS leg of the old
+    # tests-os.yml Monday run).
+    - cron: "17 7 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-macos-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos-full-suite:
+    name: macOS full critical suite (advisory)
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Run full critical suite (platform drift sweep)
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+                 > pytest-macos-compat.txt 2>&1
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          tail -60 pytest-macos-compat.txt
+          exit $rc
+
+      - name: Lane report
+        if: always()
+        run: |
+          echo "## macOS full critical suite (advisory): mode=FULL rc=${CRIT_RC:-not-produced}" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "This is a weekly compatibility sweep - it never gates PRs, the runtime verdict, or releases." | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload macOS suite evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-compat-suite-${{ github.run_id }}
+          path: |
+            pytest-macos-compat.txt
+          if-no-files-found: warn
+          retention-days: 14

@@ -87,7 +87,7 @@ jobs:
             qa-deep-full.json
             qa-deep-mutations.json
           if-no-files-found: ignore
-          retention-days: 90
+          retention-days: 14
 
       - name: Job summary
         if: always()

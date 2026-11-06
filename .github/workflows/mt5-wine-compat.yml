@@ -1,0 +1,178 @@
+name: MT5 Wine Compatibility
+
+# ---------------------------------------------------------------------------
+# WINE COMPATIBILITY LINE (independent) — DevOps audit P7 + Phase-5 split.
+#
+# History: this was the `mt5-wine-runtime` job inside ci.yml and the ONLY MT5
+# terminal runtime gate. Wine can never certify the native Win32 IPC path
+# (documented -10005 IPC timeout under Wine, scripts/linux/README.md:17-20),
+# and it carried real operational fragility: run 42116643396 died inside the
+# wine install at the 15m cap (PR #721 raised it to 40m + apt retries), then
+# PR #723 hit the winehq CDN at ~150 KB/s (34 minutes of pure download) and
+# the cap went to 75m.
+#
+# With genuine native Windows MT5 certification now implemented and verified
+# in CI (.github/workflows/mt5-native-windows.yml — Authenticode-verified
+# installer + real mt5.initialize() IPC + DirectMT5Adapter.connect()), Wine
+# is moved OUT of the required PR/release runtime verdict into this
+# independent compatibility workflow:
+#
+#   * triggers: manual dispatch, weekly schedule, and changes to the actual
+#     Linux/Wine compatibility surface (scripts/linux/**, WSL2 docs/registry
+#     tests) — a Wine failure can no longer block a PR, the Full Runtime
+#     verdict, or a release
+#   * the lifecycle coverage is preserved unchanged: Wine staging + Xvfb,
+#     isolated prefix, official MT5 installer, start, 120s health soak,
+#     doctor checks, diagnostic logs, artifact collection
+#   * the workflow remains fully observable and independently runnable
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Weekly Wine compatibility soak (off-peak).
+    # Review policy (2026-11): Wine is a COMPATIBILITY platform - weekly +
+    # manual dispatch ONLY. No PR trigger: ordinary PRs never execute Wine,
+    # and a PR that only edits this workflow does not run it either.
+    - cron: "23 3 * * 3"
+
+permissions:
+  contents: read
+
+env:
+  PYTHON_VERSION: "3.11"
+
+concurrency:
+  group: mt5-wine-compat-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mt5-wine-compat:
+    name: MetaTrader 5 Wine Compatibility
+    runs-on: ubuntu-24.04
+    # 2026-11-05 run 42116643396: job killed inside the wine install at the
+    # 15m cap ("The operation was canceled" — runner contention). PR #721
+    # raised the cap to 40m and added apt retries. 2026-11-06 PR #723 hit
+    # the 40m cap from a flaky winehq CDN (~34m of downloads) and the cap
+    # went to 75m (commit 2eca47c5). The cap measures runner/CDN contention,
+    # not test correctness.
+    timeout-minutes: 75
+
+    env:
+      NEXUS_MT5_DISPLAY: "99"
+      NEXUS_MT5_WINEDEBUG: "-all"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install Wine staging + Xvfb
+        run: |
+          set -euo pipefail
+          # Transient mirror stalls (WineHQ/Ubuntu) must retry, not consume
+          # the job budget: run 42116643396 died inside this step.
+          APT_OPTS=(-o Acquire::Retries=5 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60)
+          sudo dpkg --add-architecture i386
+          sudo apt-get update "${APT_OPTS[@]}"
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install "${APT_OPTS[@]}" -y --no-install-recommends ca-certificates curl wget gnupg xvfb x11-utils winbind
+          sudo mkdir -pm755 /etc/apt/keyrings
+          wget -qO- https://dl.winehq.org/wine-builds/winehq.key | sudo gpg --dearmor -o /etc/apt/keyrings/winehq-archive.key
+          sudo wget -qNP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/noble/winehq-noble.sources
+          sudo apt-get update "${APT_OPTS[@]}"
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get install "${APT_OPTS[@]}" -y --install-recommends winehq-staging
+          wine --version
+
+      - name: Prepare isolated MT5 runtime root
+        run: |
+          echo "NEXUS_MT5_ROOT=$RUNNER_TEMP/nexus-mt5" >> "$GITHUB_ENV"
+
+      - name: Start Xvfb
+        run: |
+          Xvfb ":$NEXUS_MT5_DISPLAY" -screen 0 1280x1024x24 > "$RUNNER_TEMP/nexus-mt5-xvfb.log" 2>&1 &
+          echo "DISPLAY=:$NEXUS_MT5_DISPLAY" >> "$GITHUB_ENV"
+
+      - name: Set up Python 3.11 for repository diagnostics
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install repository runtime dependencies (via lock)
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Verify Wine
+        run: |
+          wine --version
+          wineserver --version
+
+      - name: Install official MetaTrader 5
+        run: |
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          bash scripts/linux/mt5_runtime.sh install
+
+      - name: Start MT5 and health-soak for 120s with complete trace log
+        env:
+          NEXUS_MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          NEXUS_MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          NEXUS_MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
+        run: |
+          set -euo pipefail
+          export NEXUS_MT5_WINE="$(command -v wine)"
+          export NEXUS_MT5_WINESERVER="$(command -v wineserver)"
+          trap 'bash scripts/linux/mt5_runtime.sh stop || true' EXIT
+          {
+            bash scripts/linux/mt5_runtime.sh start
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh health
+            for i in $(seq 1 24); do
+              sleep 5
+              bash scripts/linux/mt5_runtime.sh health
+            done
+            python scripts/linux/mt5_doctor.py
+            bash scripts/linux/mt5_runtime.sh check-login || true
+            bash scripts/linux/mt5_runtime.sh logs || true
+            bash scripts/linux/mt5_runtime.sh stop
+            trap - EXIT
+          } 2>&1 | tee "$RUNNER_TEMP/nexus-mt5-runtime.log"
+
+      - name: Trace MT5 warnings and errors
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "=== MT5/WINE INSTALL + RUNTIME DIAGNOSTICS ==="
+          find "$NEXUS_MT5_ROOT/logs" -maxdepth 1 -type f -print -exec sh -c 'echo "--- $1 ---"; tail -200 "$1"' _ {} \; 2>/dev/null || true
+          for log in "$NEXUS_MT5_ROOT"/logs/*.log; do
+            [ -f "$log" ] || continue
+            echo "=== WARN/ERROR: $log ==="
+            grep -Ein 'warn|error|critical|exception|fatal|failed|cannot|err:' "$log" | head -200 || true
+          done
+          if [ -f "$RUNNER_TEMP/nexus-mt5-runtime.log" ]; then
+            cat "$RUNNER_TEMP/nexus-mt5-runtime.log"
+          fi
+
+      - name: Upload MT5/Wine evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mt5-wine-compat-${{ github.run_id }}
+          # $NEXUS_MT5_ROOT wholesale is NOT uploadable: the Wine prefix's
+          # dosdevices/ holds per-drive symlinks back to the host filesystem
+          # (z: -> /), so the artifact walk descends into / and dies with
+          # EACCES on paths like dosdevices/z:/boot/efi. Upload the
+          # diagnostics that actually matter instead of the whole prefix.
+          path: |
+            ${{ runner.temp }}/nexus-mt5/logs/
+            ${{ runner.temp }}/nexus-mt5/cache/*.sha256
+            ${{ runner.temp }}/nexus-mt5-runtime.log
+            ${{ runner.temp }}/nexus-mt5-xvfb.log
+          if-no-files-found: error
+          retention-days: 14
