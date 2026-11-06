@@ -23,6 +23,7 @@ than this fix.
 from __future__ import annotations
 
 import json
+import os
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,10 +41,14 @@ from nexus_scalp.research.observability import (
 )
 
 pytestmark = pytest.mark.skipif(
-    not Path("C:/Program Files/PostgreSQL/17/bin").is_dir(),
+    not Path("C:/Program Files/PostgreSQL/17/bin").is_dir()
+    or (os.environ.get("CI") == "true" and os.environ.get("NSE_PHASE2_PG_CI") != "1"),
     reason="the phase2 throwaway PostgreSQL cluster is a Windows-only local "
-    "fixture (its initdb path is absolute); CI has no such binary, so the "
-    "PostgreSQL arm runs where the cluster exists and skips elsewhere",
+    "fixture (its initdb path is absolute) and is not meant to run on CI "
+    "runners; GitHub windows runners now ship PostgreSQL 17 and the lock "
+    "install pulls psycopg, so the arm must be opted in explicitly "
+    "(NSE_PHASE2_PG_CI=1) — CI's real-PostgreSQL coverage is carried by the "
+    "DB Fabric Certification lane",
 )
 
 _STAMP = int(time.time() * 1_000_000)
