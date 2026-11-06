@@ -44,7 +44,6 @@ from nexus_scalp.platform_link.setup_state import (
 from nexus_scalp.platform_link.states import state_from_startup_payload
 from nexus_scalp.platform_link.store import PlatformLinkStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures (same isolation pattern as test_platform_link.py)
 # ---------------------------------------------------------------------------

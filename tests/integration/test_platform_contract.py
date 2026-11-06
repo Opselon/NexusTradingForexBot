@@ -32,7 +32,6 @@ from nexus_scalp.platform_link.client import PlatformClient
 from nexus_scalp.platform_link.config import PlatformLinkConfig
 from nexus_scalp.platform_link.states import state_from_startup_payload
 
-
 # ---------------------------------------------------------------------------
 # Canonical server shapes (the pinned contract — mirrors NSE-Platform
 # desktop.rs client_me + diagnostics.rs ingest + models.rs ModelRelease).
@@ -96,13 +95,13 @@ class _ContractServer(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+    def do_GET(self) -> None:
         if self.path == "/api/client/me":
             self._json(200, CANONICAL_CLIENT_ME)
             return
         self._json(404, {"error": {"code": "not_found", "message": self.path}})
 
-    def do_POST(self) -> None:  # noqa: N802 - stdlib naming
+    def do_POST(self) -> None:
         length = int(self.headers.get("Content-Length") or 0)
         self.rfile.read(length)
         if self.path == "/api/diagnostics/ingest":
