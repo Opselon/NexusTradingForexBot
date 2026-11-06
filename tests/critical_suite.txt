@@ -119,6 +119,13 @@ tests/unit/test_factory_backtest_report_projection.py
 tests/unit/test_feature_importance.py
 tests/unit/test_gap_safe_sequences.py
 tests/unit/test_gate_convergence_evidence.py
+# Linux RemoteMT5GatewayAdapter certification lane (DevOps audit P3):
+# these four files carry the HMAC/fail-closed/default-credential tests
+# and were previously executed by NO CI manifest - local runs only.
+tests/unit/test_gateway_e2e.py
+tests/unit/test_gateway_secrets_contract.py
+tests/unit/test_remote_gateway.py
+tests/unit/test_mt5_parity_fix1.py
 tests/unit/test_hardened_protocol.py
 tests/unit/test_hardening_p1_p2.py
 tests/unit/test_hot_swap_governance.py
