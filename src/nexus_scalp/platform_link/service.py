@@ -155,6 +155,11 @@ class PlatformLinkService:
         self.store.save_status(status.as_dict())
         return status
 
+    def publish_status(self, status: LinkStatus) -> LinkStatus:
+        """Public cache seam for the lifecycle coordinator (keeps the offline
+        grace window honest with live verdicts)."""
+        return self._cache(status)
+
     # ----------------------------------------------------------- connect flow
     def start_connect(self) -> LinkStatus:
         """One-click auth: create the desktop session and return the OFFICIAL

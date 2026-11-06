@@ -4013,6 +4013,12 @@ def create_app(engine_ref: Any = None) -> FastAPI:
     # Installed LAST so the fully-wrapped app is what the handler guards.
     _install_transport_disconnect_handling(app)
 
+    # LIFECYCLE §3: every application start performs the background platform
+    # handshake (entitlement freshness + official model discovery). Started on
+    # the ASGI startup event, on a daemon thread, once per process; failures
+    # are logged and never delay or break serving.
+    _install_platform_lifecycle(app)
+
     return app
 
 
@@ -4096,6 +4102,34 @@ def _install_transport_disconnect_handling(app: Any) -> None:
     @contextlib.asynccontextmanager
     async def _wrapped_lifespan(app: Any):
         _install_once()
+        async with original_lifespan(app):
+            yield
+
+    app.router.lifespan_context = _wrapped_lifespan
+
+
+def _install_platform_lifecycle(app: Any) -> None:
+    """Start THE background platform handshake when the server begins serving.
+
+    Same lifespan seam as the transport handler: works with and without a
+    custom lifespan, never uses the deprecated ``on_event`` API, and never
+    delays startup — the handshake runs on its own daemon thread and its
+    snapshot is read by ``/api/provisioning/platform/startup`` when ready.
+    """
+    if getattr(app.state, "_platform_lifecycle_hooked", False):
+        return
+    app.state._platform_lifecycle_hooked = True
+
+    original_lifespan = app.router.lifespan_context
+
+    @contextlib.asynccontextmanager
+    async def _wrapped_lifespan(app: Any):
+        try:
+            from nexus_scalp.platform_link.lifecycle import start_background_handshake
+
+            start_background_handshake()
+        except Exception:  # pragma: no cover - never block server boot
+            logger.warning("[PLATFORM-LINK] startup handshake launch failed", exc_info=True)
         async with original_lifespan(app):
             yield
 
