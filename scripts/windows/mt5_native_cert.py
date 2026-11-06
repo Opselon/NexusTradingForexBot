@@ -216,9 +216,31 @@ def _run_level1(result: CertResult) -> None:
     result.evidence["terminal_path"] = discovered
 
     # First IPC attach — the real Python→terminal spawn/attach.
-    ok = bool(mt5.initialize(path=discovered, timeout=60000))
-    last_error = mt5.last_error()
-    result.step("mt5.initialize(path=terminal64.exe)", ok, f"last_error={last_error}")
+    # Bounded, transparent retries (the BUG-130 resilient-connect contract,
+    # CI-sized): a cold first attach on a fresh install can lose the race
+    # with the terminal's own first-start initialization (observed as
+    # -10005 IPC timeout on windows-latest run 128040771175). Each attempt
+    # is logged; a permanent failure is still a failure - retries never
+    # mask it.
+    import time as _time
+
+    ok = False
+    last_error: tuple[Any, ...] | None = None
+    for attempt in range(1, 4):
+        ok = bool(mt5.initialize(path=discovered, timeout=120000))
+        last_error = mt5.last_error()
+        result.note(
+            "mt5.initialize(path=terminal64.exe)",
+            f"attempt {attempt}/3 -> {'ok' if ok else f'failed last_error={last_error}'}",
+        )
+        if ok:
+            break
+        _time.sleep(30)
+    result.step(
+        "mt5.initialize(path=terminal64.exe)",
+        ok,
+        f"last_error={last_error}" if not ok else "IPC surface attached",
+    )
     if not ok:
         raise SystemExit(1)
 
