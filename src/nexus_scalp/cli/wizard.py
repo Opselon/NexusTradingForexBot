@@ -99,6 +99,13 @@ def _package_inventory() -> list[dict[str, str]]:
     return rows
 
 
+def _setup_settings() -> Any:
+    """Settings seam for the setup-stage machine (never raises into the wizard)."""
+    from nexus_scalp.settings.service import SettingsService
+
+    return SettingsService()
+
+
 def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     console.print(_banner(subtitle="first-run setup wizard"))
     console.print(
@@ -205,6 +212,22 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     # PLATFORM STEP (parity with `nexus platform`): pretty panel + the same
     # one-click [Y/n] flow. Skippable; never blocks setup; only answers the
     # single authorize question the user expects.
+    # LIFECYCLE §2: the setup stage is PERSISTED so an interrupted wizard can
+    # resume at the right step on next launch (never a forced re-OAuth).
+    try:
+        from nexus_scalp.platform_link.setup_state import (
+            SetupStage,
+            load_stage,
+            mark_stage,
+        )
+
+        if load_stage(_setup_settings()) in (
+            SetupStage.NOT_STARTED,
+            SetupStage.INSTALLED,
+        ):
+            mark_stage(_setup_settings(), SetupStage.SETUP_IN_PROGRESS)
+    except Exception:  # strictly optional bookkeeping
+        logging.getLogger(__name__).debug("[SETUP] stage marking failed", exc_info=True)
     try:
         if sys.stdin.isatty():
             from nexus_scalp.cli.platform_commands import (
@@ -212,18 +235,39 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
                 render_status_panel,
             )
             from nexus_scalp.platform_link import get_platform_link_service
+            from nexus_scalp.platform_link.setup_state import SetupStage, mark_stage
 
             _svc = get_platform_link_service()
             _status = _svc.status()
             if not _status.state.allows_official_download:
                 offer_boot_connect(_svc, _status)
+                mark_stage(
+                    _setup_settings(),
+                    SetupStage.COMPLETED
+                    if _status.state.allows_official_download
+                    else SetupStage.AUTH_PENDING,
+                )
             else:
                 console.print(render_status_panel(_status, _svc))
+                mark_stage(_setup_settings(), SetupStage.COMPLETED)
     except Exception:  # the platform step is strictly optional in setup
         logging.getLogger(__name__).debug("[SETUP] platform step skipped", exc_info=True)
 
     health = rhealth.HealthEngine(config_path=config_path)
     verdict2, entries = health.overall()
+    try:
+        from nexus_scalp.platform_link.setup_state import (
+            SetupStage,
+            load_stage,
+            mark_stage,
+        )
+
+        # The wizard itself completed (model step remains advisory); the
+        # stage machine records the furthest reached point for recovery UX.
+        if load_stage(_setup_settings()) is not SetupStage.COMPLETED:
+            mark_stage(_setup_settings(), SetupStage.COMPLETED)
+    except Exception:
+        logging.getLogger(__name__).debug("[SETUP] completion marking failed", exc_info=True)
     return {
         "mode": mode,
         "symbol": symbol,

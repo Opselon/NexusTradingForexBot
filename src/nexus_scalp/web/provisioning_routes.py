@@ -510,6 +510,13 @@ def _scan_dataset_root(root: Path) -> dict[str, Any]:
     return {"root": str(root), "exists": exists, "count": len(files), "files": files}
 
 
+def _invitation_settings() -> Any:
+    """Settings seam for invitation preference memory (never raises into routes)."""
+    from nexus_scalp.settings.service import SettingsService
+
+    return SettingsService()
+
+
 def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Mount the provisioning endpoints on the web app (same seams as peers)."""
     router = app
@@ -586,6 +593,112 @@ def register_provisioning_routes(app: Any, _err: Any, _log_err: Any) -> None:
                 exc, "platform disconnect failed", endpoint="/api/provisioning/platform/disconnect"
             )
             return _err(code="PLATFORM_DISCONNECT_ERROR")
+
+    # ------------------------------------------------------------------
+    # Lifecycle coordinator (§3/§6/§11): startup handshake snapshot, setup
+    # recovery hint, official-model invitation preferences, diagnostics
+    # delivery evidence. Additive; same auth as every provisioning route.
+    # ------------------------------------------------------------------
+    @router.get("/api/provisioning/platform/startup")
+    def provisioning_platform_startup() -> dict[str, Any]:
+        """Canonical startup handshake result (run-or-last; never blocking UX)."""
+        try:
+            from nexus_scalp.platform_link.lifecycle import (
+                load_last_handshake,
+                run_handshake_snapshot,
+            )
+
+            snapshot = run_handshake_snapshot() or load_last_handshake()
+            return {
+                "success": True,
+                "startup": snapshot.as_dict() if snapshot else None,
+            }
+        except Exception as exc:
+            _log_err(exc, "platform startup failed", endpoint="/api/provisioning/platform/startup")
+            return _err(code="PLATFORM_STARTUP_ERROR")
+
+    @router.get("/api/provisioning/platform/recovery")
+    def provisioning_platform_recovery() -> dict[str, Any]:
+        """Setup-resume hint after ANY interrupted/cancelled Easy Setup."""
+        try:
+            from nexus_scalp.platform_link import get_platform_link_service
+            from nexus_scalp.platform_link.setup_state import resume_hint
+
+            svc = get_platform_link_service()
+            hint = resume_hint(
+                svc.store.settings,
+                svc.status().state,
+                official_model_installed=None,
+            )
+            return {"success": True, "recovery": hint.as_dict() if hint else None}
+        except Exception as exc:
+            _log_err(
+                exc, "platform recovery failed", endpoint="/api/provisioning/platform/recovery"
+            )
+            return _err(code="PLATFORM_RECOVERY_ERROR")
+
+    @router.get("/api/provisioning/platform/invitation")
+    def provisioning_platform_invitation() -> dict[str, Any]:
+        """Whether the official-model invitation may be shown (per-release)."""
+        try:
+            from nexus_scalp.platform_link.invitations import ModelInvitationPrefs
+            from nexus_scalp.platform_link.lifecycle import run_handshake_snapshot
+
+            snapshot = run_handshake_snapshot()
+            latest = (snapshot.latest_model or {}).get("version") if snapshot else None
+            prefs = ModelInvitationPrefs(_invitation_settings())
+            offer = bool(
+                latest
+                and prefs.should_offer(
+                    str(latest),
+                    installed_version=snapshot.installed_model_version if snapshot else None,
+                    access_allowed=snapshot.access_allowed if snapshot else None,
+                )
+            )
+            return {
+                "success": True,
+                "offer": offer,
+                "latest_version": latest,
+                "installed_version": snapshot.installed_model_version if snapshot else None,
+            }
+        except Exception as exc:
+            _log_err(
+                exc, "invitation read failed", endpoint="/api/provisioning/platform/invitation"
+            )
+            return _err(code="PLATFORM_INVITATION_ERROR")
+
+    @router.post("/api/provisioning/platform/invitation")
+    def provisioning_platform_invitation_decide(payload: dict[str, Any]) -> dict[str, Any]:
+        """Record the user's invitation decision (declined | later)."""
+        try:
+            from nexus_scalp.platform_link.invitations import ModelInvitationPrefs
+
+            version = str(payload.get("version") or "").strip()
+            decision = str(payload.get("decision") or "").strip()
+            if not version or decision not in ("declined", "later"):
+                return _err(code="PLATFORM_INVITATION_INVALID")
+            ModelInvitationPrefs(_invitation_settings()).record(version, decision)
+            return {"success": True}
+        except Exception as exc:
+            _log_err(
+                exc, "invitation decide failed", endpoint="/api/provisioning/platform/invitation"
+            )
+            return _err(code="PLATFORM_INVITATION_ERROR")
+
+    @router.get("/api/provisioning/diagnostics/delivery")
+    def provisioning_diagnostics_delivery() -> dict[str, Any]:
+        """Diagnostics delivery evidence (lifecycle §11): ack id + pending."""
+        try:
+            from nexus_scalp.log_shipping.shipper import get_session_shipper
+
+            return {"success": True, "delivery": get_session_shipper().delivery_state()}
+        except Exception as exc:
+            _log_err(
+                exc,
+                "diagnostics delivery read failed",
+                endpoint="/api/provisioning/diagnostics/delivery",
+            )
+            return _err(code="DIAGNOSTICS_DELIVERY_ERROR")
 
     @router.get("/api/provisioning/status")
     def provisioning_status() -> dict[str, Any]:

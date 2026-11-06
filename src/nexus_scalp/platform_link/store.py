@@ -25,6 +25,7 @@ SECRET_SESSION_SECRET = "platform_session_secret"
 SECRET_SESSION_ID = "platform_session_id"
 SETTING_INSTALLATION_ID = "platform.installation_id"
 SETTING_LINK_STATUS = "platform.link_status"
+SETTING_HANDSHAKE = "platform.startup_handshake"
 
 
 class PlatformLinkStore:
@@ -108,3 +109,21 @@ class PlatformLinkStore:
 
     def clear_status(self) -> None:
         self.settings.set(SETTING_LINK_STATUS, "", value_type="string")
+
+    # -------------------------------------------------- startup handshake cache
+    def save_handshake(self, payload: dict[str, Any]) -> None:
+        self.settings.set(
+            SETTING_HANDSHAKE,
+            json.dumps(payload, sort_keys=True),
+            value_type="string",
+        )
+
+    def load_handshake(self) -> dict[str, Any] | None:
+        raw = self.settings.get(SETTING_HANDSHAKE)
+        if raw is None or not str(raw.value):
+            return None
+        try:
+            data = json.loads(str(raw.value))
+        except (TypeError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None

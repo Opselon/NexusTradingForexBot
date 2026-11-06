@@ -80,3 +80,29 @@ def state_from_platform_payload(
     if ent == "NotStarred":
         return VerificationState.NOT_STARRED
     return mapped
+
+
+#: Server lease verdicts (canonical startup response, `entitlement.decision`)
+#: -> local state. Preferred over the legacy two-string mapping whenever the
+#: server publishes the decision — it is computed LIVE, not read from a row.
+_DECISION_STATE_MAP: dict[str, VerificationState] = {
+    "GrantedFresh": VerificationState.STARRED_VERIFIED,
+    "GrantedStale": VerificationState.STARRED_VERIFIED,
+    "Revoked": VerificationState.NOT_STARRED,
+    "Pending": VerificationState.VERIFICATION_PENDING,
+    "LeaseExpired": VerificationState.VERIFICATION_EXPIRED,
+}
+
+
+def state_from_startup_payload(payload: dict) -> VerificationState:
+    """Map the canonical startup payload onto the local state machine.
+
+    Uses the live lease decision when the server provides one and falls back
+    to the legacy verification/entitlement string mapping for older servers.
+    """
+    decision = str(((payload.get("entitlement") or {}).get("decision")) or "").strip()
+    if decision in _DECISION_STATE_MAP:
+        return _DECISION_STATE_MAP[decision]
+    return state_from_platform_payload(
+        payload.get("verification_state"), payload.get("entitlement_state")
+    )
