@@ -16,7 +16,7 @@ lang: en
 
 | Dimension | Status | Evidence |
 | :--- | :--- | :--- |
-| Version | **9.0.23** (semver, single source `pyproject.toml`) | release pipeline stamps every artifact |
+| Version | **9.0.24** (semver, single source `pyproject.toml`) | release pipeline stamps every artifact |
 | Release | **Published** (v9.0.0 → v9.0.22 tags; hardened pipeline: SHA-256, manifests, SBOM) | GitHub Releases |
 | Runtime | Production-hardened; PAPER default; LIVE behind explicit confirmation | CLI contract + pre-flight doctor |
 | Live execution | Working (MT5 Win32 IPC + ZMQ gateway) with account-identity fail-safe | BUG-142 regression suite |
