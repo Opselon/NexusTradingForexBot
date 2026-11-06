@@ -34,7 +34,7 @@
 </p>
 
 <p align="center">
-  <img src="pics/web.png" alt="Nexus Trading Control Center" width="100%">
+  <img src="pics/banner.png" alt="Nexus Trading Bot — Smarter · Faster · Stronger — Automated Forex Trading Powered by AI" width="100%">
 </p>
 
 > [!IMPORTANT]
