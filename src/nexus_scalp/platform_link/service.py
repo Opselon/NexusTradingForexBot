@@ -12,11 +12,12 @@ import logging
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, ClassVar
 
 from nexus_scalp.platform_link.browser import open_default_browser
 from nexus_scalp.platform_link.client import (
     PlatformClient,
+    PlatformForbiddenError,
     PlatformRateLimitedError,
     PlatformTokenRejectedError,
     PlatformUnavailableError,
@@ -165,7 +166,13 @@ class PlatformLinkService:
         """One-click auth: create the desktop session and return the OFFICIAL
         GitHub authorize URL. The user opens that URL; nothing else."""
         session = self.client.start_desktop_session(self.installation_id())
-        self.store.save_desktop_session(session["session_id"], session["session_secret"])
+        try:
+            poll_interval = float(session.get("poll_interval") or 0) or None
+        except (TypeError, ValueError):
+            poll_interval = None
+        self.store.save_desktop_session(
+            session["session_id"], session["session_secret"], poll_interval=poll_interval
+        )
         return self._cache(
             LinkStatus(
                 state=VerificationState.AUTHENTICATION_PENDING,
@@ -275,8 +282,18 @@ class PlatformLinkService:
                 VerificationState.VERIFICATION_PENDING,
             ):
                 return latest
-            time.sleep(self.config.poll_interval)
+            time.sleep(self._effective_poll_interval())
         return latest
+
+    def _effective_poll_interval(self) -> float:
+        """Server-honored cadence (§3.1 poll_interval) clamped to sane bounds."""
+        try:
+            server_value = self.store.load_session_poll_interval()
+        except Exception:  # anti-crash: allow
+            server_value = None
+        if server_value:
+            return min(max(server_value, 1.0), 15.0)
+        return self.config.poll_interval
 
     def token_status(self) -> tuple[str, str] | None:
         """(masked token, expires ISO) when a client token exists, else None."""
@@ -300,11 +317,29 @@ class PlatformLinkService:
         try:
             payload = self.client.client_me(token)
         except PlatformTokenRejectedError:
+            # Spec §3.3: 401 = token dead — the ONLY recovery is a fresh §3 flow.
             self.store.clear_client_token()
             return self._cache(
                 LinkStatus(
                     state=VerificationState.VERIFICATION_EXPIRED,
                     reason="The platform token was rejected. Reconnect to renew it.",
+                )
+            )
+        except PlatformForbiddenError as exc:
+            # Spec §5 invariant 4: 403 carries a lease reason — branch on it.
+            # The token itself is still valid: never evict it here.
+            reason = (exc.reason or "").strip()
+            if reason in ("Revoked", "NotStarred"):
+                state = VerificationState.NOT_STARRED
+            elif reason in ("LeaseExpired", "Pending", ""):
+                state = VerificationState.VERIFICATION_PENDING
+            else:
+                state = VerificationState.VERIFICATION_UNAVAILABLE
+            return self._cache(
+                LinkStatus(
+                    state=state,
+                    reason=reason or str(exc),
+                    repository=self.config.repository,
                 )
             )
         except (PlatformUnavailableError, PlatformRateLimitedError) as exc:
@@ -316,6 +351,15 @@ class PlatformLinkService:
                 repository=self.config.repository,
                 installation_id=self.store.installation_id(),
             )
+
+        # Model catalog entry (spec §6.1): version + benchmark stats are
+        # display-only truth — cached so the UI can show what a star unlocks.
+        model = payload.get("model")
+        if isinstance(model, dict) and model.get("available"):
+            try:
+                self.store.save_model_info(model)
+            except Exception as exc:  # anti-crash: allow (display-only cache)
+                logger.debug("[PLATFORM-LINK] model info cache failed: %s", exc)
 
         state = state_from_platform_payload(
             payload.get("verification_state"), payload.get("entitlement_state")
@@ -329,11 +373,113 @@ class PlatformLinkService:
             )
         )
 
+    def model_info(self) -> dict[str, Any]:
+        """Cached official-model catalog facts (version + benchmark)."""
+        try:
+            return self.store.load_model_info() or {}
+        except Exception:  # anti-crash: allow (display-only)
+            return {}
+
     def disconnect(self) -> LinkStatus:
         """Drop the local link. (Server-side revocation lives in the dashboard.)"""
         self.store.clear_client_token()
         self.store.clear_desktop_session()
         return self._cache(LinkStatus(state=VerificationState.NOT_CONNECTED, reason="disconnected"))
+
+    # ------------------------------------------------------------ handshake
+    #: Handshake.md §3 reason_code vocabulary -> local verification state.
+    #: LeaseExpired maps to PENDING (the remedy is "auto-retry the handshake —
+    #: one successful recheck restores", NOT a token reconnect).
+    _REASON_STATE: ClassVar[dict[str, VerificationState]] = {
+        "GrantedFresh": VerificationState.STARRED_VERIFIED,
+        "GrantedStale": VerificationState.STARRED_VERIFIED,
+        "Revoked": VerificationState.NOT_STARRED,
+        "Pending": VerificationState.VERIFICATION_PENDING,
+        "LeaseExpired": VerificationState.VERIFICATION_PENDING,
+    }
+
+    def handshake(
+        self,
+        *,
+        force: bool = False,
+        min_interval_secs: float = 300.0,
+        timeout: float | None = None,
+    ) -> LinkStatus:
+        """Ask the server for the authoritative verdict (Handshake.md §3).
+
+        Cadence: boot + before each delivery + at most every
+        ``min_interval_secs`` while running (spec guidance) — the server's
+        cooldown collapses extra calls, and this throttle keeps bursts free.
+        A network failure NEVER revokes: the cached state is kept untouched
+        and only the server's explicit verdict can change entitlement.
+        """
+        now = self._now()
+        if not force:
+            last = None
+            try:
+                last = self.store.load_last_handshake()
+            except Exception:  # anti-crash: allow (throttle is best-effort)
+                last = None
+            if last is not None and (now - last) < min_interval_secs:
+                return self.status()  # fresh enough — no call, cached verdict
+
+        token = self.store.client_token()
+        if token is None:
+            return self._cache(
+                LinkStatus(state=VerificationState.NOT_CONNECTED, repository=self.config.repository)
+            )
+        try:
+            payload = self.client.client_verify(token, timeout=timeout)
+        except PlatformTokenRejectedError:
+            # 401: the token is dead — §3.3 recovery is a fresh connect flow.
+            self.store.clear_client_token()
+            return self._cache(
+                LinkStatus(
+                    state=VerificationState.VERIFICATION_EXPIRED,
+                    reason="The platform token was rejected. Reconnect to renew it.",
+                )
+            )
+        except PlatformForbiddenError as exc:
+            # A 403 on the handshake is a server-side lease answer too.
+            reason = (exc.reason or "").strip()
+            state = self._REASON_STATE.get(reason, VerificationState.VERIFICATION_PENDING)
+            return self._cache(LinkStatus(state=state, reason=reason or str(exc)))
+        except (PlatformUnavailableError, PlatformRateLimitedError) as exc:
+            # NEVER revoke on a network error — keep the last-known-good cache
+            # untouched, and report UNAVAILABLE (NOT the cached state) so the
+            # gate's offline-grace logic can engage on the cache explicitly.
+            logger.warning("[PLATFORM-LINK] handshake unreachable; cache untouched (%s)", exc)
+            return LinkStatus(
+                state=VerificationState.VERIFICATION_UNAVAILABLE,
+                reason=f"handshake unreachable: {exc}",
+                repository=self.config.repository,
+            )
+
+        reason_code = str(payload.get("reason_code") or "")
+        entitlement = (
+            payload.get("entitlement") if isinstance(payload.get("entitlement"), dict) else {}
+        )
+        state = self._REASON_STATE.get(reason_code, VerificationState.VERIFICATION_PENDING)
+        allowed = payload.get("access_allowed") is True
+        if state is VerificationState.STARRED_VERIFIED and not allowed:
+            # Defensive: a server that says Granted* but access_allowed=false
+            # (spec's LeaseExpired example has state VerifiedStarred + denied)
+            # must NOT read as verified.
+            state = VerificationState.VERIFICATION_PENDING
+        try:
+            self.store.save_last_handshake(now)
+        except Exception:  # anti-crash: allow
+            pass
+        return self._cache(
+            LinkStatus(
+                state=state,
+                github_login=self.status().github_login,
+                repository=self.config.repository,
+                entitlement_state=str(entitlement.get("state") or ""),
+                checked_at=now,
+                reason=reason_code or None,
+            )
+        )
 
     # ----------------------------------------------------------------- gate
     def require_download_authorization(self) -> LinkStatus:
@@ -353,7 +499,7 @@ class PlatformLinkService:
                 LinkStatus(state=VerificationState.NOT_CONNECTED, repository=self.config.repository)
             )
 
-        fresh = self.reverify()
+        fresh = self.handshake(force=True)
         if fresh.state.allows_official_download:
             return fresh
         if fresh.state is VerificationState.VERIFICATION_UNAVAILABLE:

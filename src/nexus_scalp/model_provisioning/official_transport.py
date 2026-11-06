@@ -25,13 +25,20 @@ class HTTPSRedirectHandler(urllib.request.HTTPRedirectHandler):
 
 
 def http_get(
-    url: str, dest: Path, *, timeout: float, max_bytes: int, cancel_event: Any = None
+    url: str,
+    dest: Path,
+    *,
+    timeout: float,
+    max_bytes: int,
+    cancel_event: Any = None,
+    headers: dict[str, str] | None = None,
 ) -> None:
     from nexus_scalp.model_provisioning.official import OfficialBundleError
 
     https_url(url)
     started = time.monotonic()
-    req = urllib.request.Request(url, headers={"User-Agent": "NexusScalpEngine/official-model"})
+    request_headers = {"User-Agent": "NexusScalpEngine/official-model", **(headers or {})}
+    req = urllib.request.Request(url, headers=request_headers)
     opener = urllib.request.build_opener(HTTPSRedirectHandler())
     try:
         with opener.open(req, timeout=timeout) as resp, dest.open("wb") as out:
@@ -62,6 +69,19 @@ def http_get(
                 require(count <= max_bytes, "DOWNLOAD_TOO_LARGE", "response exceeds bound")
                 out.write(chunk)
     except urllib.error.HTTPError as exc:
+        # Platform API spec §5 invariant 4 + §6.3: a delivery denial ALWAYS
+        # carries a reason — branch on it instead of a generic failure.
+        if exc.code == 401:
+            raise OfficialBundleError(
+                "AUTHORIZATION_REQUIRED",
+                "the platform rejected the download credentials — reconnect GitHub",
+            ) from exc
+        if exc.code == 403:
+            reason = _denial_reason(exc)
+            raise OfficialBundleError(
+                "LEASE_DENIED" if reason else "DOWNLOAD_FORBIDDEN",
+                f"delivery denied: {reason}" if reason else "delivery forbidden",
+            ) from exc
         raise OfficialBundleError(
             "HTTP_NOT_FOUND" if exc.code == 404 else "DOWNLOAD_FAILED", f"HTTP status {exc.code}"
         ) from exc
@@ -73,3 +93,22 @@ def http_get(
 
         if sys.exc_info()[0] is not None:
             dest.unlink(missing_ok=True)
+
+
+def _denial_reason(exc: urllib.error.HTTPError) -> str:
+    """Lease verdict from the universal error envelope (spec §1/§5)."""
+    import json
+
+    try:
+        parsed = json.loads(exc.read(1 << 16).decode("utf-8"))
+    except Exception:
+        return ""
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    if not isinstance(error, dict):
+        return ""
+    reason = str(error.get("reason") or "")
+    if not reason:
+        message = str(error.get("message") or "")
+        if ": " in message:
+            reason = message.split(": ", 1)[1]
+    return reason

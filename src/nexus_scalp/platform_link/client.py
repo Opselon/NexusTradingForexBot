@@ -15,6 +15,27 @@ from typing import Any
 from nexus_scalp.platform_link.config import PlatformLinkConfig
 
 
+def _parse_error_envelope(body: bytes) -> tuple[str, str]:
+    """(reason, message) from the universal error envelope (spec §1).
+
+    The server puts the lease verdict in BOTH ``reason`` and often as the
+    ``message`` suffix ("forbidden: LeaseExpired") — either source is fine;
+    unknown fields are ignored per the additive-evolution policy.
+    """
+    try:
+        parsed = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return "", ""
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    if not isinstance(error, dict):
+        return "", ""
+    reason = str(error.get("reason") or "")
+    message = str(error.get("message") or "")
+    if not reason and ": " in message:
+        reason = message.split(": ", 1)[1]
+    return reason, message
+
+
 class PlatformClientError(Exception):
     """Base class: the platform interaction failed. Never a star verdict."""
 
@@ -34,9 +55,26 @@ class PlatformRateLimitedError(PlatformClientError):
 
 
 class PlatformTokenRejectedError(PlatformClientError):
-    """401 from a client-token endpoint: token invalid, expired or revoked."""
+    """401 from a client-token endpoint: token invalid, expired or revoked.
+
+    Platform API §3.3: the ONLY recovery is restarting the desktop connect
+    flow (§3) — the client must never retry with the same token."""
 
     code = "VERIFICATION_EXPIRED"
+
+
+class PlatformForbiddenError(PlatformClientError):
+    """403: authenticated but not allowed (spec §5 invariant 4 / §8).
+
+    The universal error envelope carries ``reason`` (LeaseExpired, Revoked,
+    Pending, installation_mismatch, …). Callers MUST branch on it — a 403 is
+    NOT an expired token and must never evict it."""
+
+    code = "PLATFORM_FORBIDDEN"
+
+    def __init__(self, message: str, reason: str = "") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class PlatformInvalidResponseError(PlatformClientError):
@@ -53,7 +91,11 @@ class PlatformClient:
 
     # ------------------------------------------------------------------ verbs
     def _request(
-        self, path: str, payload: dict[str, Any] | None = None, token: str | None = None
+        self,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        token: str | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         url = f"{self.config.base_url}{path}"
         data = None
@@ -68,7 +110,7 @@ class PlatformClient:
         )
         try:
             with urllib.request.urlopen(
-                req, timeout=self.config.connect_timeout + self.config.read_timeout
+                req, timeout=timeout or (self.config.connect_timeout + self.config.read_timeout)
             ) as resp:
                 body = resp.read(1 << 20)
                 status = resp.status
@@ -78,9 +120,17 @@ class PlatformClient:
                 body = exc.read(1 << 20)
             except OSError:  # pragma: no cover - defensive
                 body = b""
-            if status in (401, 403):
+            # Universal error envelope (spec §1): {"error": {code, message, reason}}.
+            envelope_reason, envelope_message = _parse_error_envelope(body)
+            if status == 401:
+                # §3.3: token invalid/expired/revoked — restart the connect flow.
                 raise PlatformTokenRejectedError(
-                    f"platform rejected credentials (HTTP {status})"
+                    envelope_message or "platform rejected credentials (HTTP 401)"
+                ) from exc
+            if status == 403:
+                # §5 invariant 4: a 403 ALWAYS carries a reason — branch on it.
+                raise PlatformForbiddenError(
+                    envelope_message or "forbidden (HTTP 403)", reason=envelope_reason
                 ) from exc
             if status == 429:
                 raise PlatformRateLimitedError("platform rate limited this client") from exc
@@ -129,3 +179,12 @@ class PlatformClient:
 
     def client_me(self, token: str) -> dict[str, Any]:
         return self._request("/api/client/me", token=token)
+
+    def client_verify(self, token: str, timeout: float | None = None) -> dict[str, Any]:
+        """The CLI handshake (POST /api/client/verify, spec §3 of Handshake.md).
+
+        An INQUIRY: always 200 with the lease decision — the client branches
+        on ``access_allowed`` / ``reason_code`` instead of HTTP statuses.
+        Unknown/expired/revoked token still answers 401 (restart the flow).
+        """
+        return self._request("/api/client/verify", payload={}, token=token, timeout=timeout)

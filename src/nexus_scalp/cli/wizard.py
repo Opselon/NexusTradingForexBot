@@ -54,6 +54,133 @@ from nexus_scalp.release.metadata import get_version_info
 
 logger = get_logger("nexus_scalp.cli.wizard")
 
+# ---------------------------------------------------------------------------
+# ANTI-CRASH CONTRACT (2026-11 Easy Setup Wizard upgrade): the wizard is the
+# FIRST screen most users ever see, so it must never crash out with a raw
+# traceback (the packaged EXE closes its console on an unhandled exception and
+# the user loses everything). Every unexpected failure is caught, the reason +
+# the crash-log path are shown, the user is offered to share the error log,
+# and the wizard AUTO-CLOSES cleanly.
+# ---------------------------------------------------------------------------
+
+#: Human-readable name of the step currently executing (crash diagnostics).
+_CURRENT_STAGE = "startup"
+
+_WIZARD_STEPS = (
+    "Compatibility check",
+    "Install & repair workspace",
+    "Database choice",
+    "Trading mode",
+    "GitHub star & official models",
+    "Health check",
+)
+
+
+def _step(index: int) -> None:
+    """Print the numbered step header (UI/UX upgrade: visible progress)."""
+    global _CURRENT_STAGE  # noqa: PLW0603
+    if 1 <= index <= len(_WIZARD_STEPS):
+        _CURRENT_STAGE = _WIZARD_STEPS[index - 1]
+    console.print(
+        f"\n[bold cyan][{_CURRENT_STAGE}][/bold cyan] [dim]step {index}/{len(_WIZARD_STEPS)}[/dim]"
+    )
+
+
+def _auto_close(seconds: float = 10.0, message: str | None = None) -> None:
+    """Countdown auto-close that never blocks interactive users.
+
+    Interactive terminal: prints the countdown and returns EARLY on Enter (so
+    a user can close/dismiss immediately). Non-interactive (packaged first-run
+    console, JSON mode): sleeps the countdown then returns — the process exit
+    closes the window. Keyboard interrupts during the wait are ignored.
+    """
+    if not sys.stdin.isatty():
+        _sleep_quiet(seconds)
+        return
+    text = message or f"Auto-closing in {int(seconds)}s — press Enter to close now"
+    try:
+        console.print(f"[dim]{text}[/dim]")
+        if sys.platform == "win32":
+            import msvcrt
+
+            for _ in range(int(seconds / 0.25)):
+                if msvcrt.kbhit() and (msvcrt.getwch() in ("\r", "\n")):
+                    return
+                _sleep_quiet(0.25)
+        else:
+            import select
+
+            for _ in range(int(seconds / 0.25)):
+                ready, _, _ = select.select([sys.stdin], [], [], 0.25)
+                if ready:
+                    sys.stdin.readline()
+                    return
+    except Exception:  # the closer must never become the crash
+        _sleep_quiet(1.0)
+
+
+def _sleep_quiet(seconds: float) -> None:
+    try:
+        import time
+
+        time.sleep(seconds)
+    except Exception as exc:  # anti-crash: allow (auto-close countdown must never crash the wizard)
+        logger.debug("[SETUP] auto-close wait interrupted", error_type=type(exc).__name__)
+
+
+def _wizard_crash(exc: BaseException) -> None:
+    """Anti-crash landing: friendly panel + crash log + optional log share +
+    clean auto-close. Replaces the raw-traceback crash class entirely."""
+    stage = _CURRENT_STAGE
+    log_dir = rpaths.get_logs_dir()
+    log_path = ""
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        import datetime as _dt
+
+        stamp = _dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+        log_path = str(log_dir / f"wizard-crash-{stamp}.log")
+        with open(log_path, "w", encoding="utf-8") as fh:
+            fh.write(f"NSE setup wizard crash — stage: {stage}\n\n")
+            import traceback
+
+            traceback.print_exc(file=fh)
+    except Exception:
+        log_path = ""
+
+    logger.exception("[SETUP] wizard crashed in stage=%s", stage)
+    console.print(
+        _error_panel(
+            "Setup wizard stopped unexpectedly",
+            f"Stage: {stage}\nError: {type(exc).__name__}: {exc}",
+            hint=(
+                f"Your error log: {log_path or '(could not be written — see nexus doctor)'}  ·  "
+                "Nothing was lost; run [cyan]nexus setup[/cyan] again to resume."
+            ),
+        )
+    )
+    # "Ask for log error": one explicit, interactive-only offer to share the
+    # crash log with the team (uses the same consent system as diagnostics).
+    if sys.stdin.isatty():
+        try:
+            answer = input("Send this error log to help us fix it faster? [y/N]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            answer = "n"
+        if answer in ("y", "yes"):
+            try:
+                from nexus_scalp.log_shipping import ensure_consent
+
+                ensure_consent()
+                console.print(
+                    "[green]Thank you — the crash log will be included with diagnostics.[/green]"
+                )
+            except Exception:
+                console.print(
+                    f"[dim]Consent could not be recorded — the log is at {log_path}[/dim]"
+                )
+    _auto_close(10.0, "This window will close automatically in 10s")
+    raise typer.Exit(xc.EXIT_RUNTIME) from None
+
 
 # ---------------------------------------------------------------------------
 def _package_inventory() -> list[dict[str, str]]:
@@ -116,6 +243,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
         )
     )
 
+    _step(1)
     env = renv.detect_environment()
     results = reval.evaluate_requirements(env)
     verdict, _lines = reval.overall_verdict(results)
@@ -139,6 +267,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
         )
         raise typer.Exit(xc.EXIT_ENVIRONMENT) from None
 
+    _step(2)
     with Progress(
         SpinnerColumn(style="cyan"),
         TextColumn("[cyan]Preparing workspace…[/cyan]"),
@@ -165,6 +294,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     # a silently-persisted database.provider=postgresql (actor 'db-fabric') sent
     # the runtime at a dead server. Gated inside: asks ONLY when the settings DB
     # has no database.provider row — a configured install gets ZERO new prompts.
+    _step(3)
     db_choice = run_first_run_database_choice()
     if db_choice.get("reason") == "non_interactive":
         console.print(
@@ -172,6 +302,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
             "rerun nexus setup to be asked.[/dim]"
         )
 
+    _step(4)
     # Mode selection — never silently LIVE.
     mode = typer.prompt("Execution mode (PAPER / SHADOW / LIVE)", default="PAPER").strip().upper()
     if mode.lower() not in MODE_ALIASES:
@@ -209,7 +340,8 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     # whole validated config is safer than regex surgery).
     _write_effective_config(config_path, cfg)
 
-    # PLATFORM STEP (parity with `nexus platform`): pretty panel + the same
+    _step(5)
+    # PLATFORM STEP (parity with `nexus platform`): the star promo + the same
     # one-click [Y/n] flow. Skippable; never blocks setup; only answers the
     # single authorize question the user expects.
     # LIFECYCLE §2: the setup stage is PERSISTED so an interrupted wizard can
@@ -253,6 +385,7 @@ def _wizard_flow(json_mode: bool) -> dict[str, Any]:
     except Exception:  # the platform step is strictly optional in setup
         logging.getLogger(__name__).debug("[SETUP] platform step skipped", exc_info=True)
 
+    _step(6)
     health = rhealth.HealthEngine(config_path=config_path)
     verdict2, entries = health.overall()
     try:
@@ -797,7 +930,15 @@ def setup_cmd(
     json_mode: bool = typer.Option(False, "--json", help="Machine-readable JSON output."),
 ) -> None:
     """First-run setup wizard (compatibility → repair → mode → health)."""
-    flow = _wizard_flow(json_mode=json_mode)
+    # ANTI-CRASH CONTRACT: any unexpected exception inside the wizard lands in
+    # _wizard_crash (friendly panel + crash log + optional log share + clean
+    # auto-close) instead of a raw traceback that kills the packaged console.
+    try:
+        flow = _wizard_flow(json_mode=json_mode)
+    except typer.Exit:
+        raise  # deliberate exits (BLOCKED environment, LIVE refusal) keep their codes
+    except Exception as exc:
+        _wizard_crash(exc)
     if json_mode:
         flow["exit_code"] = xc.EXIT_OK
         _emit(flow, True)
@@ -852,6 +993,12 @@ def setup_cmd(
     )
     for ep in flow["web_endpoints"]:
         console.print(f"  [dim]→ {ep}[/dim]")
+    # AUTO-CLOSE UX (2026-11 wizard upgrade): the first-run wizard console
+    # closes itself once setup is complete — Enter dismisses immediately.
+    _auto_close(
+        15.0,
+        "Setup complete — this window auto-closes in 15s (press Enter to close now)",
+    )
     raise typer.Exit(xc.EXIT_OK) from None
 
 

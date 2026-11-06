@@ -213,10 +213,17 @@ def test_me_payload_parses() -> None:
 class _FixedClient:
     """Stub PlatformClient with canned responses."""
 
-    def __init__(self, me_payload: dict | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        me_payload: dict | None = None,
+        error: Exception | None = None,
+        verify_payload: dict | None = None,
+    ) -> None:
         self.me_payload = me_payload
         self.error = error
+        self.verify_payload = verify_payload
         self.me_calls = 0
+        self.verify_calls = 0
 
     def start_desktop_session(self, installation_id: str) -> dict:  # pragma: no cover
         raise AssertionError("not expected in gate tests")
@@ -232,6 +239,29 @@ class _FixedClient:
             raise self.error
         assert self.me_payload is not None
         return self.me_payload
+
+    def client_verify(self, token: str, timeout: float | None = None) -> dict:
+        """Handshake.md §3: the gate's live check is now the handshake."""
+        self.verify_calls += 1
+        if self.error is not None:
+            raise self.error
+        if self.verify_payload is not None:
+            return self.verify_payload
+        # Derive a faithful verdict from the canned /me payload.
+        ver = str((self.me_payload or {}).get("verification_state") or "")
+        if ver == "VerifiedStarred":
+            return {
+                "access_allowed": True,
+                "reason_code": "GrantedFresh",
+                "entitlement": {"state": "VerifiedStarred"},
+            }
+        if ver == "NotStarred":
+            return {
+                "access_allowed": False,
+                "reason_code": "Revoked",
+                "entitlement": {"state": "NotStarred"},
+            }
+        return {"access_allowed": False, "reason_code": "Pending", "entitlement": {}}
 
 
 def _service_with(client: _FixedClient, store: PlatformLinkStore) -> PlatformLinkService:
@@ -496,3 +526,384 @@ def test_link_status_roundtrip_from_cache() -> None:
     # Corrupt payload degrades to NOT_CONNECTED, never crashes.
     broken = LinkStatus.from_cache({"state": "GARBAGE"})
     assert broken.state is VerificationState.NOT_CONNECTED
+
+
+# ---------------------------------------------------------------------------
+# Spec-alignment upgrades (2026-11 platform API review):
+# §1 universal error envelope · §3.3 401-restart · §5 invariant-4 reason
+# branching · §6.1 model.benchmark surfacing · §8 installation_mismatch.
+# ---------------------------------------------------------------------------
+
+
+class _Handler403Envelope(BaseHTTPRequestHandler):
+    """403 with the FULL universal error envelope (reason field present)."""
+
+    reason: ClassVar[str] = "LeaseExpired"
+
+    def do_GET(self) -> None:
+        body = json.dumps(
+            {
+                "error": {
+                    "code": "forbidden",
+                    "message": f"forbidden: {self.reason}",
+                    "reason": self.reason,
+                }
+            }
+        ).encode()
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        return None
+
+
+class _Handler403MessageOnly(BaseHTTPRequestHandler):
+    """403 carrying ONLY the message suffix ('forbidden: Revoked')."""
+
+    def do_GET(self) -> None:
+        body = json.dumps(
+            {"error": {"code": "forbidden", "message": "forbidden: Revoked"}}
+        ).encode()
+        self.send_response(403)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args: object) -> None:
+        return None
+
+
+def test_403_maps_to_forbidden_with_envelope_reason() -> None:
+    from nexus_scalp.platform_link.client import PlatformForbiddenError
+
+    client = _client_for(_Handler403Envelope)
+    try:
+        with pytest.raises(PlatformForbiddenError) as excinfo:
+            client.client_me("nsc_test")
+    finally:
+        client._server.shutdown()  # type: ignore[attr-defined]
+    assert excinfo.value.reason == "LeaseExpired"
+
+
+def test_403_reason_falls_back_to_message_suffix() -> None:
+    from nexus_scalp.platform_link.client import PlatformForbiddenError
+
+    client = _client_for(_Handler403MessageOnly)
+    try:
+        with pytest.raises(PlatformForbiddenError) as excinfo:
+            client.client_me("nsc_test")
+    finally:
+        client._server.shutdown()  # type: ignore[attr-defined]
+    assert excinfo.value.reason == "Revoked"
+
+
+def test_403_revoked_maps_to_not_starred_and_keeps_token(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """§5: Revoked denies immediately, but the token itself stays valid."""
+    from nexus_scalp.platform_link.client import PlatformForbiddenError
+
+    isolated_store.save_client_token("nsc_still_valid")
+    svc.client = _FixedClient(error=PlatformForbiddenError("forbidden: Revoked", reason="Revoked"))  # type: ignore[assignment]
+    status = svc.reverify()
+    assert status.state is VerificationState.NOT_STARRED
+    assert isolated_store.client_token() == "nsc_still_valid", "403 must never evict the token"
+
+
+def test_403_lease_expired_maps_to_pending_not_expired(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """LeaseExpired ≠ expired token: re-verify, do NOT force a reconnect."""
+    from nexus_scalp.platform_link.client import PlatformForbiddenError
+
+    isolated_store.save_client_token("nsc_valid")
+    svc.client = _FixedClient(
+        error=PlatformForbiddenError("forbidden: LeaseExpired", reason="LeaseExpired")
+    )  # type: ignore[assignment]
+    status = svc.reverify()
+    assert status.state is VerificationState.VERIFICATION_PENDING
+    assert isolated_store.client_token() == "nsc_valid"
+
+
+def test_model_benchmark_cached_from_me_payload(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """§6.1: model.version + benchmark{win_rate, max_drawdown} are cached for UI."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        me_payload={
+            "verification_state": "VerifiedStarred",
+            "entitlement_state": "VerifiedStarred",
+            "github_login": "octocat",
+            "model": {
+                "available": True,
+                "id": "2d3e4f50",
+                "version": "9.0.14",
+                "dimension": 70,
+                "sha256": "9f86d081",
+                "benchmark": {"win_rate": 0.58, "max_drawdown": 0.07},
+            },
+        }
+    )  # type: ignore[assignment]
+    svc.reverify()
+    info = svc.model_info()
+    assert info["version"] == "9.0.14"
+    assert info["win_rate"] == pytest.approx(0.58)
+    assert info["max_drawdown"] == pytest.approx(0.07)
+
+
+def test_session_poll_interval_persists_and_clears(isolated_store: PlatformLinkStore) -> None:
+    """§3.1: the server's poll cadence is honored per-flow, then cleared."""
+    assert isolated_store.load_session_poll_interval() is None
+    isolated_store.save_desktop_session("sid", "secret", poll_interval=3.0)
+    assert isolated_store.load_session_poll_interval() == 3.0
+    isolated_store.clear_desktop_session()
+    assert isolated_store.load_session_poll_interval() is None
+
+
+def test_session_poll_interval_out_of_bounds_is_ignored(
+    isolated_store: PlatformLinkStore,
+) -> None:
+    isolated_store.save_desktop_session("sid", "secret", poll_interval=500.0)
+    assert isolated_store.load_session_poll_interval() is None
+
+
+def test_status_panel_shows_benchmark_when_known(isolated_store: PlatformLinkStore) -> None:
+    """The unlocked panel surfaces WHAT the star unlocks (display-only truth)."""
+    from nexus_scalp.cli.platform_commands import render_status_panel
+
+    class _SvcWithBenchmark:
+        def token_status(self) -> None:
+            return None
+
+        def model_info(self) -> dict:
+            return {"version": "9.0.14", "win_rate": 0.58, "max_drawdown": 0.07}
+
+    panel = render_status_panel(
+        LinkStatus(state=VerificationState.STARRED_VERIFIED, github_login="octocat"),
+        _SvcWithBenchmark(),  # type: ignore[arg-type]
+    )
+    text = str(panel.renderable)
+    assert "Official model 9.0.14" in text
+    assert "win rate 58%" in text
+    assert "max drawdown 7%" in text
+
+
+def test_status_panel_hides_benchmark_when_unknown(svc: PlatformLinkService) -> None:
+    """The panel NEVER invents numbers (no cached model info → no line)."""
+    from nexus_scalp.cli.platform_commands import render_status_panel
+
+    panel = render_status_panel(
+        LinkStatus(state=VerificationState.STARRED_VERIFIED, github_login="octocat"), svc
+    )
+    text = str(panel.renderable)
+    assert "Official model 9." not in text, "no invented version"
+    assert "win rate" not in text, "no invented benchmark numbers"
+
+
+# ---------------------------------------------------------------------------
+# Download transport: §5 invariant 4 + §6.3 denial branching
+# ---------------------------------------------------------------------------
+
+
+def _http_get_against(handler_cls: type[BaseHTTPRequestHandler], monkeypatch, tmp_path):
+    from nexus_scalp.model_provisioning import official_transport
+    from nexus_scalp.model_provisioning.official import OfficialBundleError
+
+    # official_transport enforces HTTPS-only targets; the mock server is local
+    # HTTP — neutralize the URL guard for the in-process mock (the guard is
+    # re-verified for real downloads by production code paths).
+    monkeypatch.setattr(official_transport, "https_url", lambda _url: None)
+    server = _MockServer(handler_cls)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    dest = tmp_path / "bundle.bin"
+    try:
+        with pytest.raises(OfficialBundleError) as excinfo:
+            official_transport.http_get(
+                f"{server.url}/download", dest, timeout=10.0, max_bytes=1024
+            )
+    finally:
+        server.shutdown()
+    assert not dest.exists(), "failed downloads must not leave partial bytes"
+    return excinfo.value
+
+
+def test_transport_403_maps_to_lease_denied(monkeypatch, tmp_path) -> None:
+    error = _http_get_against(_Handler403Envelope, monkeypatch, tmp_path)
+    assert error.code == "LEASE_DENIED"
+    assert "LeaseExpired" in str(error)
+
+
+def test_transport_401_maps_to_authorization_required(monkeypatch, tmp_path) -> None:
+    error = _http_get_against(_Handler401, monkeypatch, tmp_path)
+    assert error.code == "AUTHORIZATION_REQUIRED"
+
+
+def test_download_gate_maps_lease_denial_to_star_state(
+    svc: PlatformLinkService,
+    isolated_store: PlatformLinkStore,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A mid-download LEASE_DENIED surfaces as the gate's own denial shape."""
+    from nexus_scalp.model_provisioning import service as prov_service
+    from nexus_scalp.model_provisioning.official import OfficialBundleError
+
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        me_payload={
+            "verification_state": "VerifiedStarred",
+            "entitlement_state": "VerifiedStarred",
+        }
+    )  # type: ignore[assignment]
+
+    class _ExplodingSource:
+        def download_and_verify(self, work_dir=None, *, cancel_event=None):
+            raise OfficialBundleError("LEASE_DENIED", "delivery denied: Revoked")
+
+    coordinator = prov_service.FirstRunCoordinator(official=_ExplodingSource())  # type: ignore[arg-type]
+    monkeypatch.setattr(prov_service, "write_provisioner_state", lambda *a, **k: None)
+    # download_official resolves the gate lazily via the platform_link package
+    # getter — route it to THIS test's isolated service.
+    import nexus_scalp.platform_link as pl_pkg
+
+    monkeypatch.setattr(pl_pkg, "get_platform_link_service", lambda: svc)
+    with pytest.raises(PlatformAuthorizationRequiredError) as excinfo:
+        coordinator.download_official(work_dir=tmp_path)
+    assert excinfo.value.status.state is VerificationState.NOT_STARRED
+
+
+# ---------------------------------------------------------------------------
+# Handshake.md §3/§5 — POST /api/client/verify (boot + before-delivery + 5-min)
+# ---------------------------------------------------------------------------
+
+
+def _verdict(access: bool, reason: str, *, state: str = "VerifiedStarred") -> dict:
+    return {
+        "access_allowed": access,
+        "reason_code": reason,
+        "entitlement": {
+            "state": state,
+            "access_allowed": access,
+            "decision": reason,
+        },
+    }
+
+
+def test_handshake_granted_fresh_caches_verified(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.STARRED_VERIFIED
+    assert status.checked_at is not None, "fresh verdict refreshes the grace window"
+    assert isolated_store.load_last_handshake() is not None
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.STARRED_VERIFIED.value
+
+
+def test_handshake_revoked_propagates_immediately(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Handshake.md §1: revocation is immediate the moment the server says so —
+    the verdict is cached, so even cache-reading surfaces are revoked too."""
+    isolated_store.save_client_token("nsc_good")
+    isolated_store.save_status(LinkStatus(state=VerificationState.STARRED_VERIFIED).as_dict())
+    svc.client = _FixedClient(verify_payload=_verdict(False, "Revoked", state="NotStarred"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.NOT_STARRED
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.NOT_STARRED.value
+
+
+def test_handshake_lease_expired_maps_to_pending_not_reconnect(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """LeaseExpired remedy = auto-retry (one recheck restores), NOT reconnect."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        verify_payload=_verdict(False, "LeaseExpired", state="VerifiedStarred")
+    )  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_PENDING
+    assert status.reason == "LeaseExpired"
+    assert isolated_store.client_token() == "nsc_good", "the token is not the expired thing"
+
+
+def test_handshake_granted_but_denied_is_never_verified(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Defensive: Granted* with access_allowed=false must NOT read as verified."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        verify_payload=_verdict(False, "GrantedFresh", state="VerifiedStarred")
+    )  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is not VerificationState.STARRED_VERIFIED
+
+
+def test_handshake_unreachable_keeps_cache_and_reports_unavailable(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Handshake.md §3: the handshake NEVER revokes on a network error — the
+    cache stays untouched and the caller sees UNAVAILABLE (fail-closed)."""
+    from nexus_scalp.platform_link.client import PlatformUnavailableError
+
+    isolated_store.save_client_token("nsc_good")
+    isolated_store.save_status(LinkStatus(state=VerificationState.STARRED_VERIFIED).as_dict())
+    svc.client = _FixedClient(error=PlatformUnavailableError("down"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_UNAVAILABLE
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.STARRED_VERIFIED.value, (
+        "last-known-good survives an outage"
+    )
+
+
+def test_handshake_401_clears_token(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    from nexus_scalp.platform_link.client import PlatformTokenRejectedError
+
+    isolated_store.save_client_token("nsc_dead")
+    svc.client = _FixedClient(error=PlatformTokenRejectedError("rejected"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_EXPIRED
+    assert isolated_store.client_token() is None, "§3.3: dead token restarts the flow"
+
+
+def test_handshake_throttles_to_five_minutes(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    svc.handshake(force=True)
+    svc.handshake()  # inside the window -> no server call
+    assert svc.client.verify_calls == 1  # type: ignore[attr-defined]
+    svc.handshake(force=True)  # delivery gate always asks
+    assert svc.client.verify_calls == 2  # type: ignore[attr-defined]
+
+
+def test_handshake_without_token_is_not_connected(
+    svc: PlatformLinkService,
+) -> None:
+    """No token -> NOT_CONNECTED without any server call (no token to ask with)."""
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.NOT_CONNECTED
+
+
+def test_gate_uses_the_handshake_not_me(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """§5 client guidance: handshake before EACH delivery (not /me polling)."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    svc.require_download_authorization()
+    assert svc.client.verify_calls == 1  # type: ignore[attr-defined]
+    assert svc.client.me_calls == 0  # type: ignore[attr-defined]

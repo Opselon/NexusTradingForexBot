@@ -480,6 +480,26 @@ class FirstRunCoordinator:
             )
         except official_mod.OfficialBundleError as exc:
             write_provisioner_state(LifecycleState.REJECTED.value, path="official", error=str(exc))
+            # Spec §3.3/§5: a mid-download 401/403 must surface as the SAME
+            # authorization denial the gate produces, so the CLI recovery
+            # (guard_official_download_interactive) restarts the connect flow.
+            if exc.code == "AUTHORIZATION_REQUIRED":
+                raise PlatformAuthorizationRequiredError(
+                    LinkStatus(
+                        state=VerificationState.VERIFICATION_EXPIRED,
+                        reason="The platform token was rejected during download — reconnect.",
+                    )
+                ) from exc
+            if exc.code in ("LEASE_DENIED", "DOWNLOAD_FORBIDDEN"):
+                revoked = "Revoked" in str(exc)
+                raise PlatformAuthorizationRequiredError(
+                    LinkStatus(
+                        state=VerificationState.NOT_STARRED
+                        if revoked
+                        else VerificationState.VERIFICATION_PENDING,
+                        reason=str(exc),
+                    )
+                ) from exc
             raise
         write_provisioner_state(
             LifecycleState.VERIFYING.value, path="official", bundle_id=verified.bundle_id
