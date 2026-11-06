@@ -359,7 +359,7 @@ class PlatformLinkService:
             try:
                 self.store.save_model_info(model)
             except Exception as exc:  # anti-crash: allow (display-only cache)
-                logger.debug("[PLATFORM-LINK] model info cache failed", error=str(exc))
+                logger.debug("[PLATFORM-LINK] model info cache failed: %s", exc)
 
         state = state_from_platform_payload(
             payload.get("verification_state"), payload.get("entitlement_state")
