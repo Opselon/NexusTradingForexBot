@@ -52,6 +52,19 @@ def _tty_interactive() -> bool:
         return False
 
 
+def _boot_handshake() -> None:
+    """Bounded, throttled boot handshake (failure-isolated, never stalls)."""
+    try:
+        from nexus_scalp.platform_link import get_platform_link_service
+
+        service = get_platform_link_service()
+        if service.store.client_token() is None:
+            return  # nothing to ask yet — the banner handles the unlinked case
+        service.handshake(force=False, min_interval_secs=300.0, timeout=8.0)
+    except Exception as exc:  # anti-crash: allow (boot must never wait on this)
+        logger.debug("[HANDSHAKE] boot handshake skipped", error_type=type(exc).__name__)
+
+
 def _serving_origin_fast() -> str:
     """Origin WITHOUT recomputing SHA256 (sidecar + starter-note override).
 
@@ -141,6 +154,13 @@ def maybe_show_handshake(*, json_mode: bool = False) -> None:
     try:
         from nexus_scalp.model_provisioning.service import ORIGIN_OFFICIAL
 
+        # LIVE BOOT HANDSHAKE (Handshake.md §5: handshake at boot): ask the
+        # server for the authoritative verdict — throttled to one call per
+        # 5 minutes (the server cooldown collapses bursts) and bounded to a
+        # short timeout so an unreachable platform can never stall a start.
+        # On UNAVAILABLE the cached state is kept (never revoked by a network
+        # error) and the banner renders from that.
+        _boot_handshake()
         origin = _serving_origin_fast()
         verified = _star_verified()
         if origin == ORIGIN_OFFICIAL and verified:

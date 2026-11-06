@@ -213,10 +213,17 @@ def test_me_payload_parses() -> None:
 class _FixedClient:
     """Stub PlatformClient with canned responses."""
 
-    def __init__(self, me_payload: dict | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        me_payload: dict | None = None,
+        error: Exception | None = None,
+        verify_payload: dict | None = None,
+    ) -> None:
         self.me_payload = me_payload
         self.error = error
+        self.verify_payload = verify_payload
         self.me_calls = 0
+        self.verify_calls = 0
 
     def start_desktop_session(self, installation_id: str) -> dict:  # pragma: no cover
         raise AssertionError("not expected in gate tests")
@@ -232,6 +239,29 @@ class _FixedClient:
             raise self.error
         assert self.me_payload is not None
         return self.me_payload
+
+    def client_verify(self, token: str, timeout: float | None = None) -> dict:
+        """Handshake.md §3: the gate's live check is now the handshake."""
+        self.verify_calls += 1
+        if self.error is not None:
+            raise self.error
+        if self.verify_payload is not None:
+            return self.verify_payload
+        # Derive a faithful verdict from the canned /me payload.
+        ver = str((self.me_payload or {}).get("verification_state") or "")
+        if ver == "VerifiedStarred":
+            return {
+                "access_allowed": True,
+                "reason_code": "GrantedFresh",
+                "entitlement": {"state": "VerifiedStarred"},
+            }
+        if ver == "NotStarred":
+            return {
+                "access_allowed": False,
+                "reason_code": "Revoked",
+                "entitlement": {"state": "NotStarred"},
+            }
+        return {"access_allowed": False, "reason_code": "Pending", "entitlement": {}}
 
 
 def _service_with(client: _FixedClient, store: PlatformLinkStore) -> PlatformLinkService:
@@ -746,3 +776,134 @@ def test_download_gate_maps_lease_denial_to_star_state(
     with pytest.raises(PlatformAuthorizationRequiredError) as excinfo:
         coordinator.download_official(work_dir=tmp_path)
     assert excinfo.value.status.state is VerificationState.NOT_STARRED
+
+
+# ---------------------------------------------------------------------------
+# Handshake.md §3/§5 — POST /api/client/verify (boot + before-delivery + 5-min)
+# ---------------------------------------------------------------------------
+
+
+def _verdict(access: bool, reason: str, *, state: str = "VerifiedStarred") -> dict:
+    return {
+        "access_allowed": access,
+        "reason_code": reason,
+        "entitlement": {
+            "state": state,
+            "access_allowed": access,
+            "decision": reason,
+        },
+    }
+
+
+def test_handshake_granted_fresh_caches_verified(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.STARRED_VERIFIED
+    assert status.checked_at is not None, "fresh verdict refreshes the grace window"
+    assert isolated_store.load_last_handshake() is not None
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.STARRED_VERIFIED.value
+
+
+def test_handshake_revoked_propagates_immediately(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Handshake.md §1: revocation is immediate the moment the server says so —
+    the verdict is cached, so even cache-reading surfaces are revoked too."""
+    isolated_store.save_client_token("nsc_good")
+    isolated_store.save_status(LinkStatus(state=VerificationState.STARRED_VERIFIED).as_dict())
+    svc.client = _FixedClient(verify_payload=_verdict(False, "Revoked", state="NotStarred"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.NOT_STARRED
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.NOT_STARRED.value
+
+
+def test_handshake_lease_expired_maps_to_pending_not_reconnect(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """LeaseExpired remedy = auto-retry (one recheck restores), NOT reconnect."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        verify_payload=_verdict(False, "LeaseExpired", state="VerifiedStarred")
+    )  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_PENDING
+    assert status.reason == "LeaseExpired"
+    assert isolated_store.client_token() == "nsc_good", "the token is not the expired thing"
+
+
+def test_handshake_granted_but_denied_is_never_verified(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Defensive: Granted* with access_allowed=false must NOT read as verified."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(
+        verify_payload=_verdict(False, "GrantedFresh", state="VerifiedStarred")
+    )  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is not VerificationState.STARRED_VERIFIED
+
+
+def test_handshake_unreachable_keeps_cache_and_reports_unavailable(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """Handshake.md §3: the handshake NEVER revokes on a network error — the
+    cache stays untouched and the caller sees UNAVAILABLE (fail-closed)."""
+    from nexus_scalp.platform_link.client import PlatformUnavailableError
+
+    isolated_store.save_client_token("nsc_good")
+    isolated_store.save_status(LinkStatus(state=VerificationState.STARRED_VERIFIED).as_dict())
+    svc.client = _FixedClient(error=PlatformUnavailableError("down"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_UNAVAILABLE
+    cached = isolated_store.load_status() or {}
+    assert cached.get("state") == VerificationState.STARRED_VERIFIED.value, (
+        "last-known-good survives an outage"
+    )
+
+
+def test_handshake_401_clears_token(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    from nexus_scalp.platform_link.client import PlatformTokenRejectedError
+
+    isolated_store.save_client_token("nsc_dead")
+    svc.client = _FixedClient(error=PlatformTokenRejectedError("rejected"))  # type: ignore[assignment]
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.VERIFICATION_EXPIRED
+    assert isolated_store.client_token() is None, "§3.3: dead token restarts the flow"
+
+
+def test_handshake_throttles_to_five_minutes(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    svc.handshake(force=True)
+    svc.handshake()  # inside the window -> no server call
+    assert svc.client.verify_calls == 1  # type: ignore[attr-defined]
+    svc.handshake(force=True)  # delivery gate always asks
+    assert svc.client.verify_calls == 2  # type: ignore[attr-defined]
+
+
+def test_handshake_without_token_is_not_connected(
+    svc: PlatformLinkService,
+) -> None:
+    """No token -> NOT_CONNECTED without any server call (no token to ask with)."""
+    status = svc.handshake(force=True)
+    assert status.state is VerificationState.NOT_CONNECTED
+
+
+def test_gate_uses_the_handshake_not_me(
+    svc: PlatformLinkService, isolated_store: PlatformLinkStore
+) -> None:
+    """§5 client guidance: handshake before EACH delivery (not /me polling)."""
+    isolated_store.save_client_token("nsc_good")
+    svc.client = _FixedClient(verify_payload=_verdict(True, "GrantedFresh"))  # type: ignore[assignment]
+    svc.require_download_authorization()
+    assert svc.client.verify_calls == 1  # type: ignore[attr-defined]
+    assert svc.client.me_calls == 0  # type: ignore[attr-defined]

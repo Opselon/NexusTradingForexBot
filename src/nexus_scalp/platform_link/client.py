@@ -91,7 +91,11 @@ class PlatformClient:
 
     # ------------------------------------------------------------------ verbs
     def _request(
-        self, path: str, payload: dict[str, Any] | None = None, token: str | None = None
+        self,
+        path: str,
+        payload: dict[str, Any] | None = None,
+        token: str | None = None,
+        timeout: float | None = None,
     ) -> dict[str, Any]:
         url = f"{self.config.base_url}{path}"
         data = None
@@ -106,7 +110,7 @@ class PlatformClient:
         )
         try:
             with urllib.request.urlopen(
-                req, timeout=self.config.connect_timeout + self.config.read_timeout
+                req, timeout=timeout or (self.config.connect_timeout + self.config.read_timeout)
             ) as resp:
                 body = resp.read(1 << 20)
                 status = resp.status
@@ -175,3 +179,12 @@ class PlatformClient:
 
     def client_me(self, token: str) -> dict[str, Any]:
         return self._request("/api/client/me", token=token)
+
+    def client_verify(self, token: str, timeout: float | None = None) -> dict[str, Any]:
+        """The CLI handshake (POST /api/client/verify, spec §3 of Handshake.md).
+
+        An INQUIRY: always 200 with the lease decision — the client branches
+        on ``access_allowed`` / ``reason_code`` instead of HTTP statuses.
+        Unknown/expired/revoked token still answers 401 (restart the flow).
+        """
+        return self._request("/api/client/verify", payload={}, token=token, timeout=timeout)

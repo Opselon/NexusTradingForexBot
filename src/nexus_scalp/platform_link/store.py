@@ -28,6 +28,7 @@ SECRET_SESSION_POLL_INTERVAL = "platform_session_poll_interval"
 SETTING_INSTALLATION_ID = "platform.installation_id"
 SETTING_LINK_STATUS = "platform.link_status"
 SETTING_MODEL_INFO = "platform.model_info"
+SETTING_LAST_HANDSHAKE = "platform.last_handshake_at"
 SETTING_HANDSHAKE = "platform.startup_handshake"
 
 
@@ -111,6 +112,21 @@ class PlatformLinkStore:
         for name in (SECRET_SESSION_ID, SECRET_SESSION_SECRET, SECRET_SESSION_POLL_INTERVAL):
             if self.secrets.has_secret(name):
                 self.secrets.delete_secret(name)
+
+    # ------------------------------------------------------- handshake cadence
+    def save_last_handshake(self, epoch: float) -> None:
+        self.settings.set(SETTING_LAST_HANDSHAKE, repr(float(epoch)), value_type="string")
+
+    def load_last_handshake(self) -> float | None:
+        raw = self.settings.get(SETTING_LAST_HANDSHAKE)
+        if raw is None or not str(raw.value):
+            return None
+        try:
+            value = float(str(raw.value))
+        except ValueError as exc:  # anti-crash: allow (non-fatal UX state)
+            logger.debug("[PLATFORM-LINK] unparsable handshake timestamp", error=str(exc))
+            return None
+        return value if value > 0 else None
 
     # ------------------------------------------------------------- model info
     def save_model_info(self, payload: dict[str, Any]) -> None:
