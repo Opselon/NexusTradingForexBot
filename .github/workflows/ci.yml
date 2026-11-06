@@ -136,29 +136,28 @@ jobs:
   # This guarantees the full artifact (including failure evidence) is produced
   # even when checks fail — failures are never hidden by continue-on-error.
   # ---------------------------------------------------------------------------
-  quality:
-    name: Code Quality & Tests
+  # ---------------------------------------------------------------------------
+  # QUALITY — split execution under ONE required verdict (DevOps audit 2026-11).
+  # The old serial quality job (install -> ruff -> format -> mypy -> pytest ->
+  # smoke -> runtime gates, 550s median, THE PR critical path) ran lint and
+  # tests on one clock. They are independent work: quality-lint and
+  # quality-tests now run in PARALLEL and the required "Code Quality & Tests"
+  # context stays a single fail-closed verdict job (branch protection and
+  # release_auth_gate.REQUIRED_MAIN_CI_CHECKS untouched). A skipped child
+  # (cancelled/missing) fails the verdict - never a silent pass.
+  #
+  # Dependencies install through the DOCUMENTED lock flow (uv pip install
+  # --system -r requirements.lock, hash-verified) restoring the design note in
+  # dependency-lock.yml; a plain resolver pass over -e ".[dev,web,postgres]"
+  # re-resolved ~90 packages on every job.
+  # ---------------------------------------------------------------------------
+  quality-lint:
+    name: Quality — Lint, Types & Static Gates
     runs-on: ubuntu-latest
-    # pytest alone runs ~1010s under `-n auto` on a loaded shared runner, which
-    # left only ~190s of the previous 20m budget for ruff/mypy/coverage/runtime
-    # gate/smoke. A loaded runner then crossed the cap and GitHub cancelled the
-    # JOB with "The operation was canceled" (not "timeout"), aborting gates that
-    # had not yet run and masking a green pytest as a red check. The cap measures
-    # test correctness, not runner contention.
-    timeout-minutes: 30
+    timeout-minutes: 20
 
-    # No PostgreSQL service container here, by operator decision. The
-    # database-backed arms need a MIGRATED server (scratch databases, a
-    # provisioned nexusdb, credentials in the OS secret store) and a
-    # throwaway container cannot supply one: standing one up turned a
-    # 20-second quality job into a 45-minute one that STILL could not
-    # produce a verdict. GitHub CI therefore runs the database-FREE gates
-    # below; the database arms run in the LOCAL gate, against a real
-    # server, via `python scripts/ci/check_local.py --pg`.
-    #
-    # Without NSE_PG_TEST_URL those arms skip here. That skip is REPORTED
-    # as a status line rather than silently counted as a pass - a skip is
-    # not a pass.
+    env:
+      CI_RESULTS_DIR: ci-results-lint
 
     steps:
       - name: Checkout repository
@@ -168,7 +167,13 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
-          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
 
       - name: Cache dependency intelligence graph
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -178,49 +183,16 @@ jobs:
           restore-keys: |
             dep-graph-v1-
 
-      - name: Install dependencies
+      - name: Install via lock (hash-verified requirements.lock)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
-          # (pyproject) - the editable install above already provides them;
-          # a second resolver pass only added 10-20s per job.
-          # [postgres] keeps psycopg importable so provider-aware modules
-          # import cleanly; the PG ARMS themselves do not run in this job.
-          pip install -e ".[dev,web,postgres]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       # -------- Results tree + run metadata (fresh on every run) --------
-      # -------- PG arms: not run in this job (see the job note) --------
-      # scripts/ci/check_preexisting_reds.py is deliberately NOT a step here:
-      # it worktrees the base revision, which a shallow checkout cannot
-      # provide, and its instant failure skipped the runtime / layered-smoke
-      # checks that follow. It stays a local tool:
-      #     python scripts/ci/check_preexisting_reds.py --base origin/main
       - name: Initialize results tree
         run: |
           python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
             --json "$CI_RESULTS_DIR/run-info/env-digest.json"
-
-      # Runtime dependency closure gate (NSE rt-deps lane): the installed
-      # environment must actually satisfy every declared runtime
-      # requirement, transitively. Guards the uvicorn->click defect class,
-      # where the install succeeds while a transitive requirement stays
-      # absent and the app dies on `import uvicorn`. `pip check` cannot see
-      # it (metadata-only), so this probe resolves the real modules.
-      # continue-on-error + results-tree, then the final fail-closed
-      # aggregator decides: a dependency probe may never abort ruff/mypy/
-      # pytest in this job (same contract as runtime_gate/layered-smoke).
-      - name: Runtime dependency closure
-        id: runtime_deps
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
-        continue-on-error: true
-        run: |
-          set +e
-          mkdir -p "$CI_RESULTS_DIR"
-          python -m nexus_scalp.release.runtime_deps --json > "$CI_RESULTS_DIR/runtime_deps.json" 2> "$CI_RESULTS_DIR/runtime_deps.log"
-          rc=$?
-          cat "$CI_RESULTS_DIR/runtime_deps.json"
-          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_deps "$rc" "dependency closure incomplete (see runtime_deps.json + runtime_deps.log)" || true
-          exit 0
 
       # -------- Telegram: workflow started (advisory; never fails CI) --------
       - name: Telegram - CI started
@@ -237,11 +209,10 @@ jobs:
           ruff check . --output-format json > "$CI_RESULTS_DIR/ruff/lint.json" 2> "$CI_RESULTS_DIR/ruff/lint.stderr.txt"
           rc=$?
           ruff check . > "$CI_RESULTS_DIR/ruff/lint.txt" 2>&1 || true
-          { echo "RUFF_LINT_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" ruff_lint "$rc" "violations found (see ruff/)" || true
           exit 0
 
-      # -------- Ruff format check (own directory; validates, never rewrites) --------
+      # -------- Ruff format check (validates, never rewrites) --------
       - name: Ruff - Format check
         id: ruff-format
         continue-on-error: true
@@ -249,21 +220,17 @@ jobs:
           set +e
           ruff format --check . > "$CI_RESULTS_DIR/format/format.txt" 2>&1
           rc=$?
-          { echo "RUFF_FORMAT_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" ruff_format "$rc" "files would be reformatted (see format/)" || true
           exit 0
 
-      # -------- CI auto-repair (CHG-0052): repair the CHECKOUT, never the commit --------
-      # Runs ONLY when the source-tree format check failed. Repairs the runner
-      # checkout so downstream stages still see a clean tree, writes
-      # ruff-repair.patch + ruff-repair-report.json into the results artifact,
-      # and deliberately leaves ruff_format=failed in run-info: the COMMITTED
-      # tree was dirty and that fact must stay visible (the run stays red).
+      # -------- CI auto-repair (CHG-0052): repair the CHECKOUT, never the commit.
+      # Runs ONLY when the format check failed. The committed tree stays red -
+      # ruff_format remains failed in run-info by design.
       - name: Ruff - Auto-repair checkout (safe, artifacted)
-        id: ruff-repair
-        if: env.RUFF_FORMAT_RC != '0'
+        if: steps.ruff-format.outcome == 'failure'
         continue-on-error: true
         run: |
+          set +e
           python scripts/ci/ci_ruff_repair.py --results "$CI_RESULTS_DIR"
           rc=$?
           if [ "$rc" -eq 0 ]; then
@@ -273,30 +240,15 @@ jobs:
           fi
           exit 0
 
-      # -------- Mypy type checking (own directory; text log + JUnit XML) --------
-      # Skipped (=> BLOCKED, never "errored") while the source tree is an
-      # unrepaired format failure: running expensive stages on a tree the
-      # canonical formatter rejects wastes minutes and muddies the root cause.
-      # P2 torch.load security guard: every torch.load in src/ must be
-      # weights_only=True (arbitrary pickle deserialization from a model
-      # file is arbitrary code execution). AST-based — comments/strings
-      # cannot false-positive. A newly introduced unsafe call fails CI.
+      # -------- P2 torch.load security guard (AST-based, fail-loud) --------
       - name: torch.load safety guard (P2)
         run: python scripts/ci/check_torch_load_safety.py
 
       # -------- Critical-path manifest enforcement (QA hardening, P0) --------
-      # DRIFT = a critical source module (explicit floor: live_engine,
-      # order_manager, risk_engine, policy, update_engine, ...) with NO
-      # critical-suite guardian test. This FAILS CI: "developer must
-      # remember" is not an enforcement mechanism. Graph-discovered
-      # unguarded hotspots print as visible warnings (report-only).
       - name: Critical manifest enforcement (drift gate)
         run: python scripts/ci/critical_manifest.py
 
       # -------- Mutation runner smoke (QA hardening, P0) --------
-      # Cheap contract check of the mutation engine itself: repo root,
-      # python resolver, catalog integrity, anchor uniqueness. A broken
-      # runner can never falsely report a green campaign downstream.
       - name: Mutation runner smoke
         run: |
           python scripts/qa/run_mutations.py --list-targets > "$CI_RESULTS_DIR/mutation-smoke.json"
@@ -315,20 +267,14 @@ jobs:
           PY
 
       # -------- Anti-crash static (silent-handler / lost-traceback policy) --------
-      # scripts/ci/anti_crash_static.py existed since the MASTER crash-containment
-      # pass but was never wired into CI, so 490 silent handlers accumulated
-      # invisibly on main. Blocking from the OBS "log everything" wave onward:
-      # an exception handler either logs (with error_type), re-raises, records
-      # state, or carries a reviewed `# anti-crash: allow (<reason>)` marker.
       - name: Anti-crash static policy
         id: anti_crash
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
+        continue-on-error: true
         run: |
           set +e
           mkdir -p "$CI_RESULTS_DIR/anti_crash"
           python scripts/ci/anti_crash_static.py > "$CI_RESULTS_DIR/anti_crash/anti_crash.txt" 2>&1
           rc=$?
-          { echo "ANTI_CRASH_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" anti_crash "$rc" \
             "silent exception handler(s) found (see anti_crash/)" || true
           if [ "$rc" -ne 0 ]; then
@@ -337,69 +283,222 @@ jobs:
             exit "$rc"
           fi
 
+      # -------- Runtime dependency closure gate (NSE rt-deps lane) --------
+      - name: Runtime dependency closure
+        id: runtime_deps
+        continue-on-error: true
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR"
+          python -m nexus_scalp.release.runtime_deps --json > "$CI_RESULTS_DIR/runtime_deps.json" 2> "$CI_RESULTS_DIR/runtime_deps.log"
+          rc=$?
+          cat "$CI_RESULTS_DIR/runtime_deps.json"
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_deps "$rc" "dependency closure incomplete (see runtime_deps.json + runtime_deps.log)" || true
+          exit 0
+
       - name: Mypy - Type checking
         id: mypy
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
           mypy src --junit-xml "$CI_RESULTS_DIR/mypy/mypy-junit.xml" > "$CI_RESULTS_DIR/mypy/mypy.txt" 2>&1
           rc=$?
-          { echo "MYPY_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" mypy "$rc" "type errors found (see mypy/)" || true
           if [ "$rc" -ne 0 ]; then
             grep -E 'error:' "$CI_RESULTS_DIR/mypy/mypy.txt" | head -10 | sed 's/^/::error::/' || true
           fi
           exit 0
 
-      # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --------
-      # Same BLOCKED contract as mypy: skipped while the tree is an unrepaired
-      # format failure; classify-gate writes status=blocked for the missing
-      # result so the summary never invents a fake pytest/coverage error.
+      # -------- OR-verb portability gate --------
+      - name: OR-verb portability gate
+        run: |
+          python scripts/ci/check_or_verb_portability.py
+
+      # -------- Secret presence preflight (booleans ONLY — values never printed) --
+      - name: Secret presence check
+        continue-on-error: true
+        run: |
+          python scripts/ci/make_ci_results.py secret-check "$CI_RESULTS_DIR"
+          exit 0
+
+      # -------- Aggregate: step summary + manifest + checksums --------
+      - name: Generate CI summary (step summary + summary.md)
+        continue-on-error: true
+        run: |
+          set +e
+          python scripts/ci/make_ci_results.py summary "$CI_RESULTS_DIR" || true
+          python scripts/ci/make_ci_results.py manifest "$CI_RESULTS_DIR" || true
+          python - <<'PY' || true
+          import json, os
+          root = os.environ["CI_RESULTS_DIR"]
+          info_dir = os.path.join(root, "run-info")
+
+          def load(name):
+              try:
+                  with open(os.path.join(info_dir, name), encoding="utf-8") as fh:
+                      return json.load(fh)
+              except Exception:
+                  return {}
+
+          checks = {
+              "Ruff Lint": load("ruff_lint.json").get("status", "skipped"),
+              "Ruff Format": load("ruff_format.json").get("status", "skipped"),
+              "Anti-crash": load("anti_crash.json").get("status", "skipped"),
+              "Mypy": load("mypy.json").get("status", "skipped"),
+              "Runtime deps": load("runtime_deps.json").get("status", "skipped"),
+          }
+          lines = ["## Quality — Lint, Types & Static Gates", ""]
+          for name, status in checks.items():
+              lines.append(f"- {name}: **{status.upper()}**")
+          lines.append("")
+          summary = "\n".join(lines)
+          print(summary)
+          with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
+              fh.write(summary + "\n")
+          PY
+          exit 0
+
+      # -------- Failure summary IN THE JOB LOG (CI-FAILSUM-001) --------
+      - name: Print failure summary to job log
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/ci_failure_summary.py --results "$CI_RESULTS_DIR"
+
+      # -------- Telegram: run finished (advisory; never fails CI) --------
+      - name: Telegram - CI finished
+        if: always()
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-finished || true
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" artifacts || true
+
+      # -------- One canonical artifact per run --------
+      - name: Upload CI results artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-results-quality-lint-${{ github.workflow }}-${{ github.run_number }}-${{ github.sha }}
+          path: ci-results-lint/
+          if-no-files-found: error
+          retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
+
+      # -------- Machine-readable review status (one predictable schema) -------
+      - name: Emit review-status.json
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os, time
+          root = os.environ["CI_RESULTS_DIR"]
+          info_dir = os.path.join(root, "run-info")
+          def load(name):
+              try:
+                  with open(os.path.join(info_dir, name), encoding="utf-8") as fh:
+                      return json.load(fh)
+              except Exception:
+                  return {}
+          checks = ["ruff_lint", "ruff_format", "anti_crash", "mypy", "runtime_deps"]
+          details = []
+          status = "passed"
+          for c in checks:
+              d = load(c + ".json")
+              s = d.get("status", "skipped")
+              if s in ("failed", "errored"):
+                  status = "failed"
+              details.append({"check": c, "status": s, "detail": d.get("detail", "")})
+          payload = {
+              "job": "quality-lint",
+              "status": status,
+              "workflow": os.environ.get("GITHUB_WORKFLOW", "CI"),
+              "run_id": os.environ.get("GITHUB_RUN_ID", ""),
+              "sha": os.environ.get("GITHUB_SHA", ""),
+              "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+              "details": details,
+          }
+          os.makedirs(info_dir, exist_ok=True)
+          with open(os.path.join(info_dir, "review-status.json"), "w", encoding="utf-8") as fh:
+              json.dump(payload, fh, indent=2)
+          print("review-status.json ->", status)
+          PY
+
+      # -------- Final gate: fail-closed over THIS lane's checks -------
+      # Missing records FAIL (never a silent pass); only explicit blocked
+      # records are legitimate non-runs. Subset selection via --checks keeps
+      # the canonical CHECKS tuple and its regression net intact.
+      - name: Fail job if any check failed (fail-closed)
+        if: always()
+        run: python scripts/ci/ci_final_gate.py --checks ruff_lint,ruff_format,anti_crash,mypy,runtime_deps
+
+  quality-tests:
+    name: Quality — Tests & Runtime Certification
+    runs-on: ubuntu-latest
+    # The pytest critical suite alone measured ~1010s under -n auto on a
+    # loaded shared runner (see the pre-split comment history); the split
+    # moves lint/type off this clock, so 25m is pytest+smoke+runtime gates.
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Initialize results tree
+        run: |
+          python scripts/ci/make_ci_results.py init "$CI_RESULTS_DIR" \
+            --json "$CI_RESULTS_DIR/run-info/env-digest.json"
+
+      # -------- Telegram: workflow started (advisory; never fails CI) --------
+      - name: Telegram - CI started
+        continue-on-error: true
+        run: |
+          python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-started || true
+
+      # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --
       - name: Pytest with coverage
         id: pytest
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
           # CRITICAL SUITE (default fast gate, 2026-08-20 test-reduction):
           # the small high-signal regression net — see tests/critical_suite.txt.
-          # The huge historical suite was aggressively reduced (2335 -> ~1400
-          # tests) and is no longer the default CI gate (see heavy-ci for the
-          # surviving extended suites on ci-tests / manual dispatch).
+          # Parallelized with pytest-xdist (-n auto cut the serial ~15m gate to
+          # ~5.5m on 4 workers). The manifest is LF pinned via .gitattributes.
           CRIT_FILES=()
           while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && CRIT_FILES+=("$line"); done < tests/critical_suite.txt
-                    # Parallelized with pytest-xdist: serial gate measured about 15
-                    # minutes locally (torch import plus heavy model suites) and sat
-                    # close to the 20 minute job timeout.  The -n auto flag cut the
-                    # same gate to about 5.5 minutes on 4 workers.  pytest-cov emits a
-                    # single TOTAL line under xdist, so coverage parsing is unchanged.
-                    # The manifest is LF pinned via .gitattributes so CRLF cannot embed
-                    # carriage returns into every path and break collection.
-                    pytest "${CRIT_FILES[@]}" \
-                           -n auto \
-                           --dist loadgroup \
-                           --durations=25 \
-                           --cov=src \
+          pytest "${CRIT_FILES[@]}" \
+                 -n auto \
+                 --dist loadgroup \
+                 --durations=25 \
+                 --cov=src \
                  --cov-report=term-missing \
                  --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
                  --cov-report=html:"$CI_RESULTS_DIR/pytest/htmlcov" \
                  --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
                  -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
           rc=$?
-          { echo "PYTEST_RC=$rc"; } >> "$GITHUB_ENV"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "see pytest/junit.xml + pytest.txt" || true
           exit 0
 
       # -------- Whole-application SMOKE CHAIN (one-file E2E heartbeat) --------
-      # SMOKE-E2E: the full engine chain (tick -> 50D -> 70D -> ScalpNet ->
-      # policy -> risk -> paper dispatch -> audit DB -> FastAPI v1) in a single
-      # hermetic file. Runs SEQUENTIALLY (no xdist) so its pretty stage banners
-      # stay readable in the log; every push gets this whole-system signal
-      # even though the critical suite itself is already green.
       - name: End-to-end smoke chain
         id: smoke
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -415,7 +514,6 @@ jobs:
       # -------- Coverage status (derived from the same pytest run above) --------
       - name: Coverage report
         id: coverage
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -449,13 +547,8 @@ jobs:
           exit 0
 
       # -------- Critical-file coverage gate (QA hardening, P1) --------
-      # The repo-wide TOTAL can hide a collapsing critical file behind
-      # healthy dead code. This gate enforces per-file floors on the
-      # execution-critical modules (thresholds = measured critical-suite
-      # baseline, ratcheted upward over time in COVERAGE_THRESHOLDS).
       # NO_DATA on a critical file also fails: silence is not coverage.
       - name: Critical-file coverage gate
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         run: |
           set +e
           mkdir -p "$CI_RESULTS_DIR/coverage"
@@ -463,31 +556,14 @@ jobs:
           rc=$?
           cat "$CI_RESULTS_DIR/coverage/critical-gate.txt"
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage "$rc" "per-file floors on execution-critical modules (see coverage/critical-gate.txt)" || true
-          # hard gate: recorded via run-info AND failing here
           if [ "$rc" -ne 0 ]; then
             echo "::error::critical-file coverage gate failed (see critical-gate.txt)"
             exit 1
           fi
           exit 0
 
-      # -------- Blocked-state classification (CHG-0052, run #685 class) --------
-      # When the source tree is STILL an unrepaired format failure, the
-      # mypy/pytest/coverage steps above never ran. classify-gate writes
-      # status=blocked (NOT errored) for every missing downstream result so
-      # the summary + final gate report BLOCKED_BY_RUFF_FORMAT instead of
-      # inventing three fake failures.
-      # ------------------------------------------------------------------
-      # Provider/portability gates. These run AFTER the quality steps on
-      # purpose: when they ran first, a gate failure aborted the job and
-      # every later step reported `missing` (ruff_lint=missing |
-      # mypy=missing | pytest=missing), hiding the real signal behind the
-      # gate that was supposed to expose it. Each gate still fails the
-      # job -- fail-closed is preserved -- but only after the results it
-      # must not mask have been produced.
-      # ------------------------------------------------------------------
-      # The PostgreSQL arms do NOT run here: they need a migrated server
-      # this runner does not have (see the job note above). Record that as
-      # an explicit status instead of letting a silent skip read as a pass.
+      # -------- The PostgreSQL arms do NOT run here (migrated-server contract).
+      # Recorded as an explicit status instead of a silent skip.
       - name: PostgreSQL arms - not run on this runner (reported)
         run: |
           {
@@ -498,26 +574,9 @@ jobs:
             echo '- A skip here is NOT a pass and is not counted as one.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: OR-verb portability gate
-        run: |
-          python scripts/ci/check_or_verb_portability.py
-
-      - name: Classify blocked downstream checks
-        if: env.RUFF_FORMAT_RC != '0' && env.RUFF_REPAIR_STATUS != 'repaired'
-        continue-on-error: true
-        run: |
-          python scripts/ci/make_ci_results.py classify-gate "$CI_RESULTS_DIR" --root-failure ruff_format
-          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_gate 0 "BLOCKED_BY_RUFF_FORMAT - step did not run" --blocked || true
-          exit 0
-
-      # -------- Secret presence preflight (booleans ONLY — values never printed) --------
-      # -------- Runtime certification gate (CHG-0051): the ONE canonical composed-runtime command
-      # Same command agents run locally before pushing; CI stays final authority.
-      # Blocked alongside mypy/pytest while the tree is an unrepaired format
-      # failure (certifying a tree the canonical formatter rejects is noise).
+      # -------- Runtime certification gate (CHG-0051) --------
       - name: Runtime certification gate
         id: runtime_gate
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -526,14 +585,9 @@ jobs:
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" runtime_gate "$rc" "see runtime_gate.json + runtime_gate.log" || true
           exit 0
 
-      # -------- Layered E2E smoke — fast tier (CHG-SMOKE-E2E-V2) --------
-      # Production-grade layered smoke: L0 static + L1 contracts + L2
-      # integration + L4 safety injections + dataflow/hot-path/authority.
-      # Fast tier (no runtime boot) keeps CI fast: ~2s vs ~17s full tier.
-      # Full tier runs in heavy-ci (ci-tests branch / dispatch) below.
+      # -------- Layered E2E smoke — fast tier --------
       - name: Layered smoke (fast)
         id: layered-smoke
-        if: env.RUFF_FORMAT_RC == '0' || env.RUFF_REPAIR_STATUS == 'repaired'
         continue-on-error: true
         run: |
           set +e
@@ -543,18 +597,11 @@ jobs:
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" layered_smoke "$rc" "layered E2E smoke fast tier (nse smoke --fast)" || true
           exit 0
 
-      - name: Secret presence check
-        continue-on-error: true
-        run: |
-          python scripts/ci/make_ci_results.py secret-check "$CI_RESULTS_DIR"
-          exit 0
-
       # -------- Aggregate: step summary + manifest + checksums --------
       - name: Generate CI summary (step summary + summary.md)
         continue-on-error: true
         run: |
           set +e
-          # Pytest details for the summary (tests/passed/failed/skipped)
           python - <<'PY' || true
           import json, os
           import xml.etree.ElementTree as ET
@@ -563,8 +610,8 @@ jobs:
           detail = ""
           try:
               tree = ET.parse(junit)
-              root = tree.getroot()
-              nodes = root.findall("testsuite") if root.tag == "testsuites" else [root]
+              r = tree.getroot()
+              nodes = r.findall("testsuite") if r.tag == "testsuites" else [r]
               tests = failures = skipped = 0
               for node in nodes:
                   tests += int(node.attrib.get("tests", 0) or 0)
@@ -579,7 +626,6 @@ jobs:
           PY
           python scripts/ci/make_ci_results.py summary "$CI_RESULTS_DIR" || true
           python scripts/ci/make_ci_results.py manifest "$CI_RESULTS_DIR" || true
-          # Concise $GITHUB_STEP_SUMMARY (actual values only)
           python - <<'PY' || true
           import json, os
           root = os.environ["CI_RESULTS_DIR"]
@@ -593,51 +639,25 @@ jobs:
                   return {}
 
           checks = {
-              "Ruff Lint": load("ruff_lint.json").get("status", "skipped"),
-              "Ruff Format": load("ruff_format.json").get("status", "skipped"),
-              "Mypy": load("mypy.json").get("status", "skipped"),
               "Pytest": load("pytest.json").get("status", "skipped"),
+              "Smoke chain": load("smoke.json").get("status", "skipped"),
               "Coverage": load("coverage.json").get("status", "skipped"),
+              "Critical coverage": load("critical_coverage.json").get("status", "skipped"),
+              "Runtime gate": load("runtime_gate.json").get("status", "skipped"),
               "Layered Smoke": load("layered_smoke.json").get("status", "skipped"),
           }
-          # CHG-0052: root-cause block — was the committed tree clean, did the
-          # safe repair succeed, and what is blocked behind the root failure?
-          try:
-              with open(os.path.join(root, "ruff-repair-report.json"), encoding="utf-8") as fh:
-                  repair_report = json.load(fh)
-          except Exception:
-              repair_report = {}
           meta = load("metadata.json")
           extra = load("pytest-extra.json")
           cov = load("coverage-extra.json").get("percent")
-          lines = ["## CI Validation", ""]
+          lines = ["## Quality — Tests & Runtime Certification", ""]
           for name, status in checks.items():
               lines.append(f"- {name}: **{status.upper()}**")
           lines.append("")
-          blocked = [n for n, s in checks.items() if s == "blocked"]
-          if blocked:
-              lines.append(f"- DOWNSTREAM: **BLOCKED BY ROOT FAILURE** ({', '.join(blocked)} - cancelled upstream, NOT errored)")
-              lines.append("")
-          if repair_report:
-              src_clean = bool(repair_report.get("source_tree_was_clean"))
-              lines.append("## Ruff Format Source State (CHG-0052)")
-              lines.append("")
-              lines.append(f"- ROOT FAILURE: ruff format --check . (source tree)")
-              lines.append(f"- SOURCE TREE FORMAT STATUS: {'CLEAN' if src_clean else 'DIRTY — committed tree was malformed'}")
-              lines.append(f"- AUTO-REPAIR: {str(repair_report.get('repair_status', 'unknown')).upper()}")
-              lines.append(f"- POST-REPAIR CHECK: {'PASS' if repair_report.get('post_repair_format_exit_code') == 0 else 'FAIL/NOT RUN'}")
-              lines.append(f"- COMMITTED TREE WAS ALREADY CLEAN: {str(src_clean).upper()}")
-              lines.append(f"- PERSISTENCE: NOT COMMITTED — patch artifact: {repair_report.get('patch_file') or 'n/a'}")
-              files = repair_report.get("files_offending") or []
-              if files:
-                  lines.append(f"- FILES: {', '.join(str(f) for f in files[:20])}")
-              lines.append("")
           lines.append(extra.get("detail", "Tests: n/a"))
           if cov is not None:
               lines.append(f"Coverage: {cov:.1f}%")
           lines.append("")
           lines.append(f"Artifact: `{meta.get('artifact', 'ci-results-*')}` (30-day retention)")
-          lines.append("See the artifact's `ci-results/run-info/summary.md` for full details.")
           summary = "\n".join(lines)
           print(summary)
           with open(os.environ.get("GITHUB_STEP_SUMMARY", os.devnull), "a", encoding="utf-8") as fh:
@@ -646,16 +666,6 @@ jobs:
           exit 0
 
       # -------- Failure summary IN THE JOB LOG (CI-FAILSUM-001) --------
-      # Everything above writes its output ONLY into $CI_RESULTS_DIR, so a red
-      # job used to show the failing test names, assertions and durations
-      # exclusively inside the ci-results zip. This step renders the failure
-      # record straight into the step log from the SAME tree (zero network,
-      # zero extra tool invocations): every failing test with its duration and
-      # its first meaningful assertion/error line, plus ruff/mypy violation
-      # tails. Bounded output so a cascade cannot hide the first failure.
-      # `if: always()` + `continue-on-error` so a diagnostic can never turn a
-      # run red or mask a real failure; the artifact remains the deep-dive
-      # layer, not the only source of truth.
       - name: Print failure summary to job log
         if: always()
         continue-on-error: true
@@ -671,11 +681,7 @@ jobs:
           python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" artifacts || true
 
       # -------- One canonical artifact per run --------
-      # On heavy runs (ci-tests / full dispatch) the aggregate job uploads the
-      # final canonical artifact under the base name; this quality upload uses a
-      # distinct -quality suffix so the two never collide (upload-artifact v4
-      # rejects duplicate names). On normal pushes this IS the run's artifact
-      # (aggregate does not run).
+      # This is the run's canonical ci-results artifact on normal pushes.
       - name: Upload CI results artifact
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -686,9 +692,6 @@ jobs:
           retention-days: ${{ env.CI_ARTIFACT_RETENTION_DAYS }}
 
       # -------- Machine-readable review status (one predictable schema) -------
-      # Emitted as each job completes so aggregators / PR comments can merge
-      # structured status without reassembling mutable JSON in a single env
-      # var at workflow startup (task - 22/24). Schema is canonical across jobs.
       - name: Emit review-status.json
         if: always()
         run: |
@@ -702,7 +705,7 @@ jobs:
                       return json.load(fh)
               except Exception:
                   return {}
-          checks = ["ruff_lint", "ruff_format", "mypy", "pytest", "smoke", "coverage", "layered_smoke"]
+          checks = ["pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke"]
           details = []
           status = "passed"
           for c in checks:
@@ -711,21 +714,14 @@ jobs:
               if s in ("failed", "errored"):
                   status = "failed"
               details.append({"check": c, "status": s, "detail": d.get("detail", "")})
-          # CHG-0052: repair evidence travels with the review status so
-          # aggregators see AUTO_REPAIRED_BUT_SOURCE_DIRTY without the artifact.
-          if os.environ.get("RUFF_REPAIR_STATUS") == "repaired":
-              payload_extra = {"auto_repair": "repaired", "source_tree": "dirty"}
-          else:
-              payload_extra = {}
           payload = {
-              "job": "quality",
+              "job": "quality-tests",
               "status": status,
               "workflow": os.environ.get("GITHUB_WORKFLOW", "CI"),
               "run_id": os.environ.get("GITHUB_RUN_ID", ""),
               "sha": os.environ.get("GITHUB_SHA", ""),
               "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
               "details": details,
-              **payload_extra,
           }
           os.makedirs(info_dir, exist_ok=True)
           with open(os.path.join(info_dir, "review-status.json"), "w", encoding="utf-8") as fh:
@@ -733,19 +729,34 @@ jobs:
           print("review-status.json ->", status)
           PY
 
-      # -------- Final gate: root failure vs blocked vs real failure (CHG-0052) -------
-      # Fail-closed extraction of the previous inline heredoc (Agent-10 CI/CD
-      # gate integrity): the heredoc treated a MISSING result JSON as skipped
-      # and went green when mypy/pytest/coverage/runtime_gate never ran (lost
-      # RUFF_FORMAT_RC, runner crash, skipped-if misfire) — "ALL CHECKS
-      # PASSED" with zero tests executed. scripts/ci/ci_final_gate.py keeps
-      # the same status vocabulary but a missing record FAILS the run; only
-      # explicit status=blocked records (per-step fallback / classify-gate)
-      # are legitimate non-runs. Regression net:
-      # tests/unit/test_ci_final_gate_fail_closed.py
+      # -------- Final gate: fail-closed over THIS lane's checks -------
       - name: Fail job if any check failed (fail-closed)
         if: always()
-        run: python scripts/ci/ci_final_gate.py
+        run: python scripts/ci/ci_final_gate.py --checks pytest,smoke,coverage,critical_coverage,runtime_gate,layered_smoke
+
+  quality:
+    name: Code Quality & Tests
+    if: always()
+    needs:
+      - quality-lint
+      - quality-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require both quality lanes to pass (fail-closed on skip/cancel)
+        run: |
+          echo "Lint/types/static lane: ${{ needs.quality-lint.result }}"
+          echo "Tests/runtime lane:     ${{ needs.quality-tests.result }}"
+          if [ "${{ needs.quality-lint.result }}" != "success" ]; then
+            echo "::error::Quality lint/types/static lane failed (${{ needs.quality-lint.result }}) — a skipped lane is NOT a pass"
+            exit 1
+          fi
+          if [ "${{ needs.quality-tests.result }}" != "success" ]; then
+            echo "::error::Quality tests/runtime lane failed (${{ needs.quality-tests.result }}) — a skipped lane is NOT a pass"
+            exit 1
+          fi
+          echo "QUALITY CERTIFICATION: PASS"
 
   # ---------------------------------------------------------------------------
   # FULL REAL-PROCESS RUNTIME — SQLite + PostgreSQL matrix.
@@ -783,10 +794,17 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install full runtime dependencies
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev,web,postgres]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       - name: Prepare isolated provider environment
         run: |
@@ -1004,10 +1022,17 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install runtime dependencies
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev,web,postgres]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       - name: Download SQLite runtime evidence
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -1541,10 +1566,17 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev,web]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       - name: Initialize results tree
         run: |
@@ -1621,13 +1653,17 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          # pytest-cov>=4.1.0 + pytest-xdist>=3.5.0 ship in the [dev] extra
-          # (pyproject) - the editable install above already provides them;
-          # a second resolver pass only added 10-20s per job.
-          pip install -e ".[dev,web]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       - name: Initialize results tree
         run: |

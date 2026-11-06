@@ -186,7 +186,7 @@ jobs:
           name: nightly-mutations-${{ github.run_number }}
           path: ${{ env.CI_RESULTS_DIR }}/
           if-no-files-found: error
-          retention-days: 90
+          retention-days: 14
 
   notify:
     name: Nightly failure notification

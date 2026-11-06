@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Database leak-detection guard — Phase 33 of the DB-FABRIC-001 mission.
 
-Static check that runs in CI (and locally via `nexus db audit-leaks`):
+Static check (local runs via `nexus db audit-leaks` and
+`python scripts/ci/db_leak_guard.py`; it is not wired into any GitHub
+Actions lane as of the 2026-11 DevOps audit - CI coverage exists via the
+test suite's DB isolation fixtures):
 detects persistence violations BEFORE they reach production.
 
 Checks (each fails the run on a NEW violation):

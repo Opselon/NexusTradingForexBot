@@ -20,6 +20,7 @@ Local probe (no CI needed):
 
 from __future__ import annotations
 
+import argparse
 import io
 import json
 import os
@@ -833,14 +834,39 @@ def write_step_summary(root: Path, diagnostics: list[StepDiagnostic]) -> None:
         pass
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Fail-closed CI final gate")
+    parser.add_argument(
+        "--checks",
+        default="",
+        help=(
+            "comma-separated subset of the CHECKS tuple to verdict (DevOps "
+            "audit 2026-11: quality-lint and quality-tests each verdict their "
+            "own lane; the default verdicts the full canonical tuple)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    if args.checks.strip():
+        requested = [c.strip() for c in args.checks.split(",") if c.strip()]
+        unknown = [c for c in requested if c not in CHECKS]
+        if unknown or not requested:
+            print(
+                f"::error::ci_final_gate --checks: unknown/empty subset {unknown or requested!r} "
+                f"(allowed: {', '.join(CHECKS)})"
+            )
+            return 1
+        verdict_checks = tuple(requested)
+    else:
+        verdict_checks = CHECKS
+
     root_str = os.environ.get("CI_RESULTS_DIR", "ci-results")
     root = Path(root_str)
     info_dir = root / "run-info"
     statuses: dict[str, str] = {}
     missing: list[str] = []
 
-    for name in CHECKS:
+    for name in verdict_checks:
         path = info_dir / f"{name}.json"
         try:
             with open(path, encoding="utf-8") as fh:
@@ -871,7 +897,7 @@ def main() -> int:
         print("MISSING RESULTS (never ran, never classified blocked): " + ", ".join(missing))
 
     diagnostics = [
-        collect_diagnostics(root, name, statuses.get(name, "missing")) for name in CHECKS
+        collect_diagnostics(root, name, statuses.get(name, "missing")) for name in verdict_checks
     ]
 
     if failed:

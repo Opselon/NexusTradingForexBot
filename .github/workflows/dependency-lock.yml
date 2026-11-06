@@ -7,7 +7,9 @@ name: Dependency Lock & Migration Safety
 #
 #   check_dependency_drift.py : requirements.lock / requirements.txt must
 #     match a fresh `uv pip compile pyproject.toml --all-extras` resolution.
-#     The repo venv builds through the lock (see ci.yml "Install via lock").
+#     The repo venv builds through the lock (ci.yml jobs run
+#     `uv pip install --system -r requirements.lock` - restored 2026-11,
+#     DevOps audit P8; migration-safety below installs the same way).
 #   check_migration_safety.py : migration registry chain valid, no silent
 #     except-swallow in the migration apply path, every domain reaches
 #     expected_version + verify() on disposable DBs.

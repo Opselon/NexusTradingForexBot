@@ -699,3 +699,15 @@ file::memory:*
 /.merge-backup-site/
 /.phase1_guard/
 /critical_suite_validation.md
+
+# ---------------------------------------------------------------------------
+# DevOps audit 2026-11: local probe/coverage dump artifacts must never be
+# committed again (6.3MB of one-off cov_probe/cov_baseline dumps previously
+# landed in-tree; see docs/DEVOPS_AUDIT_2026-11.md P6).
+cov_probe.json
+cov_probe.txt
+cov_baseline_run.txt
+audit_findings.json
+scratch_audit/
+ci-results/
+ci-results-lint/

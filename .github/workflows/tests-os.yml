@@ -15,8 +15,10 @@ name: Tests (OS Matrix)
 #                defects only Linux cannot see); macOS always-reports green in
 #                ~1 min (DEC-0008 pattern — a required context must not go
 #                MISSING on PRs).
-#     main push: BOTH run the FULL critical suite (product-truth evidence on
-#                the commit that tags become releases from).
+#     main push: Windows runs the FULL critical suite (product-truth evidence
+#                on the commit that tags become releases from); macOS reports
+#                SKIP-REPORT (DevOps audit P9, 2026-11 - cost trim, drift
+#                detection stays on the Monday schedule).
 #     Monday schedule: full suite both OSes (platform drift catch-up).
 #     workflow_dispatch: full suite (+ optional ci.yml-style full flag).
 #
@@ -79,7 +81,15 @@ jobs:
             pull_request)
               if [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT; else MODE=SKEW; fi ;;
             push)
-              if [ "${{ github.ref_name }}" = "main" ]; then MODE=FULL;
+              # DevOps audit P9 (2026-11): on main pushes Windows runs the FULL
+              # critical suite; macOS returns to SKIP-REPORT. macOS ships
+              # nothing (release.yml builds windows-x64 only) and its FULL-suite
+              # role is platform-drift detection, which the Monday 07:17 UTC
+              # schedule (below) still runs on both OSes. Measured cost of the
+              # per-push macOS FULL leg: ~8m25s at the 10x macOS multiplier =
+              # ~84 of the ~119 billable minutes of a main-push tests-os run.
+              if [ "${{ github.ref_name }}" = "main" ]; then
+                if [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT; else MODE=FULL; fi
               elif [ "${{ matrix.os }}" = "macos-latest" ]; then MODE=SKIP-REPORT;
               else MODE=SKEW; fi ;;
             schedule) MODE=FULL ;;
@@ -128,12 +138,20 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: "pip"
 
-      - name: Install dependencies
+      - name: Install uv (pinned — the canonical lock tool)
+        if: steps.lane.outputs.mode != 'SKIP-REPORT'
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
         if: steps.lane.outputs.mode != 'SKIP-REPORT'
         shell: bash
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev,web]"
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
 
       - name: Run OS-skewed Windows subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
