@@ -115,6 +115,50 @@ def render_status_panel(status: LinkStatus, svc: PlatformLinkService) -> Panel:
     return Panel("\n".join(lines), title="GitHub Verification", border_style=border)
 
 
+# ---------------------------------------------------------------------------
+# Star promo — the ONE shared "Continue with GitHub" pitch (setup wizard,
+# boot offer, download-gate recovery all render the same copy).
+# ---------------------------------------------------------------------------
+
+_REPO_URL = "https://github.com/Opselon/NexusTradingForexBot"
+
+
+def render_star_promo(repo: str | None = None, url: str | None = None) -> Panel:
+    """The pretty star pitch shown before the connect flow.
+
+    Copy contract (2026-11 Easy Setup Wizard upgrade): open repository →
+    give a Star ⭐ → write Y to confirm → verification (may take time) →
+    official models with benchmark / edge / winrate unlock for download.
+    """
+    repo = repo or "Opselon/NexusTradingForexBot"
+    url = url or _REPO_URL
+    body = "\n".join(
+        [
+            "[bold cyan]⭐ Continue with GitHub — unlock the Official Models[/]",
+            "",
+            "Official models ship with [bold]benchmark, edge and winrate[/] stats —",
+            "you will be able to download them once your star is verified.",
+            "",
+            "[bold]Steps:[/]",
+            f"  [bold]1.[/] Open our repository: [link={url}]{url}[/link]",
+            "  [bold]2.[/] Give the project a Star [bold yellow]⭐[/bold yellow]",
+            "  [bold]3.[/] Verify — may take a few seconds",
+            "",
+            "After starring, write [bold green]Y[/] and press Enter to confirm your star.",
+        ]
+    )
+    return Panel(body, title="Continue with GitHub", border_style="cyan")
+
+
+def _ask_retry_after_star(url: str) -> bool:
+    """The post-not-starred question: star first, then Y re-verifies."""
+    try:
+        answer = input("After starring, write Y to verify again [Y/n]: ").strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        return False
+    return answer not in ("n", "no")
+
+
 def _service() -> PlatformLinkService:
     return PlatformLinkService()
 
@@ -129,30 +173,56 @@ def platform_status() -> None:
 def run_connect_flow(svc: PlatformLinkService, timeout: float = 600.0) -> LinkStatus:
     """The ONE standard connect flow, shared by CLI / wizard / boot / gate.
 
+    - Renders the star promo (open repo → Star ⭐ → write Y → verify).
     - Prints the generated link directly (the user may self-open it).
     - Asks exactly ONE question: open the browser? [Y/n]
     - Polls resiliently either way until verified / unstarred / expired.
+    - A NOT_STARRED verdict gets the recovery loop: the steps are shown again
+      and the user's Y re-verifies (bounded, never an infinite nag).
     """
     status = svc.start_connect()
-    console.print(
-        Panel(
-            "Continue with GitHub — GitHub's own authorization page opens.\n"
-            "No codes, no tokens: this app only receives your verification result.\n\n"
-            f"[bold]Link:[/] [link={status.verification_url}]{status.verification_url}[/link]",
-            title="Connect GitHub",
-            border_style="cyan",
+    console.print(render_star_promo(status.repository, status.verification_url))
+    if status.verification_url:
+        console.print(
+            Panel(
+                "GitHub's own authorization page opens — no codes, no tokens:\n"
+                "this app only receives your verification result.\n\n"
+                f"[bold]Link:[/] [link={status.verification_url}]{status.verification_url}[/link]",
+                title="Secure GitHub authorization",
+                border_style="cyan",
+            )
         )
-    )
     if status.verification_url and _interactive() and _ask_open_browser(status.verification_url):
         if not svc.open_verification_browser():
             console.print(f"[yellow]Open this URL manually:[/] {status.verification_url}")
     else:
         console.print("[dim]Open the link above — this stays polling until done.[/]")
 
-    with console.status("Waiting for GitHub… (Ctrl+C to cancel)"):
-        final = svc.await_verification(timeout=timeout)
+    final = _verification_loop(svc, timeout)
     console.print(render_status_panel(final, svc))
     _after_verification(final)
+    return final
+
+
+def _verification_loop(svc: PlatformLinkService, timeout: float) -> LinkStatus:
+    """Poll to a terminal state; recover from NOT_STARRED with a bounded,
+    polite star→verify-again loop (the star may land seconds after starring)."""
+    final = LinkStatus(state=VerificationState.NOT_CONNECTED)
+    for _attempt in range(3):
+        with console.status("Verifying your star… (this may take time; Ctrl+C to cancel)"):
+            final = svc.await_verification(timeout=timeout)
+        if final.state is not VerificationState.NOT_STARRED:
+            return final
+        console.print(
+            "[red]✗ You have not starred the project yet.[/] Official models stay locked.\n"
+        )
+        console.print(render_star_promo(final.repository))
+        if not (_interactive() and _ask_retry_after_star(final.verification_url or "")):
+            return final
+        with console.status("Re-checking your star…"):
+            final = svc.reverify()
+        if final.state is VerificationState.STARRED_VERIFIED:
+            return final
     return final
 
 
@@ -186,12 +256,17 @@ def platform_disconnect() -> None:
 def _after_verification(final: LinkStatus) -> None:
     """Post-verification UX: unlocked message + one-time diagnostics consent."""
     if final.state is VerificationState.STARRED_VERIFIED:
-        console.print("[green]Official model downloads are unlocked.[/]")
+        console.print(
+            "[bold green]⭐ Star verified — Official Models UNLOCKED.[/] "
+            "Download them with [bold]nexus model-official[/] "
+            "(benchmark · edge · winrate included)."
+        )
         _maybe_ask_diagnostics_consent()
     elif final.state is VerificationState.NOT_STARRED:
         console.print(
-            "[red]You are UNSTARRED.[/] One more step to unlock official models:\n"
-            f"  1. Star [link={final.repository}]{final.repository}[/link] on GitHub\n"
+            "[red]You have not starred the project yet.[/] One more step to unlock "
+            "official models:\n"
+            f"  1. Star [link={final.repository or _REPO_URL}]{final.repository or _REPO_URL}[/link] on GitHub\n"
             "  2. Run [bold]nexus platform verify[/] (server-checked, no browser needed)\n"
             "     or [bold]nexus platform connect[/] to reopen the link."
         )
@@ -215,13 +290,14 @@ def _maybe_ask_diagnostics_consent() -> None:
 
 
 def offer_boot_connect(svc: PlatformLinkService, status: LinkStatus) -> None:
-    """TTY-only offer at engine boot: the SAME standard flow as the CLI."""
+    """TTY-only offer at engine boot / setup wizard: the SAME standard flow."""
+    console.print(render_star_promo(status.repository))
     console.print(render_status_panel(status, svc))
     connected = status.state.connected
     question = (
         "Verify now (server check, no browser)? [Y/n]"
         if connected
-        else "Connect GitHub now to unlock the official model? [Y/n]"
+        else "Continue with GitHub now to unlock the official model? [Y/n]"
     )
     try:
         answer = input(question).strip().lower()
@@ -231,8 +307,10 @@ def offer_boot_connect(svc: PlatformLinkService, status: LinkStatus) -> None:
         console.print("[dim]Skipping — run 'nexus platform connect' anytime.[/]")
         return
     if connected:
-        with console.status("Checking with the server…"):
+        with console.status("Verifying your star… (may take a few seconds)"):
             final = svc.reverify()
+        if final.state is VerificationState.NOT_STARRED:
+            final = _verification_loop(svc, timeout=600.0)
         console.print(render_status_panel(final, svc))
         _after_verification(final)
     else:
