@@ -16,6 +16,7 @@ import json
 import uuid
 from typing import Any
 
+from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.settings.secret_store import SecureSecretStore
 from nexus_scalp.settings.service import SettingsService
 
@@ -23,9 +24,14 @@ SECRET_CLIENT_TOKEN = "platform_client_token"
 SECRET_TOKEN_EXPIRES_AT = "platform_token_expires_at"
 SECRET_SESSION_SECRET = "platform_session_secret"
 SECRET_SESSION_ID = "platform_session_id"
+SECRET_SESSION_POLL_INTERVAL = "platform_session_poll_interval"
 SETTING_INSTALLATION_ID = "platform.installation_id"
 SETTING_LINK_STATUS = "platform.link_status"
+SETTING_MODEL_INFO = "platform.model_info"
 SETTING_HANDSHAKE = "platform.startup_handshake"
+
+
+logger = get_logger("nexus_scalp.platform_link.store")
 
 
 class PlatformLinkStore:
@@ -73,9 +79,15 @@ class PlatformLinkStore:
         return self.secrets.has_secret(SECRET_CLIENT_TOKEN)
 
     # --------------------------------------------------- desktop auth session
-    def save_desktop_session(self, session_id: str, session_secret: str) -> None:
+    def save_desktop_session(
+        self, session_id: str, session_secret: str, poll_interval: float | None = None
+    ) -> None:
         self.secrets.set_secret(SECRET_SESSION_ID, session_id)
         self.secrets.set_secret(SECRET_SESSION_SECRET, session_secret)
+        # Server-honored cadence (spec §3.1 poll_interval, default 3s) — the
+        # client polls at the platform's pace instead of a local guess.
+        if poll_interval and poll_interval > 0:
+            self.secrets.set_secret(SECRET_SESSION_POLL_INTERVAL, str(poll_interval))
 
     def load_desktop_session(self) -> tuple[str, str] | None:
         session_id = self.secrets.get_secret(SECRET_SESSION_ID)
@@ -84,10 +96,51 @@ class PlatformLinkStore:
             return None
         return session_id, session_secret
 
+    def load_session_poll_interval(self) -> float | None:
+        raw = self.secrets.get_secret(SECRET_SESSION_POLL_INTERVAL)
+        if not raw:
+            return None
+        try:
+            value = float(raw)
+        except ValueError as exc:  # anti-crash: allow (garbage in the secret slot is non-fatal)
+            logger.debug("[PLATFORM-LINK] unparsable session poll interval", error=str(exc))
+            return None
+        return value if 0.5 <= value <= 60.0 else None
+
     def clear_desktop_session(self) -> None:
-        for name in (SECRET_SESSION_ID, SECRET_SESSION_SECRET):
+        for name in (SECRET_SESSION_ID, SECRET_SESSION_SECRET, SECRET_SESSION_POLL_INTERVAL):
             if self.secrets.has_secret(name):
                 self.secrets.delete_secret(name)
+
+    # ------------------------------------------------------------- model info
+    def save_model_info(self, payload: dict[str, Any]) -> None:
+        """Cache the /api/client/me model entry (version + benchmark stats).
+
+        Additive + tolerate-unknown policy: only known-safe scalar fields are
+        kept, and stale info never grants anything — it is display-only."""
+        known = {
+            key: payload[key]
+            for key in ("version", "id", "dimension", "published_at")
+            if isinstance(payload.get(key), (str, int, float))
+        }
+        benchmark = payload.get("benchmark")
+        if isinstance(benchmark, dict):
+            for key in ("win_rate", "max_drawdown"):
+                if isinstance(benchmark.get(key), (int, float)):
+                    known[key] = benchmark[key]
+        self.settings.set(
+            SETTING_MODEL_INFO, json.dumps(known, sort_keys=True), value_type="string"
+        )
+
+    def load_model_info(self) -> dict[str, Any] | None:
+        raw = self.settings.get(SETTING_MODEL_INFO)
+        if raw is None or not str(raw.value):
+            return None
+        try:
+            data = json.loads(str(raw.value))
+        except (TypeError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
 
     # ------------------------------------------------------------ status cache
     def save_status(self, payload: dict[str, Any]) -> None:

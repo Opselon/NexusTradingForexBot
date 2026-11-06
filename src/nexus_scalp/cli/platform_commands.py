@@ -68,6 +68,28 @@ def _info(text: str) -> str:
     return f"[dim]i {text}[/dim]"
 
 
+def _model_benchmark_line(svc: PlatformLinkService) -> str:
+    """'Official model 9.0.14 · win rate 58% · max drawdown 7%' when known.
+
+    Display-only truth cached from /api/client/me (spec §6.1); absent info
+    renders nothing — the panel never invents numbers."""
+    try:
+        info = svc.model_info()
+    except Exception:  # anti-crash: allow (display-only)
+        return ""
+    version = str(info.get("version") or "")
+    if not version:
+        return ""
+    parts = [f"[bold]Official model {version}[/bold]"]
+    win_rate = info.get("win_rate")
+    max_dd = info.get("max_drawdown")
+    if isinstance(win_rate, (int, float)):
+        parts.append(f"win rate {win_rate * 100:.0f}%")
+    if isinstance(max_dd, (int, float)):
+        parts.append(f"max drawdown {max_dd * 100:.0f}%")
+    return " · ".join(parts)
+
+
 def _token_line(svc: PlatformLinkService) -> str:
     """Masked token status: nsc_ab12…ef90 · expires <date|unknown>."""
     meta = svc.token_status()
@@ -88,6 +110,10 @@ def render_status_panel(status: LinkStatus, svc: PlatformLinkService) -> Panel:
         lines.append(_ok(f"[bold]Connected[/] as {who}"))
         lines.append(_ok(f"Star verified: {repo}"))
         lines.append(_ok("[bold]Official models UNLOCKED[/]"))
+        # Platform API §6.1 model.benchmark — show WHAT the star unlocks.
+        bench = _model_benchmark_line(svc)
+        if bench:
+            lines.append(_ok(bench))
     elif state is VerificationState.NOT_STARRED:
         lines.append(_ok(f"Connected as {who}"))
         lines.append(_bad(f"NOT starred: {repo}"))
