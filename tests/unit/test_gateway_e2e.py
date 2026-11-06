@@ -19,6 +19,7 @@ import os
 
 # AUDIT-B2: tests run in DEMO mode with the explicit defaults opt-in.
 import os as _os
+import sys
 import time
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -56,6 +57,10 @@ def _hmac_headers(secret: str, key: str, body: bytes, ts: str | None = None) -> 
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="asserts the Linux-side 503 platform gate (gateway server runs on Windows)",
+)
 def test_gateway_hmac_ping_ok_on_linux_platform_gate() -> None:
     """Auth passes, server returns 503 platform gate (not 401) — proves HMAC path."""
     reset_adapter_for_tests()
@@ -127,6 +132,10 @@ def test_gateway_missing_auth_headers_is_401() -> None:
     assert r.status_code == 401
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="asserts the Linux-side DEGRADED health report (gateway server runs on Windows)",
+)
 def test_gateway_health_on_linux_is_degraded() -> None:
     reset_adapter_for_tests()
     client = TestClient(app)
@@ -322,6 +331,10 @@ def test_cli_help_lists_gateway() -> None:
     assert "gateway" in res.stdout.lower()
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="asserts the Linux-side 'runs only on Windows' runtime error from gateway serve",
+)
 def test_cli_gateway_serve_on_linux_is_runtime_error_not_crash() -> None:
     from typer.testing import CliRunner
 
@@ -386,6 +399,10 @@ def test_cli_gateway_status_with_mocked_healthy_server() -> None:
         assert "reachable" in res.stdout.lower()
 
 
+@pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="creationflags=DETACHED_PROCESS regression guard is daemon-Linux-specific",
+)
 def test_engine_boot_daemon_linux_does_not_use_creationflags() -> None:
     """Regression: creationflags=DETACHED_PROCESS crashes on Linux."""
     from unittest.mock import patch as mocker_patch
