@@ -34,6 +34,7 @@ _spec = importlib.util.spec_from_file_location(
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 REQUIRED_MAIN_CI_CHECKS = _mod.REQUIRED_MAIN_CI_CHECKS
+REQUIRED_RELEASE_RUNTIME_CHECKS = _mod.REQUIRED_RELEASE_RUNTIME_CHECKS
 authorize = _mod.authorize
 
 
@@ -42,7 +43,11 @@ def _run(name: str, conclusion: str | None, status: str = "completed") -> dict:
 
 
 def _all_success() -> list[dict]:
-    return [_run(n, "success") for n in REQUIRED_MAIN_CI_CHECKS]
+    # Full release boundary: protection contexts + runtime certification.
+    return [
+        _run(n, "success")
+        for n in (*REQUIRED_MAIN_CI_CHECKS, *REQUIRED_RELEASE_RUNTIME_CHECKS)
+    ]
 
 
 def test_all_required_success_is_authorized() -> None:
@@ -70,7 +75,25 @@ def test_missing_check_blocks() -> None:
     runs = _all_success()[:-1]  # drop one required check
     ok, _, missing = authorize(runs)
     assert not ok
-    assert missing == [REQUIRED_MAIN_CI_CHECKS[-1]]
+    assert missing == [REQUIRED_RELEASE_RUNTIME_CHECKS[-1]]
+
+
+def test_release_blocked_without_runtime_certification() -> None:
+    """DevOps audit P4: protection-green evidence WITHOUT the runtime
+    certification contexts must NOT authorize a release."""
+    runs = [_run(n, "success") for n in REQUIRED_MAIN_CI_CHECKS]
+    ok, _, missing = authorize(runs)
+    assert not ok
+    assert sorted(missing) == sorted(REQUIRED_RELEASE_RUNTIME_CHECKS)
+
+
+def test_runtime_checks_disjoint_and_nonempty() -> None:
+    assert REQUIRED_RELEASE_RUNTIME_CHECKS
+    assert not set(REQUIRED_RELEASE_RUNTIME_CHECKS) & set(REQUIRED_MAIN_CI_CHECKS)
+    # Both runtime contexts must actually be produced by ci.yml on main pushes.
+    ci_text = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    for context in REQUIRED_RELEASE_RUNTIME_CHECKS:
+        assert f"name: {context}" in ci_text, f"ci.yml no longer produces {context!r}"
 
 
 def test_skipped_is_not_success() -> None:
@@ -103,7 +126,13 @@ def test_rerun_pending_does_not_mask_failure() -> None:
 def test_completed_overwrites_pending() -> None:
     name = REQUIRED_MAIN_CI_CHECKS[0]
     runs = [_run(name, None, status="in_progress"), _run(name, "success")]
-    ok, _, _ = authorize(runs + [_run(n, "success") for n in REQUIRED_MAIN_CI_CHECKS[1:]])
+    ok, _, _ = authorize(
+        runs
+        + [
+            _run(n, "success")
+            for n in (*REQUIRED_MAIN_CI_CHECKS[1:], *REQUIRED_RELEASE_RUNTIME_CHECKS)
+        ]
+    )
     assert ok
 
 
