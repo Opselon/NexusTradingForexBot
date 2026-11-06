@@ -157,11 +157,43 @@ jobs:
           }
 
 
-      - name: Run native IPC certification (Level 1 — no credentials)
+      - name: Run native IPC certification (Level 1 — credentialless attach, secrets-gated fallback)
+        env:
+          # Tier C fallback: the fresh-install first-start wizard can block
+          # IPC-ready state headless (runs 128040771175, 128045834311). The
+          # Wine lane boots the terminal with a startup.ini for the same
+          # reason. The cert script prefers the credentialless tiers and
+          # records which strategy produced the IPC evidence; the config
+          # file is deleted immediately and never logged.
+          MT5_DEMO_LOGIN: ${{ secrets.MT5_DEMO_LOGIN }}
+          MT5_DEMO_PASSWORD: ${{ secrets.MT5_DEMO_PASSWORD }}
+          MT5_DEMO_SERVER: ${{ secrets.MT5_DEMO_SERVER }}
         run: |
           $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
           python scripts/windows/mt5_native_cert.py --evidence-dir $evidence --levels 1
           if ($LASTEXITCODE -ne 0) { throw "NATIVE_MT5_CERTIFICATION_FAILED (exit $LASTEXITCODE)" }
+
+      - name: Collect terminal diagnostic logs (on failure)
+        if: failure()
+        run: |
+          $evidence = Join-Path $env:RUNNER_TEMP 'mt5-native\evidence'
+          $out = Join-Path $evidence 'terminal-logs'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $roots = @(
+            "$env:APPDATA\MetaQuotes\Terminal",
+            'C:\Program Files\MetaTrader 5'
+          )
+          foreach ($root in $roots) {
+            if (Test-Path $root) {
+              Get-ChildItem -Path $root -Recurse -Filter '*.log' -ErrorAction SilentlyContinue |
+                Select-Object -Last 12 |
+                ForEach-Object {
+                  Write-Host "=== $($_.FullName) (last 100 lines) ==="
+                  Get-Content $_.FullName -Tail 100 -ErrorAction SilentlyContinue
+                  Copy-Item $_.FullName (Join-Path $out ($_.Name)) -ErrorAction SilentlyContinue
+                }
+            }
+          }
 
       - name: Upload native MT5 evidence
         if: always()
