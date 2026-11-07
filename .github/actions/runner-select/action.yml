@@ -47,6 +47,13 @@ outputs:
   selection_reason:
     description: "Human-readable, secret-free reason for the decision"
     value: ${{ steps.select.outputs.selection_reason }}
+  runs_on:
+    description: >-
+      JSON array that is ALWAYS a valid runs-on target: the winning
+      self-hosted label set when a tier is eligible, otherwise the
+      platform's GitHub-hosted image. Single-lane workflows feed it to
+      their runs-on via fromJSON().
+    value: ${{ steps.select.outputs.runs_on }}
   decision_json:
     description: "Full JSON decision record (logs + summaries)"
     value: ${{ steps.select.outputs.decision_json }}
