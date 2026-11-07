@@ -12,6 +12,15 @@
  */
 #include "nse_ci_engine.h"
 
+#if defined(_WIN32)
+#include <io.h>
+#define access _access
+#define F_OK 0
+#else
+#include <unistd.h>
+#endif
+#include <dirent.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +52,7 @@ static bool is_global_invalidation(const char *path) {
 #define R_TEST_CHANGED 2u
 #define R_FALLBACK 4u
 #define R_SAFETY 8u
+#define R_CI_TOOLING 16u
 
 typedef struct SelEntry {
     char *id;
@@ -73,6 +83,10 @@ static void sel_add(SelRegistry *r, const char *id, unsigned reasons) {
     r->items[r->count].id = arena_strdup(r->arena, id);
     r->items[r->count].reasons = reasons;
     r->count++;
+}
+
+static int cmp_strp(const void *a, const void *b) {
+    return strcmp(*(char *const *)a, *(char *const *)b);
 }
 
 static int sel_cmp(const void *a, const void *b) {
@@ -157,6 +171,10 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
         }
     }
 
+    /* missing-mapping paths (function scope: emitted in the canonical JSON) */
+    char *missing[256];
+    size_t missing_len = 0;
+
     bool full_required = opt->full_suite_required ||
                          (opt->event && strcmp(opt->event, "schedule") == 0);
 
@@ -190,13 +208,35 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
             fallback_reason = arena_strdup(
                 &arena, "unparseable python file encountered \xe2\x80\x94 conservative expansion");
         }
+        if (g.relative_unresolved) {
+            /* Byte-identical to the Python planner's uncertainty reason. */
+            fallback_reason = fallback_reason
+                                  ? fallback_reason
+                                  : arena_strdup(
+                                        &arena,
+                                        "unresolved relative imports \xe2\x80\x94 graph uncertain, conservative expansion");
+        }
 
         /* changed module indices */
         size_t *changed_idx =
             (size_t *)arena_alloc(&arena, (changed_count ? changed_count : 1) * sizeof(size_t));
         size_t changed_idx_len = 0;
+        int dbg = getenv("NSE_PLAN_DEBUG") ? 1 : 0;
+        if (dbg) fprintf(stderr, "[dbg] mod_count=%zu changed_count=%zu\n", g.mod_count, changed_count);
         for (size_t i = 0; i < changed_count; i++) {
             const char *f = changed[i].path;
+            if (dbg) fprintf(stderr, "[dbg] changed[%zu]=%s\n", i, f);
+            /* changed TEST-tree files are reachability roots too (their
+             * importers — e.g. tests using a shared helper — must run) */
+            if (nse_starts_with(f, "tests/") && nse_ends_with(f, ".py")) {
+                size_t idx;
+                bool tf = graph_find(&g, f, &idx);
+                if (dbg) fprintf(stderr, "[dbg]   test-root find=%d\n", tf);
+                if (tf) {
+                    changed_idx[changed_idx_len++] = idx;
+                }
+                continue;
+            }
             if (!(nse_ends_with(f, ".py") && nse_starts_with(f, "src/"))) continue;
             /* recompute module name exactly like the scanner does */
             char mod[512];
@@ -207,6 +247,7 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
             size_t m = strlen(mod);
             if (m >= 9 && strcmp(mod + m - 9, "/__init__") == 0) mod[m - 9] = '\0';
             for (char *c = mod; *c; c++) if (*c == '/') *c = '.';
+            if (dbg) fprintf(stderr, "[dbg]   mod=%s\n", mod);
             bool found = false;
             for (size_t k = 0; k < g.mod_count; k++) {
                 if (strcmp(g.mod_names[k], mod) == 0) {
@@ -215,6 +256,7 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
                     break;
                 }
             }
+            if (dbg) fprintf(stderr, "[dbg]   found=%d changed_idx_len=%zu\n", found, changed_idx_len);
             if (!found) {
                 /* file exists but was not scanned (outside scan roots) —
                  * conservative: treat as missing mapping */
@@ -233,24 +275,67 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
         size_t tests_len, covered_len;
         graph_reachable_tests(&g, changed_idx, changed_idx_len, &tests, &tests_len,
                               &covered, &covered_len);
+        if (dbg) {
+            fprintf(stderr, "[dbg] covered_len=%zu tests_len=%zu rel_unresolved=%d\n",
+                    covered_len, tests_len, g.relative_unresolved);
+            for (size_t i = 0; i < changed_idx_len; i++) {
+                fprintf(stderr, "[dbg]   changed idx=%zu name=%s\n", changed_idx[i],
+                        g.mod_names[changed_idx[i]]);
+            }
+            for (size_t i = 0; i < tests_len; i++) {
+                fprintf(stderr, "[dbg]   selected test: %s\n", g.mod_names[tests[i]]);
+            }
+        }
+        /* `covered` is a list of COVERED MODULE INDICES (not a bool map) —
+         * build the boolean lookup the missing-mapping check needs. */
+        bool *covered_map =
+            (bool *)arena_alloc(&arena, g.mod_count * sizeof(bool));
+        memset(covered_map, 0, g.mod_count * sizeof(bool));
+        for (size_t i = 0; i < covered_len; i++) {
+            covered_map[covered[i]] = true;
+        }
         for (size_t i = 0; i < tests_len; i++) {
             sel_add(&reg, g.mod_names[tests[i]], R_STATIC);
         }
 
-        /* missing mappings: changed modules not covered */
-        for (size_t i = 0; i < changed_idx_len; i++) {
+        /* missing mappings: changed modules not covered — collected as file
+         * PATHS (sorted later for canonical JSON parity with Python). */
+
+
+        for (size_t i = 0; i < changed_idx_len && missing_len < 256; i++) {
             size_t idx = changed_idx[i];
-            if (!covered[idx]) {
+            if (!covered_map[idx]) {
+                missing[missing_len++] =
+                    arena_strdup(&arena,
+                                 g.mod_paths[idx] ? g.mod_paths[idx]
+                                                  : g.mod_names[idx]);
                 StrBuf r;
                 sb_init(&r);
                 sb_append(&r, "missing test mapping for: ");
-                sb_append(&r, g.mod_paths[idx] ? g.mod_paths[idx] : g.mod_names[idx]);
+                sb_append(&r, missing[missing_len - 1]);
                 if (!fallback_reason) {
                     fallback_reason = arena_strdup(&arena, r.data ? r.data : "");
                 }
                 sb_free(&r);
             }
         }
+        /* not-scanned src files also count as missing mappings */
+        for (size_t i = 0; i < changed_count && missing_len < 256; i++) {
+            const char *f = changed[i].path;
+            if (!(nse_ends_with(f, ".py") && nse_starts_with(f, "src/"))) continue;
+            char mod[512];
+            const char *base2 = f + 4;
+            snprintf(mod, sizeof(mod), "%s", base2);
+            size_t n2 = strlen(mod);
+            if (n2 >= 3 && strcmp(mod + n2 - 3, ".py") == 0) mod[n2 - 3] = '\0';
+            for (char *c = mod; *c; c++) if (*c == '/') *c = '.';
+            bool in_graph = false;
+            for (size_t k = 0; k < g.mod_count; k++) {
+                if (strcmp(g.mod_names[k], mod) == 0) { in_graph = true; break; }
+            }
+            if (!in_graph) missing[missing_len++] = arena_strdup(&arena, f);
+        }
+        if (missing_len > 1) qsort(missing, missing_len, sizeof(char *), cmp_strp);
         sb_free(&py_files);
     }
 
@@ -303,6 +388,47 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
         }
     }
 
+    /* CI tooling (mirrored byte-identically in test_planner.py):
+     * scripts/ci/<name>.py -> tests/ci/test_<name>.py when present;
+     * workflow changes select the whole tests/ci integrity suite. */
+    int workflows_changed = 0;
+    for (size_t i = 0; i < changed_count; i++) {
+        if (nse_starts_with(changed[i].path, ".github/workflows/")) {
+            workflows_changed = 1;
+            break;
+        }
+    }
+    if (workflows_changed) {
+        char ci_dir[1024];
+        snprintf(ci_dir, sizeof(ci_dir), "%s/tests/ci", repo_root);
+        DIR *d = opendir(ci_dir);
+        if (d) {
+            struct dirent *ent;
+            while ((ent = readdir(d)) != NULL) {
+                if (nse_starts_with(ent->d_name, "test_") &&
+                    nse_ends_with(ent->d_name, ".py")) {
+                    char rel[1200];
+                    snprintf(rel, sizeof(rel), "tests/ci/%s", ent->d_name);
+                    sel_add(&reg, rel, R_CI_TOOLING);
+                }
+            }
+            closedir(d);
+        }
+    }
+    for (size_t i = 0; i < changed_count; i++) {
+        const char *f = changed[i].path;
+        if (nse_starts_with(f, "scripts/ci/") && nse_ends_with(f, ".py")) {
+            const char *base = f + strlen("scripts/ci/");
+            char cand[1200];
+            char fs_path[1400];
+            snprintf(cand, sizeof(cand), "tests/ci/test_%s", base);
+            snprintf(fs_path, sizeof(fs_path), "%s/%s", repo_root, cand);
+            if (access(fs_path, F_OK) == 0) {
+                sel_add(&reg, cand, R_CI_TOOLING);
+            }
+        }
+    }
+
     /* docs-only / nothing-relevant skip group */
     bool any_relevant = has_python_src || has_test_py;
     if (!any_relevant) {
@@ -329,9 +455,8 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
     else sb_append(&sb, "null");
     sb_append(&sb, ",\"full_suite_required\":");
     sb_append(&sb, fallback_reason ? "true" : "false");
-    sb_append(&sb, ",\"missing_mappings\":[]");
-    /* NOTE: missing mappings are folded into fallback_reason in v1 (paths are
-     * human-actionable); the array stays empty for schema parity. */
+    sb_append(&sb, ",\"missing_mappings\":");
+    json_write_str_array(&sb, missing, missing_len);
     sb_append(&sb, ",\"notes\":[");
     if (note_buf[0]) json_write_escaped(&sb, note_buf);
     sb_append(&sb, "]");
@@ -347,6 +472,10 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
         /* reason list must be SORTED (Python sorts it):
          * conservative_fallback < mandatory_safety < static_dependency < test_changed */
         bool any = false;
+        if (reg.items[i].reasons & R_CI_TOOLING) {
+            sb_append(&sb, "\"ci_tooling\"");
+            any = true;
+        }
         if (reg.items[i].reasons & R_FALLBACK) {
             sb_append(&sb, "\"conservative_fallback\"");
             any = true;
