@@ -26,7 +26,6 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 ENGINE_VERSION = "0.1.0"
 EXIT_PLANNER_INTEGRITY = 90
@@ -38,8 +37,9 @@ def log(msg: str) -> None:
 
 def sh(argv: list[str], cwd: str | None = None, timeout: int = 600):
     started = time.time()
-    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                          timeout=timeout)
+    proc = subprocess.run(
+        argv, check=False, cwd=cwd, capture_output=True, text=True, timeout=timeout
+    )
     return proc, time.time() - started
 
 
@@ -48,8 +48,9 @@ def sh(argv: list[str], cwd: str | None = None, timeout: int = 600):
 # --------------------------------------------------------------------------- #
 def engine_version(binary: str) -> str | None:
     try:
-        proc = subprocess.run([binary, "version"], capture_output=True, text=True,
-                              timeout=15)
+        proc = subprocess.run(
+            [binary, "version"], check=False, capture_output=True, text=True, timeout=15
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     return proc.stdout.strip() if proc.returncode == 0 else None
@@ -57,8 +58,9 @@ def engine_version(binary: str) -> str | None:
 
 def selftest_ok(binary: str) -> bool:
     try:
-        proc = subprocess.run([binary, "selftest"], capture_output=True, text=True,
-                              timeout=60)
+        proc = subprocess.run(
+            [binary, "selftest"], check=False, capture_output=True, text=True, timeout=60
+        )
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
@@ -75,12 +77,12 @@ def ensure_native(repo_root: str, persist_dir: str) -> tuple[str | None, str]:
     build_dir = os.path.join(native_dir, "build")
     jobs = max(1, min(os.cpu_count() or 2, 4))
     try:
-        cfg, _ = sh(["cmake", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"],
-                    cwd=native_dir, timeout=180)
+        cfg, _ = sh(
+            ["cmake", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"], cwd=native_dir, timeout=180
+        )
         bld, _ = (None, 0.0)
         if cfg.returncode == 0:
-            bld, _ = sh(["cmake", "--build", "build", "-j", str(jobs)],
-                        cwd=native_dir, timeout=600)
+            bld, _ = sh(["cmake", "--build", "build", "-j", str(jobs)], cwd=native_dir, timeout=600)
         if cfg.returncode != 0 or bld.returncode != 0:
             err = (cfg.stderr or bld.stderr if bld else cfg.stderr) or ""
             return None, f"native build failed: {err.strip()[-200:]}"
@@ -88,8 +90,11 @@ def ensure_native(repo_root: str, persist_dir: str) -> tuple[str | None, str]:
         return None, f"native build error: {exc}"
 
     fresh = os.path.join(build_dir, "nse-ci-engine")
-    if not os.path.isfile(fresh) or engine_version(fresh) != ENGINE_VERSION \
-            or not selftest_ok(fresh):
+    if (
+        not os.path.isfile(fresh)
+        or engine_version(fresh) != ENGINE_VERSION
+        or not selftest_ok(fresh)
+    ):
         return None, "freshly built binary failed verification"
     try:
         os.makedirs(persist_dir, exist_ok=True)
@@ -103,16 +108,26 @@ def ensure_native(repo_root: str, persist_dir: str) -> tuple[str | None, str]:
 # --------------------------------------------------------------------------- #
 # Planning through the C engine (primary) and the Python reference (parity)    #
 # --------------------------------------------------------------------------- #
-def c_plan(binary: str, repo_root: str, files: list[str], head: str, event: str,
-           full: bool) -> dict:
-    argv = [binary, "plan", "--repo-root", repo_root, "--files", " ".join(files),
-            "--commit-sha", head, "--event", event]
+def c_plan(
+    binary: str, repo_root: str, files: list[str], head: str, event: str, full: bool
+) -> dict:
+    argv = [
+        binary,
+        "plan",
+        "--repo-root",
+        repo_root,
+        "--files",
+        " ".join(files),
+        "--commit-sha",
+        head,
+        "--event",
+        event,
+    ]
     if full:
         argv.append("--full-suite")
     proc, _ = sh(argv, cwd=repo_root, timeout=120)
     if proc.returncode != 0:
-        raise RuntimeError(f"native planner exit {proc.returncode}: "
-                           f"{proc.stderr.strip()[-200:]}")
+        raise RuntimeError(f"native planner exit {proc.returncode}: {proc.stderr.strip()[-200:]}")
     obj = json.loads(proc.stdout)
     # validate-plan is ALSO executed by the C engine itself (belt+braces):
     plan_file = os.path.join(repo_root, ".nse-plan-under-validation.json")
@@ -121,23 +136,32 @@ def c_plan(binary: str, repo_root: str, files: list[str], head: str, event: str,
     vproc, _ = sh([binary, "validate-plan", plan_file], cwd=repo_root, timeout=30)
     os.unlink(plan_file)
     if vproc.returncode != 0:
-        raise RuntimeError(f"native validate-plan rejected its own output: "
-                           f"{vproc.stderr.strip()[-200:]}")
+        raise RuntimeError(
+            f"native validate-plan rejected its own output: {vproc.stderr.strip()[-200:]}"
+        )
     return obj
 
 
-def py_plan(repo_root: str, files: list[str], head: str, event: str,
-            full: bool) -> dict:
-    argv = [sys.executable, os.path.join(repo_root, "scripts", "ci",
-                                         "test_planner.py"),
-            "--files", " ".join(files), "--repo-root", repo_root,
-            "--commit-sha", head, "--event", event]
+def py_plan(repo_root: str, files: list[str], head: str, event: str, full: bool) -> dict:
+    argv = [
+        sys.executable,
+        os.path.join(repo_root, "scripts", "ci", "test_planner.py"),
+        "--files",
+        " ".join(files),
+        "--repo-root",
+        repo_root,
+        "--commit-sha",
+        head,
+        "--event",
+        event,
+    ]
     if full:
         argv.append("--full-suite")
     proc, _ = sh(argv, cwd=repo_root, timeout=120)
     if proc.returncode != 0:
-        raise RuntimeError(f"python reference planner exit {proc.returncode}: "
-                           f"{proc.stderr.strip()[-200:]}")
+        raise RuntimeError(
+            f"python reference planner exit {proc.returncode}: {proc.stderr.strip()[-200:]}"
+        )
     return json.loads(proc.stdout)
 
 
@@ -162,10 +186,11 @@ def parity_check(native_obj: dict, python_obj: dict) -> tuple[str, str | None]:
     """
     if body_without_digest(native_obj) == body_without_digest(python_obj):
         return "exact", None
-    if (native_obj.get("fallback_reason") == python_obj.get("fallback_reason")
-            and native_obj.get("full_suite_required")
-            == python_obj.get("full_suite_required")
-            and native_obj.get("selection_mode") == python_obj.get("selection_mode")):
+    if (
+        native_obj.get("fallback_reason") == python_obj.get("fallback_reason")
+        and native_obj.get("full_suite_required") == python_obj.get("full_suite_required")
+        and native_obj.get("selection_mode") == python_obj.get("selection_mode")
+    ):
         c_entries = {t["id"]: t for t in native_obj["selected_tests"]}
         p_entries = {t["id"]: t for t in python_obj["selected_tests"]}
         if set(p_entries) <= set(c_entries):
@@ -174,13 +199,15 @@ def parity_check(native_obj: dict, python_obj: dict) -> tuple[str, str | None]:
                 if set(p_entry["reason"]) - set(c_entry["reason"]):
                     return "mismatch", (
                         f"shared test {tid} lost reasons in the native plan: "
-                        f"{sorted(set(p_entry['reason']) - set(c_entry['reason']))}")
+                        f"{sorted(set(p_entry['reason']) - set(c_entry['reason']))}"
+                    )
             if set(c_entries) - set(p_entries):
                 return "superset", None
             return "exact", None
     return "mismatch", (
         f"parity mismatch: native digest {native_obj['plan_digest'][:16]}... vs "
-        f"python {python_obj['plan_digest'][:16]}...")
+        f"python {python_obj['plan_digest'][:16]}..."
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -215,8 +242,11 @@ def main() -> int:
     log(f"native engine: {native_reason}")
 
     if native_binary:
-        proc, _ = sh([native_binary, "changed-files", "--base", args.base,
-                      "--head", args.head], cwd=repo_root, timeout=60)
+        proc, _ = sh(
+            [native_binary, "changed-files", "--base", args.base, "--head", args.head],
+            cwd=repo_root,
+            timeout=60,
+        )
         if proc.returncode == 0:
             changed = [f for f in proc.stdout.split("\n") if f]
         else:
@@ -233,8 +263,7 @@ def main() -> int:
 
     if native_binary:
         try:
-            native_obj = c_plan(native_binary, repo_root, changed, args.head,
-                                args.event, full)
+            native_obj = c_plan(native_binary, repo_root, changed, args.head, args.event, full)
             python_obj = py_plan(repo_root, changed, args.head, args.event, full)
             mode, failure = parity_check(native_obj, python_obj)
             if failure is None:
@@ -255,7 +284,7 @@ def main() -> int:
         try:
             plan_obj = py_plan(repo_root, changed, args.head, args.event, full)
         except (RuntimeError, json.JSONDecodeError, OSError) as exc:
-            log(f"PYTHON REFERENCE FAILURE — emergency manifest")
+            log("PYTHON REFERENCE FAILURE — emergency manifest")
             integrity_failed = True
             integrity_reason = str(exc)
             plan_obj = {}
@@ -263,18 +292,22 @@ def main() -> int:
     # 3. fail-safe expansions
     if integrity_failed:
         try:
-            plan_obj = c_plan(native_binary, repo_root, changed, args.head,
-                              args.event, True) if native_binary else \
-                py_plan(repo_root, changed, args.head, args.event, True)
+            plan_obj = (
+                c_plan(native_binary, repo_root, changed, args.head, args.event, True)
+                if native_binary
+                else py_plan(repo_root, changed, args.head, args.event, True)
+            )
         except (RuntimeError, json.JSONDecodeError, OSError):
             plan_obj = {}
     selected_ids = [t["id"] for t in plan_obj.get("selected_tests", [])]
     if not selected_ids:
         log("empty selection — conservative expansion (empty never passes)")
         try:
-            plan_obj = (c_plan(native_binary, repo_root, changed, args.head,
-                               args.event, True) if native_binary else
-                        py_plan(repo_root, changed, args.head, args.event, True))
+            plan_obj = (
+                c_plan(native_binary, repo_root, changed, args.head, args.event, True)
+                if native_binary
+                else py_plan(repo_root, changed, args.head, args.event, True)
+            )
         except (RuntimeError, json.JSONDecodeError, OSError):
             plan_obj = {}
         selected_ids = [t["id"] for t in plan_obj.get("selected_tests", [])]
@@ -283,26 +316,29 @@ def main() -> int:
             return 91
 
     # 4. execute with REAL pytest
-    pytest_argv = [sys.executable, "-m", "pytest"] + selected_ids
+    pytest_argv = [sys.executable, "-m", "pytest", *selected_ids]
     if args.xdist > 0:
         pytest_argv += ["-n", str(args.xdist), "--dist", "loadgroup"]
     if args.pytest_extra:
         pytest_argv += args.pytest_extra.split()
     log(f"pytest: {len(selected_ids)} test files | argv: {' '.join(pytest_argv)}")
     t0 = time.time()
-    proc = subprocess.run(pytest_argv, cwd=repo_root)
+    proc = subprocess.run(pytest_argv, check=False, cwd=repo_root)
     pytest_rc, pytest_seconds = proc.returncode, time.time() - t0
     log(f"pytest exit: {pytest_rc}")
 
     # 5. evidence
     manifest = {
-        "commit_head": args.head, "commit_base": args.base,
+        "commit_head": args.head,
+        "commit_base": args.base,
         "plan_digest": plan_obj.get("plan_digest"),
         "plan_selection_mode": plan_obj.get("selection_mode"),
         "plan_fallback_reason": plan_obj.get("fallback_reason"),
         "planner": {
-            "primary_impl": planner_impl, "engine_version": ENGINE_VERSION,
-            "degraded": degraded, "parity_checked": not degraded,
+            "primary_impl": planner_impl,
+            "engine_version": ENGINE_VERSION,
+            "degraded": degraded,
+            "parity_checked": not degraded,
             "parity_mode": parity_mode,
             "integrity_failed": integrity_failed,
             "integrity_reason": integrity_reason,
@@ -311,14 +347,15 @@ def main() -> int:
         "selected_tests": selected_ids,
         "selected_count": len(selected_ids),
         "changed_file_count": len(changed),
-        "pytest_argv": pytest_argv, "pytest_exit_code": pytest_rc,
+        "pytest_argv": pytest_argv,
+        "pytest_exit_code": pytest_rc,
         "pytest_seconds": round(pytest_seconds, 2),
-        "runner_name": args.runner_name, "attempt": args.attempt,
+        "runner_name": args.runner_name,
+        "attempt": args.attempt,
         "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
         "ended_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
-    with open(os.path.join(out_dir, "execution-manifest.json"), "w",
-              encoding="utf-8") as fh:
+    with open(os.path.join(out_dir, "execution-manifest.json"), "w", encoding="utf-8") as fh:
         json.dump(manifest, fh, indent=2)
     with open(os.path.join(out_dir, "plan.json"), "w", encoding="utf-8") as fh:
         json.dump(plan_obj, fh, indent=2)
