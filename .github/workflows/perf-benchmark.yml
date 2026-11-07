@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
   schedule:
     # Weekly regression watch, even without a PR touching the path filter.
-    - cron: "17 4 * * 1"
+    - cron: "17 4 1,15 * *"
 
 permissions:
   contents: read
