@@ -152,6 +152,23 @@ def test_batching_is_deterministic_when_mtimes_tie(backup_dir: str) -> None:
     ]
 
 
+def test_mtime_stays_primary_over_the_name_tiebreak(backup_dir: str) -> None:
+    """The tie-breaker must never override a real age difference.
+
+    Producer snapshots (``audit_backup_...``) and registered orphan classes
+    (``audit_v7_...bak``, ``news_v0_...bak``) share one ordering. If the
+    name stamp were sorted BEFORE mtime, unrecognised orphan names would be
+    grouped apart from the producer class and the mixed oldest-first order
+    would break (caught by test_backup_retention_snapshot_sets).
+    """
+    _make_backup(backup_dir, "audit_backup_20260924-212854.db", age_days=1)
+    _make_backup(backup_dir, "audit_v7_20260924T005049.bak", age_days=5)
+    _make_backup(backup_dir, "news_v0_20260822T093437.bak", age_days=20)
+
+    ages = [age for _path, age, _size in list_backups(backup_dir)]
+    assert ages == sorted(ages), ages
+
+
 def test_only_the_producers_own_names_are_ever_removed(backup_dir: str) -> None:
     """A copied-in artifact or a hand-placed file is invisible to the pruner."""
     _make_backup(backup_dir, "audit_backup_20260101-000000.db", age_days=100)

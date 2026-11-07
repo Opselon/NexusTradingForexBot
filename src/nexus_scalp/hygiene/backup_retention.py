@@ -249,9 +249,10 @@ def list_backups(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, int]]:
             )
             continue
         found.append((path, st.st_mtime, st.st_size))
-    # Deterministic: name stamp first (mtime is tick-coarse and
-    # filesystem-scheduling dependent), then mtime.
-    found.sort(key=lambda item: (_backup_sort_key(item[0]), item[1]))
+    # mtime primary, deterministic name stamp as the tie-break (see
+    # _backup_sort_key): mtime alone is tick-coarse and follows
+    # os.listdir's arbitrary order when two entries share a tick.
+    found.sort(key=lambda item: (item[1], _backup_sort_key(item[0])))
     return found
 
 
@@ -305,9 +306,10 @@ def list_snapshot_sets(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, i
         if st.st_mtime > now - (_FRESH_SET_GRACE_DAYS * 86400.0):
             continue
         found.append((path, st.st_mtime, _dir_size(path)))
-    # Deterministic: name stamp first (mtime is tick-coarse and
-    # filesystem-scheduling dependent), then mtime.
-    found.sort(key=lambda item: (_backup_sort_key(item[0]), item[1]))
+    # mtime primary, deterministic name stamp as the tie-break (see
+    # _backup_sort_key): mtime alone is tick-coarse and follows
+    # os.listdir's arbitrary order when two entries share a tick.
+    found.sort(key=lambda item: (item[1], _backup_sort_key(item[0])))
     return found
 
 
