@@ -76,7 +76,8 @@ def extract(rel: str, path: Path) -> dict:
         elif isinstance(node, ast.ImportFrom):
             syms = [a.name for a in node.names if a.name != "*"]
             info["imports"].append(
-                {"m": node.module or "", "rel": node.level or 0, "symbols": syms})
+                {"m": node.module or "", "rel": node.level or 0, "symbols": syms}
+            )
         elif isinstance(node, ast.ClassDef):
             bases = []
             for b in node.bases:
@@ -87,14 +88,13 @@ def extract(rel: str, path: Path) -> dict:
             info["classes"].append({"name": node.name, "bases": bases})
             if node.name.startswith("Test"):
                 info["tests"].append(node.name)
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             info["functions"].append(node.name)
             is_test = node.name.startswith("test_")
             if is_test:
                 info["tests"].append(node.name)
                 info["test_args"][node.name] = [
-                    a.arg for a in node.args.args
-                    if a.arg not in ("self", "cls")
+                    a.arg for a in node.args.args if a.arg not in ("self", "cls")
                 ]
             for dec in node.decorator_list:
                 dname = _decorator_name(dec)
@@ -107,8 +107,7 @@ def extract(rel: str, path: Path) -> dict:
                                     autouse = bool(ast.literal_eval(kw.value))
                                 except Exception:
                                     autouse = True
-                    info["fixtures"].append(
-                        {"name": node.name, "autouse": autouse, "params": []})
+                    info["fixtures"].append({"name": node.name, "autouse": autouse, "params": []})
         elif isinstance(node, ast.Call):
             fn = node.func
             name = getattr(fn, "attr", None) or getattr(fn, "id", "")
