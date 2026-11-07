@@ -43,11 +43,10 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Monday 07:17 UTC — Linux self-hosted health sweep. Windows/macOS
-    # platform-drift catch-up is dispatch-only now; this schedule exists to
-    # prove the self-hosted Linux runner can still accept a job and the
-    # Linux full suite still passes on it.
-    - cron: "17 7 * * 1"
+    # CI quota diet (2026-11): was weekly (Monday 07:17). Now SEMI-MONTHLY —
+    # the only automatic FULL-suite health sweep (1st & 15th, 07:17 UTC).
+    # PR/push take the fast skewed subset on the tiered self-hosted pool.
+    - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
       full_suite:
@@ -154,7 +153,12 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.10"
-          enable-cache: true
+          # CI quota diet (2026-11): cache DISABLED on the self-hosted lane.
+          # The runner's persistent volumes already keep uv + python warm;
+          # the GitHub cache post-save of a multi-GB cache over a tethered
+          # uplink burned ~3 GB uploads (hours of Post time) for zero gain.
+          # The hosted lane (below) keeps its cache.
+          enable-cache: false
           cache-dependency-glob: requirements.lock
 
       - name: Install via lock (hash-verified requirements.lock)
