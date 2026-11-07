@@ -154,7 +154,9 @@ def _parse_imports(
     own_pkg_parts = own_package.split(".") if own_package else []
 
     def resolve_relative(level: int, module: str | None, alias: str) -> str | None:
-        base_parts = own_pkg_parts[: len(own_pkg_parts) - (level - 1)] if level > 1 else list(own_pkg_parts)
+        base_parts = (
+            own_pkg_parts[: len(own_pkg_parts) - (level - 1)] if level > 1 else list(own_pkg_parts)
+        )
         if level - 1 > len(own_pkg_parts):
             return None  # escapes the repo tree
         parts = base_parts + ([module] if module else []) + ([alias] if alias else [])
@@ -295,10 +297,10 @@ def _fallback_tests(repo_root: Path) -> set[str]:
     for f in _FALLBACK_SUITE_FILES:
         p = repo_root / f
         if p.is_file():
-            for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    out.add(line)
+            for raw in p.read_text(encoding="utf-8", errors="replace").splitlines():
+                entry = raw.strip()
+                if entry and not entry.startswith("#"):
+                    out.add(entry)
     return out
 
 
@@ -316,9 +318,7 @@ def plan(
     missing_mappings: list[str] = []
     notes: list[str] = []
 
-    python_changed = sorted(
-        f for f in changed if f.endswith(".py") and f.startswith("src/")
-    )
+    python_changed = sorted(f for f in changed if f.endswith(".py") and f.startswith("src/"))
     tests_changed = sorted(f for f in changed if f.startswith("tests/") and f.endswith(".py"))
     global_invalidation = sorted(
         f
@@ -339,17 +339,14 @@ def plan(
         imports, _test_files, graph_uncertain = build_graph(repo_root)
         if "<unknown>" in {t for v in imports.values() for t in v}:
             fallback_reason = (
-                fallback_reason
-                or "unparseable python file encountered — conservative expansion"
+                fallback_reason or "unparseable python file encountered — conservative expansion"
             )
         if graph_uncertain:
             fallback_reason = (
                 fallback_reason
                 or "unresolved relative imports — graph uncertain, conservative expansion"
             )
-        changed_modules = {
-            m for m in (_module_name_for_file(f) for f in python_changed) if m
-        }
+        changed_modules = {m for m in (_module_name_for_file(f) for f in python_changed) if m}
         # Changed test-tree files are graph nodes too (path-keyed): their
         # importers (tests using a shared helper) must be selected as well.
         for t in tests_changed:
@@ -363,12 +360,8 @@ def plan(
             if uncovered:
                 # Report the changed FILE PATHS (not dotted names) so the gap
                 # is directly actionable for a developer.
-                module_to_path = {
-                    _module_name_for_file(f): f for f in python_changed
-                }
-                missing_mappings.extend(
-                    module_to_path.get(m, m) for m in uncovered
-                )
+                module_to_path = {_module_name_for_file(f): f for f in python_changed}
+                missing_mappings.extend(module_to_path.get(m, m) for m in uncovered)
                 fallback_reason = fallback_reason or (
                     "missing test mapping for: "
                     + ", ".join(module_to_path.get(m, m) for m in uncovered[:6])
@@ -385,16 +378,12 @@ def plan(
     if safety_changed:
         for t in _fallback_tests(repo_root):
             selected.setdefault(t, set()).add("mandatory_safety")
-        notes.append(
-            "safety-critical modules changed: " + ", ".join(safety_changed[:6])
-        )
+        notes.append("safety-critical modules changed: " + ", ".join(safety_changed[:6]))
 
     # CI tooling (mirrored byte-identically in the C engine): scripts/ci/*.py
     # map to their tests/ci/test_<name>.py; workflow changes select the whole
     # tests/ci integrity suite.
-    ci_tooling = sorted(
-        f for f in changed if f.startswith("scripts/ci/") and f.endswith(".py")
-    )
+    ci_tooling = sorted(f for f in changed if f.startswith("scripts/ci/") and f.endswith(".py"))
     workflows_changed = any(f.startswith(".github/workflows/") for f in changed)
     if ci_tooling or workflows_changed:
         for f in ci_tooling:
@@ -405,9 +394,9 @@ def plan(
             ci_dir = repo_root / "tests" / "ci"
             if ci_dir.is_dir():
                 for t in sorted(ci_dir.glob("test_*.py")):
-                    selected.setdefault(
-                        _norm(str(t.relative_to(repo_root))), set()
-                    ).add("ci_tooling")
+                    selected.setdefault(_norm(str(t.relative_to(repo_root))), set()).add(
+                        "ci_tooling"
+                    )
 
     if not python_changed and not tests_changed:
         skipped_groups.append(
@@ -474,7 +463,9 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(f"plan_digest={obj['plan_digest']}\n")
             fh.write(f"selection_mode={obj['selection_mode']}\n")
             fh.write(f"full_suite_required={str(obj['full_suite_required']).lower()}\n")
-            fh.write("selected_tests=" + json.dumps([t["id"] for t in obj["selected_tests"]]) + "\n")
+            fh.write(
+                "selected_tests=" + json.dumps([t["id"] for t in obj["selected_tests"]]) + "\n"
+            )
     return 0
 
 
