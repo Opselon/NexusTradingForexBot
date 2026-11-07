@@ -26,7 +26,6 @@ macOS live in ``ENABLE_WINDOWS_SELF_HOSTED`` / ``ENABLE_MACOS_SELF_HOSTED``
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from typing import Any
 
@@ -105,21 +104,29 @@ def as_dict() -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry. Deliberately has NO console output.
+
+    CodeQL's clear-text-logging query (CWE-532) flags any emission of this
+    module's data on stdout because the module's documentation discusses
+    credential handling — even though neither ``snippet()`` nor
+    ``as_dict()`` ever contained an identifier. The module is therefore
+    consumable by import only; the workflows hard-code the same constants
+    (documented at the top of this file) and nothing shells out to it.
+    """
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--snippet", action="store_true", help="emit the reusable YAML env fragment")
-    ap.add_argument("--json", action="store_true", help="emit the configuration as JSON")
+    ap.add_argument(
+        "--verify",
+        action="store_true",
+        help="exit 0 when the module imports and its constants resolve (also "
+        "exercises snippet()/as_dict() so the public API is covered)",
+    )
     args = ap.parse_args(argv)
-    if args.snippet:
-        # Emitted through stdout (never a broad print of a mapping) — the
-        # snippet holds only public routing constants.
-        sys.stdout.write(snippet() + "\n")
-        return 0
-    if args.json:
-        # Written via sys.stdout.write (not print) and only after the caller
-        # explicitly asked: CodeQL's clear-text-logging query treats a broad
-        # `print(<mapping>)` as potential logging of sensitive data even when
-        # the mapping holds only public routing facts.
-        sys.stdout.write(json.dumps(as_dict(), indent=2) + "\n")
+    if args.verify:
+        assert snippet()
+        assert as_dict()
+        assert LINUX_SELF_HOSTED_LABELS and WINDOWS_SELF_HOSTED_LABELS and MACOS_SELF_HOSTED_LABELS
+        assert LINUX_HOSTED and WINDOWS_HOSTED and MACOS_HOSTED
+        assert CACHE_NAMESPACE
     return 0
 
 
