@@ -49,7 +49,17 @@ BACKUP_DIR = os.path.join("artifacts", "backups")
 
 #: Only these names are ever considered for deletion — a producer's own
 #: scheme. Anything else in the directory is left alone on purpose.
-_BACKUP_NAME_RE = re.compile(r"^audit_backup_\d{8}-\d{6}\.db$")
+_BACKUP_NAME_RE = re.compile(r"^audit_backup_(?P<stamp>\d{8}-\d{6})\.db$")
+
+#: Snapshot filenames carry an embedded creation timestamp
+#: (``audit_backup_YYYYMMDD-HHMMSS.db``). mtime alone cannot order two
+#: backups written within the same timestamp tick — and the filesystem does
+#: not guarantee the mtime of a just-written file reflects creation order at
+#: all (ext4 directory hashing, overlayfs copy-up). The name's own stamp is
+#: therefore the tie-breaker, making retention deterministic regardless of
+#: how the directory happens to be listed.
+_SNAPSHOT_NAME_ORDER: re.Pattern[str] = re.compile(r"^audit_backup_(\d{8}-\d{6})\.db$")
+
 
 #: The historical snapshot classes also observed in ``artifacts/backups``.
 #: These have NO producer in the current tree (they were written by one-off
@@ -125,6 +135,23 @@ def _is_safe_child(root: str, candidate: str) -> bool:
     # A registered snapshot *set* is a directory, a snapshot file is a regular
     # file. Anything else (a symlink, a device, a socket) is not collectable.
     return os.path.isfile(real_candidate) or os.path.isdir(real_candidate)
+
+
+def _backup_sort_key(path: str) -> tuple[int, str]:
+    """Deterministic ordering key for a snapshot path.
+
+    mtime is the primary signal but is tick-coarse and filesystem-dependent;
+    two backups written in the same tick (the observed "two identical
+    snapshots 2 s apart" pattern, or faster) then order by whatever
+    ``os.listdir`` happened to return — on ext4/overlayfs that is a hash,
+    not creation order. A registered ``audit_backup_YYYYMMDD-HHMMSS.db``
+    name carries its own monotonic stamp, which is used as the tie-breaker
+    (unrecognised names sort last by filename so they are never preferred).
+    """
+    match = _SNAPSHOT_NAME_ORDER.match(os.path.basename(path))
+    if match is not None:
+        return (0, match.group(1))
+    return (1, os.path.basename(path))
 
 
 def _matches_any(name: str, patterns: tuple[re.Pattern[str], ...]) -> bool:
@@ -222,7 +249,9 @@ def list_backups(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, int]]:
             )
             continue
         found.append((path, st.st_mtime, st.st_size))
-    found.sort(key=lambda item: item[1])  # oldest first
+    # Deterministic: name stamp first (mtime is tick-coarse and
+    # filesystem-scheduling dependent), then mtime.
+    found.sort(key=lambda item: (_backup_sort_key(item[0]), item[1]))
     return found
 
 
@@ -276,7 +305,9 @@ def list_snapshot_sets(backup_dir: str = BACKUP_DIR) -> list[tuple[str, float, i
         if st.st_mtime > now - (_FRESH_SET_GRACE_DAYS * 86400.0):
             continue
         found.append((path, st.st_mtime, _dir_size(path)))
-    found.sort(key=lambda item: item[1])  # oldest first
+    # Deterministic: name stamp first (mtime is tick-coarse and
+    # filesystem-scheduling dependent), then mtime.
+    found.sort(key=lambda item: (_backup_sort_key(item[0]), item[1]))
     return found
 
 
