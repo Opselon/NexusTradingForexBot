@@ -7,10 +7,12 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Weekly meta-scan: catch CI-wiring drift / dependency-world changes that
-    # don't touch code (e.g. a workflow edited by hand, an action SHA bump, a
-    # base-image/linter version shift). Maps to scheduled drift detection.
-    - cron: "13 5 * * 1"   # Every Monday 05:13 UTC
+    # CI quota diet (2026-11): the weekly meta-scan became SEMI-MONTHLY.
+    # Hosted minutes are the scarce resource; everything routine moved to the
+    # tiered self-hosted pool, so the schedule only keeps its drift-catching
+    # duty (wiring drift / dependency-world changes) twice a month, and the
+    # expensive runtime legs below run on this event too.
+    - cron: "13 5 1,15 * *"   # 1st & 15th, 05:13 UTC
   workflow_dispatch:
     inputs:
       full:
@@ -151,13 +153,48 @@ jobs:
   # dependency-lock.yml; a plain resolver pass over -e ".[dev,web,postgres]"
   # re-resolved ~90 packages on every job.
   # ---------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Runner availability preflight — CI quota diet (2026-11). Picks the
+  # fastest online+idle lane: tier-1 opselon-vm (8-thread Docker runner) ->
+  # tier-2 nexus-2core -> GitHub-hosted. `runs_on` is ALWAYS a valid
+  # runs-on target (hosted image when no tier matches), so a single lane
+  # serves every class without duplication. Same routing contract as
+  # Tests (OS Matrix) — see scripts/ci/runner_select.py.
+  # -------------------------------------------------------------------------
+  runner-select:
+    name: Runner Selector (ci)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runner_class: ${{ steps.select.outputs.runner_class }}
+      runs_on: ${{ steps.select.outputs.runs_on }}
+      selection_reason: ${{ steps.select.outputs.selection_reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select runner (availability preflight)
+        id: select
+        uses: ./.github/actions/runner-select
+        env:
+          NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
+        with:
+          platform: linux
+          labels: "self-hosted,Linux,X64,opselon-vm"
+          fallback_labels: "self-hosted,Linux,X64,nexus-2core"
+          # A fork PR (head repo != this repo) is untrusted: never
+          # self-hosted, never exposed to runner credentials.
+          untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
   quality-lint:
     name: Quality — Lint, Types & Static Gates
-    runs-on: ubuntu-latest
+    needs: runner-select
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
     timeout-minutes: 20
 
     env:
       CI_RESULTS_DIR: ci-results-lint
+      NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
 
     steps:
       - name: Checkout repository
@@ -172,10 +209,15 @@ jobs:
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.10"
-          enable-cache: true
+          # Self-hosted tiers keep their warmth in the runner's own
+          # persistent volumes; uploading a multi-GB uv cache from a
+          # tethered box burns hours of Post time and cache storage. The
+          # GitHub cache only pays off on hosted lanes.
+          enable-cache: ${{ env.NSE_RUNNER_CLASS != 'self-hosted' }}
           cache-dependency-glob: requirements.lock
 
       - name: Cache dependency intelligence graph
+        if: env.NSE_RUNNER_CLASS != 'self-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: artifacts/dependency_intelligence/cache.json
@@ -184,9 +226,21 @@ jobs:
             dep-graph-v1-
 
       - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
         run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
+          set -euo pipefail
+          # venv, never --system: PEP-668 externally-managed system Pythons
+          # (every self-hosted Ubuntu) refuse bare uv system installs, and
+          # the venv name binds to the lockfile hash so a dependency switch
+          # can never reuse a stale environment. Works byte-identical on
+          # hosted and self-hosted classes.
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${PYTHON_VERSION}"
+          VENV_DIR=".venv-ci-${VENV_KEY}"
+          uv venv --python "${PYTHON_VERSION}" "${VENV_DIR}"
+          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
+          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
+          echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
+          echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
 
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
@@ -431,11 +485,15 @@ jobs:
 
   quality-tests:
     name: Quality — Tests & Runtime Certification
-    runs-on: ubuntu-latest
+    needs: runner-select
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
     # The pytest critical suite alone measured ~1010s under -n auto on a
     # loaded shared runner (see the pre-split comment history); the split
     # moves lint/type off this clock, so 25m is pytest+smoke+runtime gates.
     timeout-minutes: 25
+
+    env:
+      NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
 
     steps:
       - name: Checkout repository
@@ -445,19 +503,29 @@ jobs:
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
-          cache: "pip"
 
       - name: Install uv (pinned — the canonical lock tool)
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.10"
-          enable-cache: true
+          # See quality-lint: self-hosted warmth lives in the runner volumes;
+          # a multi-GB cache upload over a tethered uplink is pure loss.
+          enable-cache: ${{ env.NSE_RUNNER_CLASS != 'self-hosted' }}
           cache-dependency-glob: requirements.lock
 
       - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
         run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
+          set -euo pipefail
+          # venv, never --system (PEP-668 on self-hosted) — same contract as
+          # quality-lint above.
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${PYTHON_VERSION}"
+          VENV_DIR=".venv-ci-${VENV_KEY}"
+          uv venv --python "${PYTHON_VERSION}" "${VENV_DIR}"
+          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
+          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
+          echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
+          echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
 
       - name: Initialize results tree
         run: |
@@ -768,6 +836,12 @@ jobs:
   # ---------------------------------------------------------------------------
   full-runtime-provider:
     name: Full NSE Runtime (${{ matrix.provider }})
+    # CI quota diet (2026-11): these legs need Docker service containers
+    # (postgres) and ~25 hosted-minutes per run — they are the single
+    # largest burn on every PR/push. They now run on the SEMI-MONTHLY
+    # schedule and on explicit full dispatch only; the fail-closed verdict
+    # below treats a policy skip on PR/push as expected, never as a pass.
+    if: always() && (github.event_name == 'schedule' || inputs.full == true)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -1367,12 +1441,25 @@ jobs:
         run: |
           echo "SQLite/PostgreSQL matrix:   ${{ needs.full-runtime-provider.result }}"
           echo "MT5 native Windows line:    ${{ needs.mt5-native.result }}"
-          # Wine is a compatibility platform (mt5-wine-compat.yml, weekly +
+          # Wine is a compatibility platform (mt5-wine-compat.yml, monthly +
           # dispatch) and is deliberately NOT part of this verdict: a Wine
           # failure can never block a PR, this aggregate, or a release.
-          if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
+          # CI quota diet (2026-11): the provider matrix is gated to the
+          # semi-monthly schedule and full dispatch (Docker service
+          # containers cannot run on the self-hosted tiers). A skipped
+          # matrix on PR/push is EXPECTED policy — never a pass, never a
+          # failure; on the events where the leg is required, any
+          # non-success still fails this verdict fail-closed.
+          if [ "${{ needs.full-runtime-provider.result }}" != "success" ] && [ "${{ needs.full-runtime-provider.result }}" != "skipped" ]; then
             echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
             exit 1
+          fi
+          if [ "${{ needs.full-runtime-provider.result }}" = "skipped" ]; then
+            if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then
+              echo "::error::Full runtime matrix skipped on an event that requires it (schedule/full dispatch)"
+              exit 1
+            fi
+            echo "::notice::Full NSE runtime matrix skipped by policy on ${{ github.event_name }} — runs on the semi-monthly schedule or via dispatch with full=true."
           fi
           # CI runner-routing architecture (2026-11): the MT5 native line is
           # scheduled/dispatch-only (Windows is excluded from automatic CI).
