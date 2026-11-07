@@ -123,9 +123,9 @@ static void load_fallback_suite(const char *repo_root, const char *suite_file,
     sb_free(&content);
 }
 
-int engine_build_plan(const char *repo_root, const char *changed_files,
+int engine_build_plan_ex(const char *repo_root, const char *changed_files,
                       const PlanOptions *opt, StrBuf *json_out,
-                      char digest_hex[65]) {
+                      char digest_hex[65], const char *metadata_json) {
     if (!repo_root || !changed_files || !opt || !json_out || !digest_hex) return -1;
 
     Arena arena;
@@ -198,7 +198,14 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
     } else if (has_python_src || has_test_py) {
         Graph g;
         graph_init(&g, &arena);
-        graph_scan_repo(&g, repo_root);
+        if (metadata_json) {
+            if (graph_build_from_metadata(&g, repo_root, metadata_json, NULL, 0) != 0) {
+                /* malformed metadata: fall back to the line scanner */
+                graph_scan_repo(&g, repo_root);
+            }
+        } else {
+            graph_scan_repo(&g, repo_root);
+        }
 
         bool any_unparseable = false;
         for (size_t i = 0; i < g.mod_count; i++) {
@@ -248,12 +255,23 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
             if (m >= 9 && strcmp(mod + m - 9, "/__init__") == 0) mod[m - 9] = '\0';
             for (char *c = mod; *c; c++) if (*c == '/') *c = '.';
             if (dbg) fprintf(stderr, "[dbg]   mod=%s\n", mod);
+            /* AST-metadata graphs key nodes by PATH; line-scan graphs key
+             * source nodes by dotted module name. Try BOTH identities. */
             bool found = false;
-            for (size_t k = 0; k < g.mod_count; k++) {
-                if (strcmp(g.mod_names[k], mod) == 0) {
-                    changed_idx[changed_idx_len++] = k;
+            {
+                size_t pidx;
+                if (graph_find(&g, f, &pidx)) {
+                    changed_idx[changed_idx_len++] = pidx;
                     found = true;
-                    break;
+                }
+            }
+            if (!found) {
+                for (size_t k = 0; k < g.mod_count; k++) {
+                    if (strcmp(g.mod_names[k], mod) == 0) {
+                        changed_idx[changed_idx_len++] = k;
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (dbg) fprintf(stderr, "[dbg]   found=%d changed_idx_len=%zu\n", found, changed_idx_len);
@@ -319,7 +337,8 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
                 sb_free(&r);
             }
         }
-        /* not-scanned src files also count as missing mappings */
+        /* not-scanned src files also count as missing mappings (a file the
+         * graph never saw — by dotted name OR by path identity). */
         for (size_t i = 0; i < changed_count && missing_len < 256; i++) {
             const char *f = changed[i].path;
             if (!(nse_ends_with(f, ".py") && nse_starts_with(f, "src/"))) continue;
@@ -331,9 +350,22 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
             for (char *c = mod; *c; c++) if (*c == '/') *c = '.';
             bool in_graph = false;
             for (size_t k = 0; k < g.mod_count; k++) {
-                if (strcmp(g.mod_names[k], mod) == 0) { in_graph = true; break; }
+                if (strcmp(g.mod_names[k], mod) == 0 ||
+                    (g.mod_paths[k] && strcmp(g.mod_paths[k], f) == 0)) {
+                    in_graph = true;
+                    break;
+                }
             }
             if (!in_graph) missing[missing_len++] = arena_strdup(&arena, f);
+        }
+        /* deduplicate (a path can land here twice across the two loops) */
+        if (missing_len > 1) {
+            qsort(missing, missing_len, sizeof(char *), cmp_strp);
+            size_t w = 1;
+            for (size_t r2 = 1; r2 < missing_len; r2++) {
+                if (strcmp(missing[r2], missing[r2 - 1]) != 0) missing[w++] = missing[r2];
+            }
+            missing_len = w;
         }
         if (missing_len > 1) qsort(missing, missing_len, sizeof(char *), cmp_strp);
         sb_free(&py_files);
@@ -510,4 +542,10 @@ int engine_build_plan(const char *repo_root, const char *changed_files,
     sb_free(&sb);
     arena_free(&arena);
     return rc;
+}
+
+int engine_build_plan(const char *repo_root, const char *changed_files,
+                      const PlanOptions *opt, StrBuf *json_out, char digest_hex[65]) {
+    return engine_build_plan_ex(repo_root, changed_files, opt, json_out,
+                                digest_hex, NULL);
 }
