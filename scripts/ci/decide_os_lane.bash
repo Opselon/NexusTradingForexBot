@@ -22,7 +22,13 @@ case "${GITHUB_EVENT_NAME:-}" in
     # PR fast shape: every platform uses the skewed subset.
     MODE="SKEW" ;;
   push)
-    if [ "${GITHUB_REF_NAME:-}" = "main" ]; then MODE="FULL"; else MODE="SKEW"; fi ;;
+    # CI quota diet (2026-11): the FULL suite is semi-monthly-schedule and
+    # full-dispatch only. A main push takes the fast skewed subset on the
+    # tiered self-hosted pool, exactly like a PR.
+    MODE="SKEW" ;;
+  schedule)
+    # Semi-monthly health sweep: the only AUTOMATIC FULL run.
+    MODE="FULL" ;;
   workflow_dispatch)
     if [ "${NSE_FORCE_FULL_SUITE:-false}" = "true" ]; then MODE="FULL"; else MODE="SKEW"; fi ;;
 esac
