@@ -66,6 +66,7 @@ DECISION_KEYS = (
     "labels",
     "runner_labels",
     "tier",
+    "runs_on",
 )
 
 
@@ -178,6 +179,11 @@ def select(
         "labels": list(labels),
         "runner_labels": [],
         "tier": 0,
+        # ALWAYS a valid runs-on target: the winning self-hosted label set,
+        # or the GitHub-hosted image when no tier is eligible. Single-lane
+        # workflows consume this via `runs-on: fromJSON(...)`; the two-lane
+        # honesty-contract workflows keep using runner_labels + runner_class.
+        "runs_on": [hosted],
     }
 
     # Trust boundary first: fork PRs never reach persistent runners.
@@ -235,6 +241,7 @@ def select(
     decision["runner_labels"] = chosen
     decision["tier"] = tier
     decision["runner_class"] = "self-hosted"
+    decision["runs_on"] = list(chosen)
     decision["reason"] = (
         f"tier-{tier}: {len(matches)} online+idle runner(s) match labels {chosen} "
         f"(checked {len(runners)} runner(s)) -> self-hosted"
@@ -312,6 +319,7 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(f"self_hosted_eligible={str(decision['self_hosted_eligible']).lower()}\n")
             fh.write(f"selection_reason={decision['reason']}\n")
             fh.write("runner_labels=" + json.dumps(decision["runner_labels"]) + "\n")
+            fh.write("runs_on=" + json.dumps(decision["runs_on"]) + "\n")
             fh.write("decision=" + json.dumps(decision) + "\n")
     return 0
 
