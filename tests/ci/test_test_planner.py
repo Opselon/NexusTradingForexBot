@@ -145,3 +145,44 @@ def test_deleted_file_is_just_a_name(mini_repo: Path):
     # Deletions arrive as paths; the planner treats them like any changed path.
     p = test_planner.plan(["src/nexus_scalp/risk/risk_engine.py"], mini_repo)
     assert _ids(p)  # selection produced; no crash on absent files
+
+
+def test_relative_import_resolved_in_src(mini_repo: Path):
+    # trade_manager switches to a RELATIVE import; the risk_engine test must
+    # still be reached through the resolved edge.
+    (mini_repo / "src" / "nexus_scalp" / "execution" / "trade_manager.py").write_text(
+        "from ..risk.risk_engine import assess\n\n\ndef trade():\n    return assess()\n"
+    )
+    p = test_planner.plan(["src/nexus_scalp/execution/trade_manager.py"], mini_repo)
+    assert "tests/unit/test_risk_engine.py" in _ids(p)
+    assert p["full_suite_required"] is False
+
+
+def test_relative_import_sibling_package_selected(mini_repo: Path):
+    (mini_repo / "src" / "nexus_scalp" / "risk" / "extra.py").write_text(
+        "from .risk_engine import assess\n\n\ndef extra():\n    return assess()\n"
+    )
+    p = test_planner.plan(["src/nexus_scalp/risk/extra.py"], mini_repo)
+    assert "tests/unit/test_risk_engine.py" in _ids(p)
+
+
+def test_unresolvable_relative_import_marks_uncertain(mini_repo: Path):
+    (mini_repo / "src" / "nexus_scalp" / "mystery.py").write_text(
+        "from .does_not_exist_anywhere import thing\n"
+    )
+    p = test_planner.plan(["src/nexus_scalp/mystery.py"], mini_repo)
+    assert p["full_suite_required"] is True
+    assert "relative" in (p["fallback_reason"] or "")
+
+
+def test_relative_import_in_tests_resolves_to_helper(mini_repo: Path):
+    (mini_repo / "tests" / "unit" / "helpers_local.py").write_text(
+        "def helper():\n    return 1\n"
+    )
+    (mini_repo / "tests" / "unit" / "test_uses_helper.py").write_text(
+        "from .helpers_local import helper\n\n\ndef test_helper():\n    assert helper()\n"
+    )
+    # helper file changed -> its importing test selected via resolved edge
+    p = test_planner.plan(["tests/unit/helpers_local.py"], mini_repo)
+    assert "tests/unit/test_uses_helper.py" in _ids(p)
+    assert p["full_suite_required"] is False
