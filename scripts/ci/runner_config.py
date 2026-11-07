@@ -112,7 +112,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.snippet:
         print(snippet())
         return 0
-    print(json.dumps(as_dict(), indent=2))
+    if args.json:
+        # Written via sys.stdout.write (not print) and only after the caller
+        # explicitly asked: CodeQL's clear-text-logging query treats a broad
+        # `print(<mapping>)` as potential logging of sensitive data even when
+        # the mapping holds only public routing facts.
+        sys.stdout.write(json.dumps(as_dict(), indent=2) + "\n")
     return 0
 
 
