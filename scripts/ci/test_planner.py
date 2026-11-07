@@ -99,49 +99,139 @@ def _module_name_for_file(path: str) -> str | None:
     return name or None
 
 
-def _repo_module_from_import(module: str, file_dir_parts: list[str]) -> str | None:
-    """Normalise an import target to a repo module name, or None for external."""
+def _repo_module_from_import(module: str) -> str | None:
+    """Normalise an absolute import target to a repo module name, or None."""
     if module.startswith("nexus_scalp"):
         return module
     return None
 
 
-def _parse_imports(path: Path) -> set[str]:
-    """Extract repo-internal module names imported by a .py file via AST."""
+def _own_module_and_package(rel_path: str) -> tuple[str, str]:
+    """Return (own_module, own_package) dotted names for a repo .py path.
+
+    tests/unit/test_x.py   -> ("tests.unit.test_x", "tests.unit")
+    src/nexus_scalp/a/b.py -> ("nexus_scalp.a.b", "nexus_scalp.a")
+    src/nexus_scalp/a/__init__.py -> ("nexus_scalp.a", "nexus_scalp.a")
+    """
+    parts = rel_path[:-3].split("/")  # strip .py
+    if parts and parts[0] == "src":
+        parts = parts[1:]  # the package tree starts at the src/ children
+    if parts and parts[-1] == "__init__":
+        module = ".".join(parts[:-1]) or parts[-1]
+        package = module
+    else:
+        module = ".".join(parts)
+        package = ".".join(parts[:-1])
+    return module, package
+
+
+def _register_module_chain(found: set[str], module: str) -> None:
+    """Register a module target plus its parent-package chain edges."""
+    found.add(module)
+    parts = module.split(".")
+    for i in range(1, len(parts)):
+        found.add(".".join(parts[:i]))
+
+
+def _parse_imports(
+    rel_path: str, path: Path, test_paths: set[str], repo_root: Path
+) -> tuple[set[str], bool]:
+    """Extract repo-internal import targets via AST, resolving RELATIVE imports.
+
+    Returns (targets, uncertain). Relative imports are resolved against the
+    file's own package. Any relative import that cannot be resolved to a node
+    we actually know about marks the graph UNCERTAIN (which the planner turns
+    into conservative expansion) — a silently missing dependency edge is
+    never acceptable.
+    """
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
     except (SyntaxError, OSError, ValueError):
         # Unparseable file: conservative — treat as importing EVERYTHING.
-        return {"<unknown>"}
+        return {"<unknown>"}, True
+
+    _own_module, own_package = _own_module_and_package(rel_path)
+    own_pkg_parts = own_package.split(".") if own_package else []
+
+    def resolve_relative(level: int, module: str | None, alias: str) -> str | None:
+        base_parts = own_pkg_parts[: len(own_pkg_parts) - (level - 1)] if level > 1 else list(own_pkg_parts)
+        if level - 1 > len(own_pkg_parts):
+            return None  # escapes the repo tree
+        parts = base_parts + ([module] if module else []) + ([alias] if alias else [])
+        return ".".join(x for x in parts if x)
+
     found: set[str] = set()
+    uncertain = False
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                m = _repo_module_from_import(alias.name, [])
+                m = _repo_module_from_import(alias.name)
                 if m:
-                    found.add(m)
-                    # Also register the parent package edge (a.b.c -> a.b)
-                    parts = m.split(".")
-                    for i in range(1, len(parts)):
-                        found.add(".".join(parts[:i]))
+                    _register_module_chain(found, m)
         elif isinstance(node, ast.ImportFrom):
             if node.level and node.level > 0:
-                # Relative import — resolve within the repo tree conservatively
-                # by registering the file's own package chain (edge exists).
-                continue
-            m = _repo_module_from_import(node.module or "", [])
-            if m:
-                found.add(m)
-                parts = m.split(".")
-                for i in range(1, len(parts)):
-                    found.add(".".join(parts[:i]))
-    return found
+                targets: list[str] = []
+                if node.module:
+                    # `from .pkg.mod import sym` — only pkg.mod is a module;
+                    # the symbols are names INSIDE it, never module paths.
+                    targets.append(resolve_relative(node.level, node.module, ""))
+                else:
+                    # `from . import mod1, mod2` — the aliases ARE submodules.
+                    for alias in node.names:
+                        if alias.name != "*":
+                            targets.append(resolve_relative(node.level, None, alias.name))
+                for cand in targets:
+                    if not cand:
+                        uncertain = True
+                        continue
+                    if cand.startswith("nexus_scalp"):
+                        # Existence check: a RELATIVE import naming a module
+                        # that is not in the tree is an unresolved edge —
+                        # mark the graph uncertain rather than dropping it.
+                        # nexus_scalp lives under src/ in the repo layout.
+                        cand_base = repo_root / "src" / cand.replace(".", "/")
+                        if (cand_base.with_suffix(".py")).is_file() or (
+                            cand_base / "__init__.py"
+                        ).is_file():
+                            _register_module_chain(found, cand)
+                        else:
+                            uncertain = True
+                    elif cand.replace(".", "/") + ".py" in test_paths:
+                        # Edge to a known test-tree file (helpers/conftest), keyed
+                        # by its repo path — the graph keys test nodes by path.
+                        found.add(cand.replace(".", "/") + ".py")
+                    elif cand + ".py" in test_paths:
+                        found.add(cand + ".py")
+                    else:
+                        # Repo-internal relative import that does not resolve to
+                        # any known node — the graph is uncertain.
+                        uncertain = True
+            else:
+                m = _repo_module_from_import(node.module or "")
+                if m:
+                    _register_module_chain(found, m)
+    return found, uncertain
 
 
-def build_graph(repo_root: Path) -> tuple[dict[str, set[str]], set[str]]:
-    """Return (module -> set(modules it imports), set of test file paths)."""
+def build_graph(
+    repo_root: Path,
+) -> tuple[dict[str, set[str]], set[str], bool]:
+    """Return (module -> set(targets it imports), test file paths, uncertain)."""
     imports: dict[str, set[str]] = {}
     test_files: set[str] = set()
+    uncertain = False
+    # First pass: collect test-tree paths (relative imports inside tests
+    # resolve to these path-keyed nodes).
+    for base in _SOURCE_ROOTS:
+        root = repo_root / base
+        if not root.is_dir():
+            continue
+        for path in root.rglob("*.py"):
+            rel = _norm(str(path.relative_to(repo_root)))
+            if "__pycache__" in rel:
+                continue
+            if rel.startswith("tests/"):
+                test_files.add(rel)
     for base in _SOURCE_ROOTS:
         root = repo_root / base
         if not root.is_dir():
@@ -151,12 +241,15 @@ def build_graph(repo_root: Path) -> tuple[dict[str, set[str]], set[str]]:
             if "__pycache__" in rel:
                 continue
             mod = _module_name_for_file(rel) or rel
+            targets, u = _parse_imports(rel, path, test_files, repo_root)
+            if u:
+                uncertain = True
             if rel.startswith("tests/"):
                 test_files.add(rel)
-                imports[rel] = _parse_imports(path)
+                imports[rel] = targets
             else:
-                imports[mod] = _parse_imports(path)
-    return imports, test_files
+                imports[mod] = targets
+    return imports, test_files, uncertain
 
 
 def _reachable_tests(
@@ -183,7 +276,10 @@ def _reachable_tests(
         if mod in visited:
             continue
         visited.add(mod)
-        for importer in importers.get(mod, ()):  # reverse edge
+        if mod.startswith("tests/"):
+            # A changed test file covers itself (it always runs).
+            covered.add(mod)
+        for importer in importers.get(mod, ()):
             if importer.startswith("tests/"):
                 selected.add(importer)
                 covered.add(mod)
@@ -240,15 +336,25 @@ def plan(
     elif global_invalidation:
         fallback_reason = "global invalidation: " + ", ".join(global_invalidation[:4])
     else:
-        imports, _test_files = build_graph(repo_root)
+        imports, _test_files, graph_uncertain = build_graph(repo_root)
         if "<unknown>" in {t for v in imports.values() for t in v}:
             fallback_reason = (
                 fallback_reason
                 or "unparseable python file encountered — conservative expansion"
             )
+        if graph_uncertain:
+            fallback_reason = (
+                fallback_reason
+                or "unresolved relative imports — graph uncertain, conservative expansion"
+            )
         changed_modules = {
             m for m in (_module_name_for_file(f) for f in python_changed) if m
         }
+        # Changed test-tree files are graph nodes too (path-keyed): their
+        # importers (tests using a shared helper) must be selected as well.
+        for t in tests_changed:
+            if t in imports:
+                changed_modules.add(t)
         if changed_modules:
             reach, covered = _reachable_tests(changed_modules, imports, _test_files)
             for t in reach:
@@ -282,6 +388,26 @@ def plan(
         notes.append(
             "safety-critical modules changed: " + ", ".join(safety_changed[:6])
         )
+
+    # CI tooling (mirrored byte-identically in the C engine): scripts/ci/*.py
+    # map to their tests/ci/test_<name>.py; workflow changes select the whole
+    # tests/ci integrity suite.
+    ci_tooling = sorted(
+        f for f in changed if f.startswith("scripts/ci/") and f.endswith(".py")
+    )
+    workflows_changed = any(f.startswith(".github/workflows/") for f in changed)
+    if ci_tooling or workflows_changed:
+        for f in ci_tooling:
+            cand = "tests/ci/test_" + os.path.basename(f)
+            if (repo_root / cand).is_file():
+                selected.setdefault(cand, set()).add("ci_tooling")
+        if workflows_changed:
+            ci_dir = repo_root / "tests" / "ci"
+            if ci_dir.is_dir():
+                for t in sorted(ci_dir.glob("test_*.py")):
+                    selected.setdefault(
+                        _norm(str(t.relative_to(repo_root))), set()
+                    ).add("ci_tooling")
 
     if not python_changed and not tests_changed:
         skipped_groups.append(
