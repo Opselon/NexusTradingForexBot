@@ -227,11 +227,7 @@ def select(
         # decision keeps its initialized hosted-shape: tier=0, runner_labels=[]
         decision["reason"] = (
             f"no online+idle runner matching tier-1 {list(labels)}"
-            + (
-                f" nor tier-2 {list(fallback_labels)}"
-                if fallback_labels
-                else ""
-            )
+            + (f" nor tier-2 {list(fallback_labels)}" if fallback_labels else "")
             + f" (checked {len(runners)} runner(s)) -> github-hosted fallback"
         )
         return decision
@@ -297,9 +293,7 @@ def main(argv: list[str] | None = None) -> int:
         hosted=args.hosted,
         env=env,
         untrusted=args.untrusted,
-        fallback_labels=(
-            tuple(x for x in args.fallback_labels.split(",") if x) or None
-        ),
+        fallback_labels=(tuple(x for x in args.fallback_labels.split(",") if x) or None),
     )
 
     # Emit the machine-readable decision (consumed via fromJson() in the
