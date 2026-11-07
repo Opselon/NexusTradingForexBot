@@ -134,7 +134,7 @@ GitHub event (push / PR / schedule / dispatch)
 
 | Component | Role |
 | :--- | :--- |
-| `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace. `--snippet` emits the YAML env fragment. |
+| `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace (import-only; `--verify` self-check). |
 | `scripts/ci/runner_select.py` | Availability preflight + runner-class decision. Pure `select()` function; fail-open to github-hosted on ANY error. |
 | `.github/actions/runner-select` | Composite action: availability preflight + class decision, used by every lane's preflight job. (A reusable *workflow* cannot declare workflow-level `outputs:` in this repository — verified by experiment — so the shared component is an action.) |
 | `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. |
@@ -206,15 +206,63 @@ runs on the persistent runner and never sees runner-management data.
 `workflow_dispatch` requires repository write access, so the manual lanes
 cannot be reached by a fork contributor either.
 
+## Environment & caching on the persistent runner
+
+The self-hosted Linux runner holds a **persistent, cache-aware Python
+environment**. Nothing is written into Ubuntu's system Python and no
+`--break-system-packages` is ever used.
+
+| Layer | Mechanism | Persists across |
+| :--- | :--- | :--- |
+| CPython 3.11 | `uv venv --python <version>` provisions it into `UV_PYTHON_INSTALL_DIR` (`/home/github-runner/.local/share/uv/python`) | jobs **and** runner restarts |
+| Wheel cache | uv's cache at `UV_CACHE_DIR` (`/home/github-runner/.cache/uv`), keyed by the `requirements.lock` hash via `astral-sh/setup-uv` `cache-dependency-glob` | jobs and restarts |
+| Project environment | workspace-local `.venv-<sha256[:16]-of-requirements.lock>-py<version>` | **one job only** (workspace wiped) |
+
+Design decisions, and why:
+
+* **`actions/setup-python` is intentionally absent** from these lanes. On a
+  self-hosted runner it cannot install 3.11 (no toolcache, no hosted image)
+  and its silent fallback leaves the *system* interpreter active — the exact
+  PEP-668 `externally managed` failure this lane hit on its first run
+  (`uv pip install --system` refused to touch `/usr`).
+* **`uv sync --locked` is deliberately not used**: this repo has no
+  `[tool.uv]` section and no dependency-groups, so `uv sync` would resolve
+  the raw `pyproject.toml` table and diverge from `requirements.lock` — the
+  canonical lock flow here is `uv pip install -r requirements.lock`
+  (mandated by `dependency-lock.yml`'s drift contract).
+* **The venv is keyed on the lockfile hash + interpreter**, so a branch with
+  different dependencies or another Python can never reuse a stale
+  environment; a lock change forces a fresh venv while the *wheel cache*
+  still serves every unchanged package.
+* **`enable-cache` is pinned to the self-hosted legs only.** GitHub-hosted
+  runners are ephemeral, so the Actions cache is inert there — and its key
+  embeds the machine's system Python, which would alias the self-hosted
+  machine's key and break isolation.
+
+Measured twice-run comparison on the self-hosted runner (identical branch,
+identical lock):
+
+| | run 1 (cold) | run 2 (warm) |
+| :--- | :--- | :--- |
+| `Install via lock` step | 784s (Python 29.4 MiB + 32 wheels, incl. nvidia-cudnn 495 MiB) | **7.4s** |
+| Wheels downloaded | 32 | **0** |
+| Job wall-clock | 18m24s | **4m15s** |
+| Result | success, `mode=SKEW rc=0` | success, `mode=SKEW rc=0` |
+
+≈**106× faster** dependency provisioning, ~849s saved per run, zero network
+on warm runs. Each run emits its venv key, Python version and `UV_CACHE_DIR`
+to the step summary as cache-reuse evidence.
+
 ## Caching
 
 | Lane | Cache | Notes |
 | :--- | :--- | :--- |
-| Self-hosted legs | `astral-sh/setup-uv` `enable-cache: true`, `actions/setup-python` pip cache | Namespaces are separated per OS/arch and per **trust boundary** (hosted jobs never restore a cache written from an untrusted fork run on the same OS). |
-| GitHub-hosted legs | pip cache only | Ephemeral runners; the uv Actions cache is inert on a 20-minute runner, so it is deliberately NOT enabled there. |
+| Self-hosted legs | uv cache only (`enable-cache: true`, `cache-dependency-glob: requirements.lock`) | Persistent `UV_CACHE_DIR` in the runner user's home; no `setup-python` pip cache (it would key on the system Python the lane does not use). |
+| GitHub-hosted legs | none | Ephemeral runners; any Actions cache is inert there and would alias the self-hosted machine's key. |
 
 Cleanup/invalidation stays bounded by `requirements.lock`
-(`cache-dependency-glob`) and retention-days on artifacts.
+(`cache-dependency-glob`), the lockfile-keyed venv name, and retention-days
+on artifacts.
 
 ## Observability
 
@@ -312,8 +360,11 @@ sizing, stop-loss/take-profit/breakeven/trailing, and execution-mode paths.
 
 ## Cache policy
 
-* Python installs use `setup-python` pip cache keyed on `pyproject.toml` +
-  `requirements.txt`. No large directory caches are introduced without evidence.
+* Python installs go through uv (see "Environment & caching on the persistent
+  runner"): the interpreter is provisioned into the runner user's persistent
+  home and the wheel cache is keyed on `requirements.lock`. No
+  `setup-python` pip cache is used in these lanes. No large directory caches
+  are introduced without evidence.
 * The analyzer audits (and the docs state) that a cache must never make an
   incompatible dependency graph appear valid.
 
