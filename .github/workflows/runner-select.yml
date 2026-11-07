@@ -23,11 +23,7 @@ name: runner-select
 # It is NOT run per-job; lanes needing a runner call this once and fan out.
 # ---------------------------------------------------------------------------
 
-# NOTE: ``on:`` is quoted everywhere below. YAML 1.1 parses the bare token
-# ``on`` as the boolean True, which would silently swallow sibling keys
-# (``outputs:`` in particular) into the trigger mapping and make them
-# unreachable to callers.
-"on":
+on:
   workflow_call:
     inputs:
       platform:
@@ -38,6 +34,7 @@ name: runner-select
         description: "Force the GitHub-hosted class (fork PRs, no secrets exposed)"
         type: boolean
         default: false
+  workflow_dispatch:
 
 # Workflow-level outputs: the ONLY place a caller can read these. They are
 # deliberately NOT nested under workflow_call (a common mistake that makes
