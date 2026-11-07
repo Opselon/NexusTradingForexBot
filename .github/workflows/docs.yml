@@ -26,7 +26,7 @@ on:
   schedule:
     # Self-updating site: even when no docs path changes, refresh release /
     # repo metadata and redeploy so the landing "Project pulse" stays true.
-    - cron: "17 6,18 * * *"
+    - cron: "17 6 1,15 * *"
   workflow_dispatch:
 
 permissions:
