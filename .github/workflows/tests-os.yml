@@ -7,10 +7,12 @@ name: Tests (OS Matrix)
 # scripts/ci/runner_select.py):
 #
 #   * LINUX is the only OS still scheduled automatically. It routes
-#     SELF-HOSTED FIRST (repository runner labels: self-hosted,Linux,X64)
-#     with an ubuntu-latest fallback when the runner is offline, busy,
-#     disabled, unconfigured, or the request comes from an untrusted fork
-#     PR. Fork PRs NEVER execute on the persistent self-hosted machine.
+#     SELF-HOSTED FIRST through a TWO-TIER self-hosted pool, with an
+#     ubuntu-latest last resort when no tier has an online+idle runner, or
+#     the request comes from an untrusted fork PR. Fork PRs NEVER execute
+#     on the persistent self-hosted machines.
+#       tier-1: self-hosted,Linux,X64,opselon-vm   (8-thread Docker runner — preferred)
+#       tier-2: self-hosted,Linux,X64,nexus-2core  (secondary 2-core box)
 #   * WINDOWS is no longer scheduled on ordinary PR/push events. The full
 #     Windows test coverage moved to .github/workflows/tests-windows.yml
 #     (workflow_dispatch, ENABLE_WINDOWS_SELF_HOSTED feature flag). The
@@ -65,6 +67,11 @@ env:
   # Centralized runner configuration (scripts/ci/runner_config.py is the
   # single source of truth; these values mirror it at workflow level).
   NSE_RUNNER_LINUX_SELF_HOSTED_LABELS: "self-hosted,Linux,X64"
+  # Two-tier self-hosted pool (scripts/ci/runner_config.py mirrors these).
+  # Tier-1 is preferred for every Linux job; tier-2 takes over only when no
+  # tier-1 runner is online+idle; GitHub-hosted is the last resort.
+  NSE_RUNNER_LINUX_TIER1_LABELS: "self-hosted,Linux,X64,opselon-vm"
+  NSE_RUNNER_LINUX_TIER2_LABELS: "self-hosted,Linux,X64,nexus-2core"
   NSE_RUNNER_LINUX_HOSTED: "ubuntu-latest"
   # Platform enablement flags. Windows/macOS default to manual-only; their
   # own dispatch workflows read these (absent => disabled => hosted).
@@ -90,6 +97,7 @@ jobs:
       runner_class: ${{ steps.select.outputs.runner_class }}
       self_hosted_eligible: ${{ steps.select.outputs.self_hosted_eligible }}
       selection_reason: ${{ steps.select.outputs.selection_reason }}
+      self_hosted_labels: ${{ steps.select.outputs.self_hosted_labels }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,24 +109,29 @@ jobs:
           NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
         with:
           platform: linux
+          labels: ${{ env.NSE_RUNNER_LINUX_TIER1_LABELS }}
+          fallback_labels: ${{ env.NSE_RUNNER_LINUX_TIER2_LABELS }}
           # A fork PR (head repo != this repo) is untrusted: never
           # self-hosted, never exposed to runner credentials.
           untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
   # -------------------------------------------------------------------------
   # LINUX, SELF-HOSTED leg — used only when the preflight found an
-  # online+idle runner matching (self-hosted, Linux, X64). Mutually
-  # exclusive with tests-linux-hosted: exactly one Linux leg reports.
+  # online+idle runner in one of the two tiers (tier-1 opselon-vm preferred,
+  # tier-2 nexus-2core fallback). The exact label set of the winning tier
+  # arrives as a JSON array in self_hosted_labels. Mutually exclusive with
+  # tests-linux-hosted: exactly one Linux leg reports.
   # -------------------------------------------------------------------------
   tests-linux-self-hosted:
     name: Py Tests (linux, self-hosted)
     needs: runner-select
     if: ${{ always() && needs.runner-select.outputs.runner_class == 'self-hosted' }}
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.self_hosted_labels) }}
     timeout-minutes: 45
     env:
       NSE_RUNNER_CLASS: "self-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
+      NSE_RUNNER_TIER_LABELS: ${{ needs.runner-select.outputs.self_hosted_labels }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -126,7 +139,7 @@ jobs:
       - name: Runner selection record
         shell: bash
         run: |
-          echo "::notice::Py Tests (linux) on SELF-HOSTED (labels: self-hosted,Linux,X64) runner. Reason: $NSE_SELECTION_REASON"
+          echo "::notice::Py Tests (linux) on SELF-HOSTED (labels: $NSE_RUNNER_TIER_LABELS) runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=self-hosted" >> "$GITHUB_ENV"
 
       # No actions/setup-python here. On the self-hosted runner it cannot
