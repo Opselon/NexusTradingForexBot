@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-REPO_CI_DIR = Path(__file__).resolve().parents[1] / "ci"
-sys.path.insert(0, str(REPO_CI_DIR))
+_REPO_ROOT = Path(__file__).resolve().parents[2]  # tests/ci/x.py -> repo root
+sys.path.insert(0, str(_REPO_ROOT / "scripts" / "ci"))
 
 import test_planner  # noqa: E402
 
@@ -76,9 +76,7 @@ def test_scenario_g_global_invalidation_expands(mini_repo: Path):
     p = test_planner.plan(["tests/conftest.py"], mini_repo)
     assert p["full_suite_required"] is True
     reasons = {t["id"]: t["reason"] for t in p["selected_tests"]}
-    assert any(
-        "conservative_fallback" in r for r in reasons.values()
-    ), reasons
+    assert any("conservative_fallback" in r for r in reasons.values()), reasons
     assert p["fallback_reason"] and "conftest" in p["fallback_reason"]
 
 
@@ -89,9 +87,7 @@ def test_scenario_g_lockfile_invalidates(mini_repo: Path):
 
 def test_scenario_h_safety_change_mandatory_expansion(mini_repo: Path):
     p = test_planner.plan(["src/nexus_scalp/execution/trade_manager.py"], mini_repo)
-    reasons = {
-        t["id"]: t["reason"] for t in p["selected_tests"]
-    }
+    reasons = {t["id"]: t["reason"] for t in p["selected_tests"]}
     assert "tests/unit/test_trade_manager.py" in reasons
     assert "mandatory_safety" in reasons["tests/unit/test_trade_manager.py"]
     # mandatory expansion pulls the whole critical suite
@@ -176,9 +172,7 @@ def test_unresolvable_relative_import_marks_uncertain(mini_repo: Path):
 
 
 def test_relative_import_in_tests_resolves_to_helper(mini_repo: Path):
-    (mini_repo / "tests" / "unit" / "helpers_local.py").write_text(
-        "def helper():\n    return 1\n"
-    )
+    (mini_repo / "tests" / "unit" / "helpers_local.py").write_text("def helper():\n    return 1\n")
     (mini_repo / "tests" / "unit" / "test_uses_helper.py").write_text(
         "from .helpers_local import helper\n\n\ndef test_helper():\n    assert helper()\n"
     )
