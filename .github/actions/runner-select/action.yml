@@ -52,8 +52,8 @@ outputs:
     value: ${{ steps.select.outputs.decision_json }}
   self_hosted_labels:
     description: >-
-      JSON array of the winning self-hosted label set — feed it to
-      `runs-on: ${{ fromJSON(...) }}`. Empty when the class is
+      JSON array of the winning self-hosted label set, ready to be unwrapped
+      with fromJSON() in a runs-on expression. Empty when the class is
       github-hosted (the self-hosted lane is skipped and never evaluates
       its runs-on).
     value: ${{ steps.select.outputs.runner_labels }}
