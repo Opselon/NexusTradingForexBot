@@ -166,6 +166,17 @@ def _load_doctor(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, o
     src = script.read_text(encoding="utf-8")
     ns: dict[str, object] = {"__name__": "mt5_doctor_under_test"}
     monkeypatch.chdir(tmp_path)  # no repo .env beside us
+    # Hermetic host layout: the doctor resolves its module-level MT5 root
+    # from NEXUS_MT5_ROOT at import time. Left at the /home/ubuntu default,
+    # these tests couple to the nexus box's real filesystem: on the tier-1
+    # Docker runner the 24.04 base image ships an unreadable /home/ubuntu
+    # (mode 750, owned by the image's default user), so Path.exists() on the
+    # default terminal path raises EACCES instead of returning False and the
+    # exec dies inside resolve_terminal() before main() runs. Point ROOT and
+    # WINE at tmp so every host behaves like a machine without MT5 — which is
+    # exactly the state these credential-hygiene tests want to exercise.
+    monkeypatch.setenv("NEXUS_MT5_ROOT", str(tmp_path / "nexus-mt5-root"))
+    monkeypatch.setenv("NEXUS_MT5_WINE", str(tmp_path / "bin" / "wine"))
     exec(compile(src, str(script), "exec"), ns)  # trusted repo script
     return ns
 
