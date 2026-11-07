@@ -164,7 +164,7 @@ jobs:
           FLAG="${ENABLE_WINDOWS_SELF_HOSTED:-}"
           if [ "$FLAG" = "true" ]; then
             echo "runner_class=self-hosted-pending" >> "$GITHUB_OUTPUT"
-            echo "reason=ENABLE_WINDOWS_SELF_HOSTED=true; the dispatch lanes route via runner-select.yml" >> "$GITHUB_OUTPUT"
+            echo "reason=ENABLE_WINDOWS_SELF_HOSTED=true; the dispatch lanes route via .github/actions/runner-select" >> "$GITHUB_OUTPUT"
           else
             echo "runner_class=github-hosted" >> "$GITHUB_OUTPUT"
             echo "reason=ENABLE_WINDOWS_SELF_HOSTED not set (default disabled) -> github-hosted windows-latest" >> "$GITHUB_OUTPUT"

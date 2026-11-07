@@ -17,7 +17,7 @@ this file is the CI-specific companion.
 | `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
 | `tests-os.yml` | push/PR main·develop·ci-tests; Monday cron; dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
-| `runner-select.yml` | `workflow_call` only | Centralized runner-availability preflight and class selection for every lane | ci |
+| `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
 | `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
 | `tests-macos.yml` | `workflow_dispatch` ONLY | **Manual macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
@@ -112,7 +112,8 @@ a runner decision; every lane calls the same reusable preflight.
 GitHub event (push / PR / schedule / dispatch)
         │
         ▼
-  tests-os.yml  ──►  runner-select.yml  (reusable, ubuntu-latest)
+  tests-os.yml  ──►  runner-select (composite action,
+                         run on a GitHub-hosted preflight job)
                          │  scripts/ci/runner_select.py
                          │  GET /repos/{o}/{r}/actions/runners
                          ▼
@@ -135,7 +136,7 @@ GitHub event (push / PR / schedule / dispatch)
 | :--- | :--- |
 | `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace. `--snippet` emits the YAML env fragment. |
 | `scripts/ci/runner_select.py` | Availability preflight + runner-class decision. Pure `select()` function; fail-open to github-hosted on ANY error. |
-| `.github/workflows/runner-select.yml` | Reusable workflow that runs the preflight on GitHub-hosted infrastructure and exports `runner_class` / `self_hosted_eligible` / `selection_reason` / `decision_json`. |
+| `.github/actions/runner-select` | Composite action: availability preflight + class decision, used by every lane's preflight job. (A reusable *workflow* cannot declare workflow-level `outputs:` in this repository — verified by experiment — so the shared component is an action.) |
 | `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. |
 | `.github/workflows/tests-windows.yml` | Manual Windows suite (full coverage preserved) + `ENABLE_WINDOWS_SELF_HOSTED` flag. |
 | `.github/workflows/tests-macos.yml` | Manual macOS suite (full coverage preserved) + `ENABLE_MACOS_SELF_HOSTED` flag. |

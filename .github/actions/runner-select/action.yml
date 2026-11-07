@@ -1,0 +1,98 @@
+name: "NSE runner selector"
+
+description: >-
+  Centralized CI runner-availability preflight and runner-class decision.
+  Runs scripts/ci/runner_select.py on WHATEVER runner hosts this step
+  (use it from a cheap GitHub-hosted preflight job) and exports the
+  decision as step outputs for the caller's routing.
+
+  Why a composite action and not a reusable workflow: a reusable workflow
+  in this repository cannot declare workflow-level `outputs:` — every form
+  tested (with/without description, with/without workflow_dispatch) makes
+  GitHub reject the callee at load time with zero jobs (verified by direct
+  experiment, 2026-11). A composite action has no such limitation and
+  keeps the decision in ONE place.
+
+inputs:
+  platform:
+    description: "Target platform: linux | windows | macos"
+    required: true
+  untrusted:
+    description: "Force the GitHub-hosted class (fork PRs; no credential consulted)"
+    required: false
+    default: "false"
+  labels:
+    description: "Comma-separated self-hosted label set (defaults to the platform's set)"
+    required: false
+    default: ""
+  hosted:
+    description: "GitHub-hosted fallback image (defaults to the platform's image)"
+    required: false
+    default: ""
+
+outputs:
+  runner_class:
+    description: "self-hosted | github-hosted"
+    value: ${{ steps.select.outputs.runner_class }}
+  self_hosted_eligible:
+    description: "Whether an online+idle matching self-hosted runner exists"
+    value: ${{ steps.select.outputs.self_hosted_eligible }}
+  selection_reason:
+    description: "Human-readable, secret-free reason for the decision"
+    value: ${{ steps.select.outputs.selection_reason }}
+  decision_json:
+    description: "Full JSON decision record (logs + summaries)"
+    value: ${{ steps.select.outputs.decision_json }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Select runner class (availability preflight)
+      id: select
+      shell: bash
+      env:
+        NSE_RUNNER_PLATFORM: ${{ inputs.platform }}
+        NSE_RUNNER_LABELS_IN: ${{ inputs.labels }}
+        NSE_RUNNER_HOSTED_IN: ${{ inputs.hosted }}
+        NSE_RUNNER_UNTRUSTED: ${{ inputs.untrusted }}
+        # Credential presence is the ONLY secret-dependent input. Absent =>
+        # fail open to the hosted fallback. Never printed, never forwarded.
+        NSE_RUNNER_STATUS_TOKEN: ${{ env.NSE_RUNNER_STATUS_TOKEN }}
+      run: |
+        set -euo pipefail
+        # Resolve platform defaults (centralized in runner_config values
+        # mirrored here so the action is self-contained).
+        case "$NSE_RUNNER_PLATFORM" in
+          linux)   DEF_LABELS="self-hosted,Linux,X64";   DEF_HOSTED="ubuntu-latest" ;;
+          windows) DEF_LABELS="self-hosted,Windows,X64"; DEF_HOSTED="windows-latest" ;;
+          macos)   DEF_LABELS="self-hosted,macOS,ARM64"; DEF_HOSTED="macos-latest" ;;
+          *) echo "::error::unknown platform '$NSE_RUNNER_PLATFORM'"; exit 1 ;;
+        esac
+        LABELS="${NSE_RUNNER_LABELS_IN:-$DEF_LABELS}"
+        HOSTED="${NSE_RUNNER_HOSTED_IN:-$DEF_HOSTED}"
+        UNTRUSTED=""
+        if [ "$NSE_RUNNER_UNTRUSTED" = "true" ]; then UNTRUSTED="--untrusted"; fi
+        python3 scripts/ci/runner_select.py \
+          --platform "$NSE_RUNNER_PLATFORM" \
+          --labels "$LABELS" \
+          --hosted "$HOSTED" \
+          $UNTRUSTED
+
+    - name: Observability record
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## Runner selection (${{ inputs.platform }})"
+          echo '| field | value |'
+          echo '| --- | --- |'
+          echo "| platform | \`${{ inputs.platform }}\` |"
+          echo "| runner class | \`${{ steps.select.outputs.runner_class }}\` |"
+          echo "| self-hosted eligible | \`${{ steps.select.outputs.self_hosted_eligible }}\` |"
+          echo "| reason | ${{ steps.select.outputs.selection_reason }} |"
+          echo "| untrusted (fork) PR | \`${{ inputs.untrusted }}\` |"
+          echo ''
+          echo 'Availability checks are not atomic reservations; a self-hosted'
+          echo 'job can still be queued when the runner is taken between the'
+          echo 'check and the assignment (see docs/CI_ARCHITECTURE.md).'
+        } >> "$GITHUB_STEP_SUMMARY"

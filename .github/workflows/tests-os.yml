@@ -77,17 +77,33 @@ env:
 jobs:
   # -------------------------------------------------------------------------
   # Preflight: runner availability (runs on GitHub-hosted infrastructure).
+  # A composite action (not a reusable workflow) carries the decision: a
+  # reusable-workflow callee cannot declare workflow-level outputs in this
+  # repository (verified by direct experiment — every form tested is
+  # rejected at load time with zero jobs).
   # -------------------------------------------------------------------------
   runner-select:
     name: Runner Selector (linux)
-    uses: ./.github/workflows/runner-select.yml
-    permissions:
-      contents: read
-    with:
-      platform: linux
-      # A fork PR (head repo != this repo) is untrusted: never self-hosted,
-      # never exposed to runner-management credentials.
-      untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runner_class: ${{ steps.select.outputs.runner_class }}
+      self_hosted_eligible: ${{ steps.select.outputs.self_hosted_eligible }}
+      selection_reason: ${{ steps.select.outputs.selection_reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select runner class (availability preflight)
+        id: select
+        uses: ./.github/actions/runner-select
+        env:
+          NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
+        with:
+          platform: linux
+          # A fork PR (head repo != this repo) is untrusted: never
+          # self-hosted, never exposed to runner credentials.
+          untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
   # -------------------------------------------------------------------------
   # LINUX, SELF-HOSTED leg — used only when the preflight found an

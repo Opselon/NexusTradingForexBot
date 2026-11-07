@@ -284,3 +284,39 @@ def test_malformed_repository_identifier_fails_open(monkeypatch=None):
     decision = _json.loads(r.stdout[start:])
     _assert_class(decision, "github-hosted")
     assert "malformed repository identifier" in decision["reason"]
+
+
+def test_reusable_workflow_outputs_are_unusable_in_this_repo():
+    """Documented platform restriction (verified by experiment, 2026-11).
+
+    A reusable workflow in Opselon/NexusTradingForexBot cannot declare
+    workflow-level ``outputs:``: every form tested (with/without
+    description, with/without a workflow_dispatch trigger) makes GitHub
+    reject the callee at load time, failing every caller with ZERO jobs.
+    The shared runner-selection component is therefore a COMPOSITE ACTION
+    (.github/actions/runner-select), whose step outputs have no such
+    limitation. This test keeps the fact in the suite: if someone later
+    reintroduces a reusable-workflow callee with top-level outputs, the
+    check below reminds them why the build broke.
+    """
+    from pathlib import Path
+
+    workflows = Path(__file__).resolve().parents[2] / ".github" / "workflows"
+    offenders = []
+    for wf in workflows.glob("*.yml"):
+        import yaml as _yaml
+
+        data = _yaml.safe_load(wf.read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or "outputs" not in data:
+            continue
+        on = data.get(True)
+        if on is None:
+            on = data.get("on")
+        if isinstance(on, str):
+            on = {on: None}
+        if isinstance(on, dict) and "workflow_call" in on:
+            offenders.append(wf.name)
+    assert not offenders, (
+        "reusable workflows must not declare top-level outputs in this repo "
+        f"(load-time rejection): {offenders}"
+    )

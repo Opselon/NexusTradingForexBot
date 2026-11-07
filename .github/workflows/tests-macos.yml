@@ -70,13 +70,25 @@ jobs:
   # -------------------------------------------------------------------------
   runner-select:
     name: Runner Selector (macos)
-    uses: ./.github/workflows/runner-select.yml
-    permissions:
-      contents: read
-    with:
-      platform: macos
-      # workflow_dispatch is trusted (write-access users only).
-      untrusted: false
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runner_class: ${{ steps.select.outputs.runner_class }}
+      self_hosted_eligible: ${{ steps.select.outputs.self_hosted_eligible }}
+      selection_reason: ${{ steps.select.outputs.selection_reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select runner class (availability preflight)
+        id: select
+        uses: ./.github/actions/runner-select
+        env:
+          NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
+        with:
+          platform: macos
+          # workflow_dispatch is trusted (write-access users only).
+          untrusted: false
 
   resolve-class:
     name: Resolve runner class (macos)
