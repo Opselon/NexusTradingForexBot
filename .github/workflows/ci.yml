@@ -195,6 +195,10 @@ jobs:
     env:
       CI_RESULTS_DIR: ci-results-lint
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
+      # Tier-1 runs from a network where pypi.org is unreachable - every pip
+      # bootstrap (incl. setup-python bundled tools) must use the mirror.
+      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      PIP_DEFAULT_TIMEOUT: "30"
 
     steps:
       - name: Checkout repository
@@ -494,6 +498,10 @@ jobs:
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
+      # Tier-1 runs from a network where pypi.org is unreachable - every pip
+      # bootstrap (incl. setup-python bundled tools) must use the mirror.
+      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      PIP_DEFAULT_TIMEOUT: "30"
 
     steps:
       - name: Checkout repository
