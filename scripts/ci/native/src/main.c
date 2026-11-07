@@ -87,6 +87,30 @@ static int cmd_plan(int argc, char **argv) {
     return 0;
 }
 
+static int cmd_changed_files(int argc, char **argv) {
+    const char *base = NULL, *head = NULL;
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "--base") == 0 && i + 1 < argc) base = argv[++i];
+        else if (strcmp(argv[i], "--head") == 0 && i + 1 < argc) head = argv[++i];
+    }
+    if (!base || !head) {
+        fprintf(stderr, "changed-files: --base and --head required\n");
+        return 2;
+    }
+    StrBuf files;
+    sb_init(&files);
+    if (change_detector_git_files(base, head, &files) != 0) {
+        sb_free(&files);
+        fprintf(stderr, "changed-files: git diff failed\n");
+        return 3;
+    }
+    for (const char *p = files.data ? files.data : ""; *p; p += strlen(p) + 1) {
+        printf("%s\n", p);
+    }
+    sb_free(&files);
+    return 0;
+}
+
 static int cmd_classify(int argc, char **argv) {
     const char *base = NULL, *head = NULL;
     for (int i = 0; i < argc; i++) {
@@ -226,6 +250,7 @@ int nse_engine_main(int argc, char **argv) {
     }
     const char *cmd = argv[1];
     if (strcmp(cmd, "plan") == 0) return cmd_plan(argc - 2, argv + 2);
+    if (strcmp(cmd, "changed-files") == 0) return cmd_changed_files(argc - 2, argv + 2);
     if (strcmp(cmd, "classify") == 0) return cmd_classify(argc - 2, argv + 2);
     if (strcmp(cmd, "fingerprint") == 0) return cmd_fingerprint(argc - 2, argv + 2);
     if (strcmp(cmd, "validate-plan") == 0) return cmd_validate_plan(argc - 2, argv + 2);
