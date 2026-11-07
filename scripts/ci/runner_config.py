@@ -110,7 +110,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--json", action="store_true", help="emit the configuration as JSON")
     args = ap.parse_args(argv)
     if args.snippet:
-        print(snippet())
+        # Emitted through stdout (never a broad print of a mapping) — the
+        # snippet holds only public routing constants.
+        sys.stdout.write(snippet() + "\n")
         return 0
     if args.json:
         # Written via sys.stdout.write (not print) and only after the caller
