@@ -17,14 +17,9 @@ name: Nightly Client E2E (Docker)
 # POST toward LIVE and never place orders (README contract).
 
 on:
-  schedule:
-    # Every 15 days at 02:33 UTC (after the slow-suite nightly window).
-    # Changed from nightly (2026-11, runner-routing/cost mission): the Docker
-    # E2E soak is a heavy lane whose value is drift detection, not daily
-    # blocking; a fortnightly cadence keeps the evidence fresh at ~1/15th of
-    # the Actions minutes. Manual workflow_dispatch remains available for
-    # on-demand runs any time.
-    - cron: "33 2 1,16 * *"
+  # CI quota diet + mission policy (2026-11): E2E is MANUAL-ONLY. The Docker
+  # soak is heavy; scheduled sweeps no longer run it. Use workflow_dispatch
+  # whenever a full E2E evidence pass is explicitly wanted.
   workflow_dispatch:
 
 permissions:
