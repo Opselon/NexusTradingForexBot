@@ -139,11 +139,13 @@ jobs:
           echo "::notice::Py Tests (windows) on SELF-HOSTED (labels: self-hosted,Windows,X64) runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=self-hosted" >> "$GITHUB_ENV"
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+      # No actions/setup-python here. On the self-hosted runner it cannot
+      # install 3.11 (no toolcache, no hosted image) and its silent fallback
+      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
+      # trap this lane hit on its first self-hosted run (2026-11-07).
+      # astral-sh/setup-uv provisions the exact pinned Python into
+      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
+      # below builds the project venv from it.
 
       - name: Install uv (pinned — the canonical lock tool)
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -153,10 +155,44 @@ jobs:
           cache-dependency-glob: requirements.lock
 
       - name: Install via lock (hash-verified requirements.lock)
+        id: env
         shell: bash
         run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
+          set -euo pipefail
+          # Deterministic environment: uv provisions the EXACT Python and
+          # installs into a project venv. `--system` is deliberately NOT used:
+          # a self-hosted runner's system Python is PEP-668 externally
+          # managed (uv refuses to write there), and its version is not
+          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
+          # (the runner user's persistent home, survives jobs and restarts),
+          # so warm runs pay nothing.
+          # The venv name binds to the LOCKFILE HASH + Python version: a
+          # branch with different deps or a different interpreter can never
+          # reuse a stale environment (the workspace is wiped anyway; this
+          # guard also fails closed on a mid-job lock switch).
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
+          VENV_DIR=".venv-$VENV_KEY"
+          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
+          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
+          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
+          # Put the venv first on PATH so every later `python`/`pytest` call
+          # resolves into it, and record it for the report below.
+          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
+          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
+          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+
+      - name: Report environment (cache-reuse evidence)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo "## Environment (runner_class=${{ env.NSE_RUNNER_CLASS }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Decide lane (classifier + event policy)
         id: lane
@@ -248,24 +284,61 @@ jobs:
           echo "::notice::Py Tests (windows) on GITHUB-HOSTED runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=github-hosted" >> "$GITHUB_ENV"
 
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: "pip"
+      # No actions/setup-python here. On the self-hosted runner it cannot
+      # install 3.11 (no toolcache, no hosted image) and its silent fallback
+      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
+      # trap this lane hit on its first self-hosted run (2026-11-07).
+      # astral-sh/setup-uv provisions the exact pinned Python into
+      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
+      # below builds the project venv from it.
 
       - name: Install uv (pinned — the canonical lock tool)
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version: "0.12.10"
-          enable-cache: false
-          cache-dependency-glob: requirements.lock
+          # GitHub-hosted ephemeral runner: the Actions cache is inert here
+          # (the machine is discarded), and enabling it would alias this job's
+          # cache key with the self-hosted machine's system-Python key.
 
       - name: Install via lock (hash-verified requirements.lock)
+        id: env
         shell: bash
         run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
+          set -euo pipefail
+          # Deterministic environment: uv provisions the EXACT Python and
+          # installs into a project venv. `--system` is deliberately NOT used:
+          # a self-hosted runner's system Python is PEP-668 externally
+          # managed (uv refuses to write there), and its version is not
+          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
+          # (the runner user's persistent home, survives jobs and restarts),
+          # so warm runs pay nothing.
+          # The venv name binds to the LOCKFILE HASH + Python version: a
+          # branch with different deps or a different interpreter can never
+          # reuse a stale environment (the workspace is wiped anyway; this
+          # guard also fails closed on a mid-job lock switch).
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
+          VENV_DIR=".venv-$VENV_KEY"
+          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
+          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
+          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
+          # Put the venv first on PATH so every later `python`/`pytest` call
+          # resolves into it, and record it for the report below.
+          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
+          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
+          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+
+      - name: Report environment (cache-reuse evidence)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          echo "## Environment (runner_class=${{ env.NSE_RUNNER_CLASS }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Decide lane (classifier + event policy)
         id: lane
