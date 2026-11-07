@@ -8,6 +8,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/types.h>
 
 /* link-time providers from test fixtures below */
 int engine_selftest(void);
@@ -65,11 +67,14 @@ static int test_json_parser(void) {
 }
 
 static int test_plan_fixture(void) {
-    /* Build a miniature NSE-shaped tree in /tmp and verify the plan matches
-     * the Python planner byte-for-byte (digest equality) — the fixture is
-     * also exercised from Python during CI equivalence testing. */
-    static const char *ROOT = "/tmp/nse-engine-fixture";
-    char cmd[512];
+    /* Build a miniature NSE-shaped tree in a PRIVATE temp dir and verify the
+     * plan matches the Python planner byte-for-byte (digest equality). The
+     * directory is UNIQUE per process: a fixed path here once poisoned
+     * concurrent pipelines that reused the same fixture location. */
+    char root[256];
+    snprintf(root, sizeof(root), "/tmp/nse-selftest-%d", (int)getpid());
+    const char *ROOT = root;
+    char cmd[768];
     snprintf(cmd, sizeof(cmd),
              "rm -rf %s && mkdir -p %s/src/nexus_scalp/risk %s/src/nexus_scalp/execution "
              "%s/tests/unit %s/configs",
@@ -152,6 +157,10 @@ static int test_plan_fixture(void) {
     sb_free(&plan);
     sb_free(&plan2);
     sb_free(&plan3);
+    /* remove the private fixture tree */
+    char cleanup[512];
+    snprintf(cleanup, sizeof(cleanup), "rm -rf %s", ROOT);
+    (void)system(cleanup);
     return 0;
 }
 
