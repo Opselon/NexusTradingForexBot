@@ -1,36 +1,30 @@
-/* dependency_graph.c — module table, import scanning, reverse edges.
- *
- * Import semantics MUST match scripts/ci/test_planner.py:
- *   - only `nexus_scalp*` targets participate (absolute imports);
- *   - relative imports are ignored;
- *   - parent-package edges are registered (nexus_scalp.a.b -> nexus_scalp.a);
- *   - an unparseable/unreadable file registers the sentinel "<unknown>" so
- *     the selector can fail conservative.
- *
- * File walking is done by the caller-independent directory scanner below
- * (POSIX dirent + Windows fallback via FindFirstFile is intentionally NOT
- * implemented — the engine targets Linux x86_64 runners; Windows is served
- * through the Python fallback, documented in build.sh).
- */
+/* dependency_graph.c — module table, import scanning (absolute + RELATIVE),
+ * reverse edges. Semantics MUST byte-match scripts/ci/test_planner.py:
+ *   - only `nexus_scalp*` absolute targets participate;
+ *   - RELATIVE imports are resolved against the file's own package;
+ *     `from .mod import sym` resolves ONLY .mod (symbols are not modules);
+ *     `from . import a, b` treats the aliases as submodules;
+ *   - a resolved nexus_scalp target must EXIST under <root>/src/ or the graph
+ *     becomes relative_unresolved (conservative expansion upstream);
+ *   - a resolved tests target must match a known tests/<path>.py node or the
+ *     graph becomes relative_unresolved;
+ *   - an unparseable file registers the "<unknown>" sentinel;
+ *   - changed test-tree files participate as reachability roots (handled by
+ *     the selector via graph_find). */
 #include "nse_ci_engine.h"
 
 #include <dirent.h>
 #include <stdio.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <io.h>
+#define access _access
+#define F_OK 0
+#else
+#include <unistd.h>
+#endif
 
 /* ---------------- module table ---------------- */
-
-static uint64_t fnv1a(const char *s) {
-    uint64_t h = 1469598103934665603ull;
-    for (const unsigned char *p = (const unsigned char *)s; *p; p++) {
-        h ^= (uint64_t)*p;
-        h *= 1099511628211ull;
-    }
-    return h;
-}
-
-static size_t graph_find_or_add(Graph *g, const char *name, const char *path,
-                                bool is_test);
 
 void graph_init(Graph *g, Arena *a) {
     g->arena = a;
@@ -43,6 +37,7 @@ void graph_init(Graph *g, Arena *a) {
     g->importer_caps = (size_t *)arena_alloc(a, g->mod_cap * sizeof(size_t));
     g->is_test = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
     g->unparseable = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
+    g->relative_unresolved = false;
 }
 
 static void graph_ensure_cap(Graph *g, size_t need) {
@@ -73,16 +68,8 @@ static void graph_ensure_cap(Graph *g, size_t need) {
     g->mod_cap = ncap;
 }
 
-static size_t graph_find_or_add(Graph *g, const char *name, const char *path,
-                                bool is_test) {
-    /* linear scan is O(n^2) for large trees; use a small open-addressing
-     * index instead: rebuild lazily. For CI-scale trees (<= 5k modules) a
-     * hash index keeps this effectively O(1). */
-    static const size_t NO_BUCKETS = 0; /* placeholder to silence pedantic */
-    (void)NO_BUCKETS;
-    for (size_t i = 0; i < g->mod_count; i++) {
-        if (strcmp(g->mod_names[i], name) == 0) return i;
-    }
+static size_t graph_add_new(Graph *g, const char *name, const char *path,
+                            bool is_test) {
     graph_ensure_cap(g, g->mod_count + 1);
     size_t idx = g->mod_count++;
     g->mod_names[idx] = arena_strdup(g->arena, name);
@@ -95,8 +82,24 @@ static size_t graph_find_or_add(Graph *g, const char *name, const char *path,
     return idx;
 }
 
+bool graph_find(const Graph *g, const char *name, size_t *out_idx) {
+    for (size_t i = 0; i < g->mod_count; i++) {
+        if (strcmp(g->mod_names[i], name) == 0) {
+            *out_idx = i;
+            return true;
+        }
+    }
+    return false;
+}
+
+static size_t graph_find_or_add(Graph *g, const char *name, const char *path,
+                                bool is_test) {
+    size_t idx;
+    if (graph_find(g, name, &idx)) return idx;
+    return graph_add_new(g, name, path, is_test);
+}
+
 static void graph_add_edge(Graph *g, size_t from, size_t to) {
-    /* edge: "to" gains importer "from" */
     if (g->importer_counts[to] == g->importer_caps[to]) {
         size_t ncap = g->importer_caps[to] ? g->importer_caps[to] * 2 : 4;
         size_t *ni = (size_t *)arena_alloc(g->arena, ncap * sizeof(size_t));
@@ -106,23 +109,106 @@ static void graph_add_edge(Graph *g, size_t from, size_t to) {
         g->importers[to] = ni;
         g->importer_caps[to] = ncap;
     }
-    /* deduplicate edges — reachability does not need multi-edges */
     for (size_t i = 0; i < g->importer_counts[to]; i++) {
         if (g->importers[to][i] == from) return;
     }
     g->importers[to][g->importer_counts[to]++] = from;
 }
 
-/* Extract repo-internal import targets from one .py file (line scanner).
- * Mirrors the Python AST semantics for the deterministic common cases:
- *   import nexus_scalp.a.b      -> register chain
- *   from nexus_scalp.a.b import c -> register chain
- *   from .x import y            -> ignored (relative)
- */
-static void scan_imports(Graph *g, size_t self_idx, const char *text) {
+/* register a nexus_scalp target + its parent-package chain */
+static void register_chain(Graph *g, size_t self_idx, const char *target) {
+    size_t idx = graph_find_or_add(g, target, NULL, false);
+    graph_add_edge(g, self_idx, idx);
+    char parent[512];
+    snprintf(parent, sizeof(parent), "%s", target);
+    char *dot;
+    while ((dot = strrchr(parent, '.'))) {
+        *dot = '\0';
+        size_t pidx = graph_find_or_add(g, parent, NULL, false);
+        graph_add_edge(g, self_idx, pidx);
+    }
+}
+
+/* own package for a repo-relative .py path (mirrors Python exactly) */
+static void own_package_for(const char *rel_path, bool is_test, char *pkg,
+                            size_t pkg_len) {
+    char parts[64][128];
+    size_t nparts = 0;
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "%s", rel_path);
+    size_t n = strlen(buf);
+    if (n >= 3 && strcmp(buf + n - 3, ".py") == 0) buf[n - 3] = '\0';
+    char *save = NULL;
+    char *tok = strtok_r(buf, "/", &save);
+    while (tok && nparts < 64) {
+        snprintf(parts[nparts], sizeof(parts[nparts]), "%s", tok);
+        nparts++;
+        tok = strtok_r(NULL, "/", &save);
+    }
+    bool is_init = nparts > 0 && strcmp(parts[nparts - 1], "__init__") == 0;
+    if (!is_test && nparts > 0 && strcmp(parts[0], "src") == 0) {
+        for (size_t i = 0; i + 1 < nparts; i++) {
+            snprintf(parts[i], sizeof(parts[i]), "%s", parts[i + 1]);
+        }
+        nparts--;
+    }
+    size_t mod_len = is_init ? nparts - 1 : nparts;
+    /* package = module parts minus the last one */
+    pkg[0] = '\0';
+    for (size_t i = 0; i + 1 < mod_len; i++) {
+        if (i) strncat(pkg, ".", pkg_len - strlen(pkg) - 1);
+        strncat(pkg, parts[i], pkg_len - strlen(pkg) - 1);
+    }
+    (void)is_init;
+}
+
+/* resolve + register ONE relative-import target */
+static void resolve_register(Graph *g, size_t self_idx, const char *target,
+                             const char *repo_root) {
+    if (nse_starts_with(target, "nexus_scalp")) {
+        char fs[1024];
+        snprintf(fs, sizeof(fs), "%s/src/", repo_root);
+        char rel[768];
+        snprintf(rel, sizeof(rel), "%s", target);
+        for (char *c = rel; *c; c++) {
+            if (*c == '.') *c = '/';
+        }
+        char p1[2048], p2[2048];
+        snprintf(p1, sizeof(p1), "%s%s.py", fs, rel);
+        snprintf(p2, sizeof(p2), "%s%s/__init__.py", fs, rel);
+        if (access(p1, F_OK) == 0 || access(p2, F_OK) == 0) {
+            register_chain(g, self_idx, target);
+        } else {
+            g->relative_unresolved = true;
+        }
+        return;
+    }
+    if (nse_starts_with(target, "tests")) {
+        char rel[768];
+        snprintf(rel, sizeof(rel), "%s", target);
+        for (char *c = rel; *c; c++) {
+            if (*c == '.') *c = '/';
+        }
+        char p1[800], p2[800];
+        snprintf(p1, sizeof(p1), "%s.py", rel);
+        snprintf(p2, sizeof(p2), "%s.py", target);
+        size_t idx;
+        if (graph_find(g, p1, &idx) || graph_find(g, p2, &idx)) {
+            graph_add_edge(g, self_idx, idx);
+        } else {
+            g->relative_unresolved = true;
+        }
+        return;
+    }
+    g->relative_unresolved = true;
+}
+
+/* scan one file's import lines (absolute + relative) */
+static void scan_imports(Graph *g, size_t self_idx, const char *text,
+                         const char *rel_path, const char *repo_root) {
+    bool is_test = nse_starts_with(rel_path, "tests/");
     const char *p = text;
     while (*p) {
-        /* find next line */
         const char *eol = strchr(p, '\n');
         size_t len = eol ? (size_t)(eol - p) : strlen(p);
         char line[512];
@@ -139,27 +225,15 @@ static void scan_imports(Graph *g, size_t self_idx, const char *text) {
 
         if (is_import) {
             const char *rest = s + 7;
-            /* module list: a, b, c — only nexus_scalp* entries register */
             char mod[256];
             while (*rest) {
                 size_t i = 0;
                 while (*rest && *rest != ',' && i < sizeof(mod) - 1) mod[i++] = *rest++;
                 mod[i] = '\0';
-                /* strip ' as alias' */
                 char *as = strstr(mod, " as ");
                 if (as) mod[as - mod] = '\0';
                 if (nse_starts_with(mod, "nexus_scalp")) {
-                    size_t idx = graph_find_or_add(g, mod, NULL, false);
-                    graph_add_edge(g, self_idx, idx);
-                    /* parent-package chain edges */
-                    char parent[256];
-                    snprintf(parent, sizeof(parent), "%s", mod);
-                    char *dot;
-                    while ((dot = strrchr(parent, '.'))) {
-                        *dot = '\0';
-                        size_t pidx = graph_find_or_add(g, parent, NULL, false);
-                        graph_add_edge(g, self_idx, pidx);
-                    }
+                    register_chain(g, self_idx, mod);
                 }
                 if (*rest == ',') rest++;
                 while (*rest == ' ') rest++;
@@ -167,28 +241,73 @@ static void scan_imports(Graph *g, size_t self_idx, const char *text) {
         } else {
             const char *rest = s + 5;
             while (*rest == ' ') rest++;
-            char mod[256];
+            int level = 0;
+            while (*rest == '.') {
+                level++;
+                rest++;
+            }
+            char head[256];
             size_t i = 0;
-            while (*rest && *rest != ' ' && i < sizeof(mod) - 1) mod[i++] = *rest++;
-            mod[i] = '\0';
-            if (mod[0] == '.') continue; /* relative — ignored, matches Python */
-            if (nse_starts_with(mod, "nexus_scalp")) {
-                size_t idx = graph_find_or_add(g, mod, NULL, false);
-                graph_add_edge(g, self_idx, idx);
-                char parent[256];
-                snprintf(parent, sizeof(parent), "%s", mod);
-                char *dot;
-                while ((dot = strrchr(parent, '.'))) {
+            while (*rest && *rest != ' ' && i < sizeof(head) - 1) head[i++] = *rest++;
+            head[i] = '\0';
+            const char *imp = strstr(rest, " import ");
+            char aliases[512] = "";
+            if (imp) {
+                const char *al = imp + 8;
+                while (*al == ' ') al++;
+                snprintf(aliases, sizeof(aliases), "%s", al);
+            }
+            if (level == 0) {
+                if (nse_starts_with(head, "nexus_scalp")) {
+                    register_chain(g, self_idx, head);
+                }
+            } else {
+                char pkg[512];
+                own_package_for(rel_path, is_test, pkg, sizeof(pkg));
+                char pkg2[512];
+                snprintf(pkg2, sizeof(pkg2), "%s", pkg);
+                for (int k = 0; k < level - 1; k++) {
+                    char *dot = strrchr(pkg2, '.');
+                    if (!dot) {
+                        pkg2[0] = '\0';
+                        break;
+                    }
                     *dot = '\0';
-                    size_t pidx = graph_find_or_add(g, parent, NULL, false);
-                    graph_add_edge(g, self_idx, pidx);
+                }
+                if (head[0]) {
+                    char target[768];
+                    if (pkg2[0]) snprintf(target, sizeof(target), "%s.%s", pkg2, head);
+                    else snprintf(target, sizeof(target), "%s", head);
+                    resolve_register(g, self_idx, target, repo_root);
+                } else {
+                    /* `from . import a, b` — aliases ARE submodules */
+                    char *save = NULL;
+                    char *tok = strtok_r(aliases, ",", &save);
+                    while (tok) {
+                        while (*tok == ' ') tok++;
+                        char *as = strstr(tok, " as ");
+                        if (as) *as = '\0';
+                        /* trailing trim */
+                        size_t tl = strlen(tok);
+                        while (tl > 0 && (tok[tl - 1] == ' ' || tok[tl - 1] == '\r')) {
+                            tok[--tl] = '\0';
+                        }
+                        if (*tok) {
+                            char target[768];
+                            if (pkg2[0]) snprintf(target, sizeof(target), "%s.%s", pkg2, tok);
+                            else snprintf(target, sizeof(target), "%s", tok);
+                            resolve_register(g, self_idx, target, repo_root);
+                        }
+                        tok = strtok_r(NULL, ",", &save);
+                    }
                 }
             }
         }
     }
 }
 
-static void scan_file(Graph *g, const char *rel_path, const char *abs_path) {
+static void scan_file(Graph *g, const char *rel_path, const char *abs_path,
+                      const char *repo_root) {
     StrBuf content;
     sb_init(&content);
     bool ok = read_file_all(abs_path, &content);
@@ -197,15 +316,11 @@ static void scan_file(Graph *g, const char *rel_path, const char *abs_path) {
     if (is_test) {
         self_idx = graph_find_or_add(g, rel_path, rel_path, true);
     } else {
-        /* module name from path: src/nexus_scalp/a/b.py -> nexus_scalp.a.b */
         char mod[512];
-        const char *base = nse_starts_with(rel_path, "src/")
-                               ? rel_path + 4
-                               : rel_path; /* strip "src/" */
+        const char *base = nse_starts_with(rel_path, "src/") ? rel_path + 4 : rel_path;
         snprintf(mod, sizeof(mod), "%s", base);
         size_t n = strlen(mod);
         if (n >= 3 && strcmp(mod + n - 3, ".py") == 0) mod[n - 3] = '\0';
-        /* strip trailing __init__ */
         size_t m = strlen(mod);
         if (m >= 9 && strcmp(mod + m - 9, "/__init__") == 0) mod[m - 9] = '\0';
         for (char *c = mod; *c; c++) {
@@ -215,16 +330,17 @@ static void scan_file(Graph *g, const char *rel_path, const char *abs_path) {
     }
     if (!ok) {
         g->unparseable[self_idx] = true;
-        /* sentinel: "<unknown>" module imported by this file = conservative */
         size_t unk = graph_find_or_add(g, "<unknown>", NULL, false);
         graph_add_edge(g, self_idx, unk);
     } else {
-        scan_imports(g, self_idx, content.data ? content.data : "");
+        scan_imports(g, self_idx, content.data ? content.data : "", rel_path,
+                     repo_root);
     }
     sb_free(&content);
 }
 
-static void walk_dir(Graph *g, const char *root, const char *rel_base) {
+static void walk_dir(Graph *g, const char *root, const char *rel_base,
+                     const char *repo_root) {
     DIR *d = opendir(root);
     if (!d) return;
     struct dirent *ent;
@@ -239,18 +355,13 @@ static void walk_dir(Graph *g, const char *root, const char *rel_base) {
             snprintf(child_rel, sizeof(child_rel), "%s", ent->d_name);
         }
         snprintf(child_abs, sizeof(child_abs), "%s/%s", root, ent->d_name);
-        /* d_type is not portable everywhere; probe via scan attempt */
         if (nse_ends_with(child_rel, ".py")) {
-            scan_file(g, child_rel, child_abs);
+            scan_file(g, child_rel, child_abs, repo_root);
         } else {
-            walk_dir(g, child_abs, child_rel);
+            walk_dir(g, child_abs, child_rel, repo_root);
         }
     }
     closedir(d);
-}
-
-void graph_add_file(Graph *g, const char *rel_path, const char *abs_path) {
-    scan_file(g, rel_path, abs_path);
 }
 
 void graph_scan_repo(Graph *g, const char *repo_root) {
@@ -258,12 +369,9 @@ void graph_scan_repo(Graph *g, const char *repo_root) {
     snprintf(src_root, sizeof(src_root), "%s/src/nexus_scalp", repo_root);
     char tests_root[1024];
     snprintf(tests_root, sizeof(tests_root), "%s/tests", repo_root);
-    walk_dir(g, src_root, "src/nexus_scalp");
-    walk_dir(g, tests_root, "tests");
+    walk_dir(g, src_root, "src/nexus_scalp", repo_root);
+    walk_dir(g, tests_root, "tests", repo_root);
 }
-
-/* expose walker to selector via header extension */
-void graph_scan_repo(Graph *g, const char *repo_root);
 
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
@@ -284,9 +392,11 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
         size_t idx = stack[--top];
         if (visited[idx]) continue;
         visited[idx] = true;
-        covered[idx] = true;
+        if (g->is_test[idx]) covered[idx] = true; /* changed test covers itself */
+        bool has_importer = false;
         for (size_t e = 0; e < g->importer_counts[idx]; e++) {
             size_t importer = g->importers[idx][e];
+            has_importer = true;
             if (g->is_test[importer]) {
                 sel_test[importer] = true;
                 covered[idx] = true;
@@ -294,9 +404,9 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                 stack[top++] = importer;
             }
         }
+        if (has_importer) covered[idx] = true;
     }
 
-    /* compact outputs */
     size_t n_tests = 0, n_cov = 0;
     for (size_t i = 0; i < g->mod_count; i++) {
         if (sel_test[i]) n_tests++;
