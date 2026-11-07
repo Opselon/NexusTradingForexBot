@@ -64,6 +64,8 @@ DECISION_KEYS = (
     "self_hosted_eligible",
     "reason",
     "labels",
+    "runner_labels",
+    "tier",
 )
 
 
@@ -149,8 +151,17 @@ def select(
     hosted: str,
     env: dict[str, str],
     untrusted: bool = False,
+    fallback_labels: tuple[str, ...] | list[str] | None = None,
 ) -> dict[str, Any]:
-    """Decide the runner class. Pure function — returns a decision dict."""
+    """Decide the runner class. Pure function — returns a decision dict.
+
+    ``labels`` is the tier-1 self-hosted label set (preferred). When it has
+    NO online+idle match and ``fallback_labels`` (tier-2 self-hosted pool)
+    is provided, tier-2 is tried before falling back to GitHub-hosted. The
+    winning tier is reported in ``decision["tier"]`` (1, 2, or 0 for hosted)
+    and the exact label array to schedule with lands in
+    ``decision["runner_labels"]`` (consumed via ``runs-on: fromJSON()``).
+    """
     flag_name = f"ENABLE_{platform.upper()}_SELF_HOSTED"
     enabled = (
         _flag(env, flag_name, default=True)
@@ -165,6 +176,8 @@ def select(
         "self_hosted_eligible": False,
         "reason": "",
         "labels": list(labels),
+        "runner_labels": [],
+        "tier": 0,
     }
 
     # Trust boundary first: fork PRs never reach persistent runners.
@@ -194,17 +207,36 @@ def select(
         return decision
 
     matches = eligible_runner(runners, labels)
-    decision["self_hosted_eligible"] = bool(matches)
+    chosen = list(labels)
+    tier = 1
+    if not matches and fallback_labels:
+        # Tier-1 pool empty -> try the tier-2 self-hosted pool before the
+        # GitHub-hosted last resort.
+        fb_matches = eligible_runner(runners, fallback_labels)
+        if fb_matches:
+            matches = fb_matches
+            chosen = list(fallback_labels)
+            tier = 2
     if not matches:
+        # decision keeps its initialized hosted-shape: tier=0, runner_labels=[]
         decision["reason"] = (
-            f"no online+idle runner matching labels {list(labels)} "
-            f"(checked {len(runners)} runner(s)) -> github-hosted fallback"
+            f"no online+idle runner matching tier-1 {list(labels)}"
+            + (
+                f" nor tier-2 {list(fallback_labels)}"
+                if fallback_labels
+                else ""
+            )
+            + f" (checked {len(runners)} runner(s)) -> github-hosted fallback"
         )
         return decision
 
+    decision["self_hosted_eligible"] = True
+    decision["labels"] = chosen
+    decision["runner_labels"] = chosen
+    decision["tier"] = tier
     decision["runner_class"] = "self-hosted"
     decision["reason"] = (
-        f"{len(matches)} online+idle runner(s) match labels {list(labels)} "
+        f"tier-{tier}: {len(matches)} online+idle runner(s) match labels {chosen} "
         f"(checked {len(runners)} runner(s)) -> self-hosted"
     )
     return decision
@@ -220,6 +252,12 @@ def main(argv: list[str] | None = None) -> int:
         "--repository", default=os.environ.get("GITHUB_REPOSITORY", "Opselon/NexusTradingForexBot")
     )
     ap.add_argument("--labels", required=True, help="comma-separated self-hosted label set")
+    ap.add_argument(
+        "--fallback-labels",
+        default="",
+        help="comma-separated tier-2 self-hosted label set (tried when tier-1 has "
+        "no online+idle match; empty = single-tier behavior)",
+    )
     ap.add_argument("--hosted", required=True, help="GitHub-hosted fallback image")
     ap.add_argument("--untrusted", action="store_true", help="fork PR: force github-hosted class")
     ap.add_argument("--env-prefix", default="", help=argparse.SUPPRESS)
@@ -252,6 +290,9 @@ def main(argv: list[str] | None = None) -> int:
         hosted=args.hosted,
         env=env,
         untrusted=args.untrusted,
+        fallback_labels=(
+            tuple(x for x in args.fallback_labels.split(",") if x) or None
+        ),
     )
 
     # Emit the machine-readable decision (consumed via fromJson() in the
@@ -270,6 +311,7 @@ def main(argv: list[str] | None = None) -> int:
             fh.write(f"runner_class={decision['runner_class']}\n")
             fh.write(f"self_hosted_eligible={str(decision['self_hosted_eligible']).lower()}\n")
             fh.write(f"selection_reason={decision['reason']}\n")
+            fh.write("runner_labels=" + json.dumps(decision["runner_labels"]) + "\n")
             fh.write("decision=" + json.dumps(decision) + "\n")
     return 0
 
