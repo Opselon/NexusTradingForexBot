@@ -39,18 +39,32 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _ps() -> str:
+def _ps() -> str | None:
+    """Locate a PowerShell host. Returns None when unavailable.
+
+    Called lazily (never at import time): a module-level ``pytest.skip`` is
+    invalid outside a test and turns into a collection ERROR on platforms
+    without PowerShell, which previously broke any lane that imported this
+    module on Linux (e.g. the shared OS-skew manifest).
+    """
     import shutil
 
     for candidate in ("pwsh.exe", "powershell.exe"):
         p = shutil.which(candidate)
         if p:
             return p
-    pytest.skip("no PowerShell host")
-    return ""
+    return None
 
 
-PS = _ps()
+def _require_ps() -> str:
+    """Resolve PowerShell or skip the calling test (call inside tests)."""
+    host = _ps()
+    if host is None:
+        pytest.skip("no PowerShell host")
+    return host
+
+
+PS: str | None = _ps()
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +95,7 @@ def _serve(payload: bytes, status: int = 200):
 
 
 def run_download(tmp_path: Path, url: str, dest: Path, *extra: str, max_attempts: int = 2):
+    ps = _require_ps()
     """Drive the REAL Invoke-NexusDownload through a dot-sourced installer."""
     expr = (
         '. "{inst}"; '
@@ -103,7 +118,7 @@ def run_download(tmp_path: Path, url: str, dest: Path, *extra: str, max_attempts
         extra=" ".join(extra),
     )
     return subprocess.run(
-        [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
+        [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
         capture_output=True,
         text=True,
         timeout=240,
@@ -242,8 +257,9 @@ class TestStateTelemetryFields:
             home=str(home).replace("\\", "/"),
             engine=str(engine).replace("\\", "/"),
         )
+        ps = _require_ps()
         r = subprocess.run(
-            [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
+            [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
             capture_output=True,
             text=True,
             timeout=180,
@@ -265,6 +281,7 @@ class TestChecksumManifestProbe:
     verification plan calls for)."""
 
     def test_get_file_sha256_matches_python_hashlib(self, tmp_path):
+        ps = _require_ps()
         payload = bytes(range(256)) * 512  # 128 KiB deterministic blob
         target = tmp_path / "probe.bin"
         target.write_bytes(payload)
@@ -273,7 +290,7 @@ class TestChecksumManifestProbe:
             inst=str(INSTALLER).replace("\\", "/"), p=str(target).replace("\\", "/")
         )
         r = subprocess.run(
-            [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
+            [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
             capture_output=True,
             text=True,
             timeout=120,
@@ -289,6 +306,7 @@ class TestChecksumManifestProbe:
     def test_zip_artifact_with_pinned_digest_roundtrip(self, tmp_path):
         """A ZIP artifact verified against a pre-computed digest then
         extracted: the full download->verify->extract chain in one flow."""
+        ps = _require_ps()
         good = tmp_path / "src.zip"
         with zipfile.ZipFile(good, "w") as zf:
             zf.writestr("repo/pyproject.toml", "[project]\nname = 'nexus'\n")
@@ -315,7 +333,7 @@ class TestChecksumManifestProbe:
             )
             r = subprocess.run(
                 [
-                    PS,
+                    ps,
                     "-NoProfile",
                     "-NonInteractive",
                     "-ExecutionPolicy",

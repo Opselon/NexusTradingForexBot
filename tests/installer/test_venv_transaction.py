@@ -33,23 +33,32 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _ps() -> str:
+def _ps() -> str | None:
+    """Locate a PowerShell host lazily (never at import time; a module-level
+    pytest.skip is a collection ERROR on platforms without PowerShell)."""
     import shutil
 
-    for c in ("pwsh.exe", "powershell.exe"):
-        p = shutil.which(c)
+    for candidate in ("pwsh.exe", "powershell.exe"):
+        p = shutil.which(candidate)
         if p:
             return p
-    pytest.skip("no PowerShell")
-    return ""
+    return None
 
 
-PS = _ps()
+def _require_ps() -> str:
+    host = _ps()
+    if host is None:
+        pytest.skip("no PowerShell host")
+    return host
+
+
+PS: str | None = _ps()
 
 
 def run_ps(expr: str, timeout: int = 120) -> subprocess.CompletedProcess:
+    ps = _require_ps()
     return subprocess.run(
-        [PS, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
+        [ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", expr],
         capture_output=True,
         text=True,
         timeout=timeout,

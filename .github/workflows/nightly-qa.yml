@@ -85,6 +85,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  # CI runner-routing architecture (2026-11): this workflow is scheduled
+  # and dispatch-only already (no PR/push triggers), so the Windows chaos
+  # leg is legitimate here. It keeps a Windows runtime presence in the
+  # automated nightly tier while the interactive Windows suite is
+  # manual-only. No self-hosted routing: scheduled jobs are trusted, but
+  # the nightly tier intentionally uses ephemeral hosted machines.
   lifecycle-chaos:
     name: Nightly lifecycle chaos (updater scenarios)
     runs-on: windows-latest

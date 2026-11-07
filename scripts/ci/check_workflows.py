@@ -232,7 +232,78 @@ def parse_workflow(path: Path) -> WorkflowModel:
         elif isinstance(needs, list):
             jm.needs = [str(n) for n in needs]
         wf.jobs[jname] = jm
+    # A job that calls a LOCAL reusable workflow (``uses: ./x.yml``) is
+    # statically resolvable: its usable outputs are the ones the CALLEE
+    # declares at workflow level. Record them on the caller job so
+    # needs.<job>.outputs.<name> references validate against the real
+    # declaration instead of an empty local ``outputs:`` block (which a
+    # caller-side reusable job intentionally does not repeat).
+    for _jname, jm in wf.jobs.items():
+        uses = jm.raw.get("uses")
+        if not isinstance(uses, str) or not uses.endswith(".yml"):
+            continue
+        callee_path = _resolve_local_workflow_ref(path, uses)
+        if callee_path is None:
+            continue  # not a local reusable-workflow ref
+        callee_outputs = _local_workflow_outputs(callee_path)
+        if callee_outputs is None:
+            continue  # callee unresolvable (unreadable / not reusable)
+        if callee_outputs:
+            jm.outputs = {**jm.outputs, **callee_outputs}
     return wf
+
+
+def _resolve_local_workflow_ref(caller: Path, uses: str) -> Path | None:
+    """Resolve a local ``uses: ./path/to/workflow.yml`` reference.
+
+    A ref may be repo-root-relative (``./.github/workflows/x.yml`` — the
+    usual form) or workflows-dir-relative (``./x.yml``); handle both so
+    callers may reference siblings either way. Returns None for non-local
+    refs (``owner/repo@sha``) which cannot be resolved offline.
+    """
+    ref = uses.removeprefix("./")
+    # Local refs contain a path separator and end in .yml; anything else
+    # (owner/repo@sha, docker://image) cannot be resolved offline.
+    if not ref.endswith(".yml") or "/" not in ref:
+        return None
+    # caller = <repo>/.github/workflows/x.yml -> parents[2] is the repo root.
+    root_relative = caller.parents[2] / ref
+    if root_relative.is_file():
+        return root_relative
+    sibling = caller.parent / ref
+    if sibling.is_file():
+        return sibling
+    return None
+
+
+def _local_workflow_outputs(callee: Path) -> dict[str, str] | None:
+    """Workflow-level ``outputs:`` declared by a local reusable workflow.
+
+    Returns None when the file does not exist or is not parseable, so the
+    caller keeps its own declaration. Returns {} when the callee parses but
+    declares no outputs (a legitimate, still-resolvable case).
+    """
+    if not callee.is_file():
+        return None
+    try:
+        data = yaml.safe_load(callee.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    # ``on`` may parse as the boolean True (YAML 1.1) or stay the string
+    # "on" (when quoted, as runner-select.yml does deliberately).
+    on = data.get(True)
+    if on is None:
+        on = data.get("on")
+    if isinstance(on, str):
+        on = {on: None}
+    if not isinstance(on, dict) or "workflow_call" not in on:
+        return None  # not a reusable workflow; outputs are not consumable
+    outputs = data.get("outputs") or {}
+    if not isinstance(outputs, dict):
+        return {}
+    return {str(k): str(v) for k, v in outputs.items()}
 
 
 # --------------------------------------------------------------------------- #

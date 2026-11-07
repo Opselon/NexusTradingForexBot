@@ -94,9 +94,30 @@ REQUIRED_MAIN_CI_CHECKS: tuple[str, ...] = (
 #: ci.yml, so the evidence exists for any releasable commit; a missing or red
 #: runtime context fails the release authorization exactly like a failed
 #: required check (fail-closed).
+#:
+#: CI runner-routing architecture (2026-11): Windows is excluded from
+#: automatic CI, so the "MetaTrader 5 Native Windows IPC" context is
+#: expected to be SKIPPED on PR/push events. A skipped check is not
+#: evidence, so the release boundary instead requires the MANUAL Windows
+#: lane contexts below (produced by tests-windows.yml / the scheduled MT5
+#: runs). They are not required on PRs; they are required HERE. Both are
+#: absent-or-green on a PR-only SHA, which is exactly the case this gate
+#: must refuse: a release may not be cut from a commit whose Windows
+#: evidence does not exist.
 REQUIRED_RELEASE_RUNTIME_CHECKS: tuple[str, ...] = (
     "Full Runtime Overall Verdict",
     "DB Fabric Certification (SQLite ↔ PostgreSQL)",
+)
+
+#: Windows manual-lane contexts whose evidence the release boundary accepts
+#: for the release SHA (any one satisfied is enough). Produced by
+#: .github/workflows/tests-windows.yml (workflow_dispatch) and by the
+#: scheduled mt5-native-windows runs. A release whose SHA has none of these
+#: has NO Windows evidence and is refused.
+REQUIRED_RELEASE_WINDOWS_EVIDENCE: tuple[str, ...] = (
+    "Py Tests (windows-latest, hosted)",
+    "Py Tests (windows-latest, self-hosted)",
+    "MetaTrader 5 Native Windows IPC / MetaTrader 5 Native Windows IPC",
 )
 
 _API_RE = re.compile(r"^https://api\.github\.com/repos/([^/]+/[^/]+)$")
@@ -214,6 +235,30 @@ def authorize(
             failures.append(f"{name}: pending (not completed)")
         elif state != _SUCCESS:
             failures.append(f"{name}: {state}")
+
+    # Windows manual-lane evidence (CI runner-routing architecture, 2026-11).
+    # The automatic Windows contexts are expected to be SKIPPED on PR/push;
+    # a skipped context is not evidence. The release must instead carry at
+    # least one green Windows manual-lane context for this exact SHA, and no
+    # Windows manual-lane context may have FAILED (a failure is never masked
+    # by a green sibling, mirroring the per-name rule above). This branch
+    # cannot turn a verdict green; it can only refuse to authorize.
+    windows_ok = False
+    for name in REQUIRED_RELEASE_WINDOWS_EVIDENCE:
+        state = verdicts.get(name)
+        if state == _SUCCESS:
+            windows_ok = True
+        elif state == "pending":
+            failures.append(f"{name}: pending (Windows evidence not completed)")
+        elif state is not None and state not in {"skipped", "neutral"}:
+            failures.append(f"{name}: {state} (a red Windows lane refuses the release)")
+    if not windows_ok and not any(name in verdicts for name in REQUIRED_RELEASE_WINDOWS_EVIDENCE):
+        missing.append(
+            "Windows lane evidence (none of: "
+            + ", ".join(REQUIRED_RELEASE_WINDOWS_EVIDENCE)
+            + ") — run tests-windows.yml on this SHA"
+        )
+
     return (not failures and not missing), failures, missing
 
 

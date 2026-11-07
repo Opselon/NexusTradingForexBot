@@ -1,0 +1,333 @@
+name: Tests (Windows, manual)
+
+# ---------------------------------------------------------------------------
+# WINDOWS TEST SUITE — manual execution only (CI runner-routing
+# architecture, 2026-11). This workflow exists ON DEMAND; it is never
+# scheduled by an ordinary PR or push event.
+#
+# What this workflow is:
+#   * The COMPLETE preserved Windows test infrastructure — the full
+#     critical suite, the Windows-skewed fast lane, and (optionally) the
+#     MT5 native integration leg. Nothing from the old automatic lane was
+#     deleted or weakened.
+#   * Self-hosted-ready: when the repository variable
+#     ENABLE_WINDOWS_SELF_HOSTED is "true" AND an online+idle runner
+#     matching (self-hosted, Windows, X64) exists, the suite runs there.
+#     Otherwise it runs on the github-hosted windows-latest fallback.
+#     Flipping the flag is the ONLY action needed to adopt a self-hosted
+#     Windows runner — no workflow edit, no redesign.
+#
+# What this workflow is NOT:
+#   * It is not a required PR check. Branch protection requires the context
+#     name "Py Tests (windows-latest)"; that context is emitted by
+#     tests-os.yml as an explicit NOT-EXECUTED routing status. The REAL
+#     Windows evidence for a merge lives in the runs of THIS workflow
+#     triggered by an authorized user.
+#
+# Fork-safety: workflow_dispatch can only be triggered by users with write
+# access to the repository, so a fork contributor cannot route code onto a
+# persistent self-hosted Windows machine.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Run the FULL critical suite (default: Windows-skewed fast lane)"
+        type: boolean
+        default: false
+      runner_class:
+        description: "Force a runner class: auto | self-hosted | github-hosted"
+        type: string
+        default: "auto"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-windows-manual-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  NSE_RUNNER_WINDOWS_SELF_HOSTED_LABELS: "self-hosted,Windows,X64"
+  NSE_RUNNER_WINDOWS_HOSTED: "windows-latest"
+  # Feature flag (repository variable, default disabled).
+  ENABLE_WINDOWS_SELF_HOSTED: ${{ vars.ENABLE_WINDOWS_SELF_HOSTED }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Preflight: Windows runner availability. Runs on GitHub-hosted
+  # infrastructure so the check itself never depends on the machine it
+  # inspects, and so a missing credential fails open to the hosted class.
+  # -------------------------------------------------------------------------
+  runner-select:
+    name: Runner Selector (windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runner_class: ${{ steps.select.outputs.runner_class }}
+      self_hosted_eligible: ${{ steps.select.outputs.self_hosted_eligible }}
+      selection_reason: ${{ steps.select.outputs.selection_reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select runner class (availability preflight)
+        id: select
+        uses: ./.github/actions/runner-select
+        env:
+          NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
+        with:
+          platform: windows
+          # workflow_dispatch is trusted (write-access users only).
+          untrusted: false
+
+  # Determines the effective class after the manual override input. Kept as
+  # its own tiny job so the override logic lives in ONE place and both legs
+  # read the same value.
+  resolve-class:
+    name: Resolve runner class (windows)
+    needs: runner-select
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      runner_class: ${{ steps.resolve.outputs.runner_class }}
+      reason: ${{ steps.resolve.outputs.reason }}
+    steps:
+      - name: Resolve
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTO="${{ needs.runner-select.outputs.runner_class }}"
+          FORCE="${{ inputs.runner_class }}"
+          CLASS="$AUTO"
+          REASON="auto: ${{ needs.runner-select.outputs.selection_reason }}"
+          if [ "$FORCE" = "self-hosted" ] || [ "$FORCE" = "github-hosted" ]; then
+            CLASS="$FORCE"
+            REASON="manual override (runner_class input): $FORCE (auto was: $AUTO)"
+          fi
+          echo "runner_class=$CLASS" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "::notice::windows runner class: $CLASS — $REASON"
+
+  # -------------------------------------------------------------------------
+  # WINDOWS, SELF-HOSTED leg — only when ENABLE_WINDOWS_SELF_HOSTED=true AND
+  # the preflight found an online+idle (self-hosted, Windows, X64) runner.
+  # Mutually exclusive with the hosted leg: exactly one reports.
+  # -------------------------------------------------------------------------
+  tests-windows-self-hosted:
+    name: Py Tests (windows-latest, self-hosted)
+    needs: [runner-select, resolve-class]
+    if: ${{ always() && needs.resolve-class.outputs.runner_class == 'self-hosted' }}
+    runs-on: [self-hosted, Windows, X64]
+    timeout-minutes: 60
+    env:
+      NSE_RUNNER_CLASS: "self-hosted"
+      NSE_SELECTION_REASON: ${{ needs.resolve-class.outputs.reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner selection record
+        shell: bash
+        run: |
+          echo "::notice::Py Tests (windows) on SELF-HOSTED (labels: self-hosted,Windows,X64) runner. Reason: $NSE_SELECTION_REASON"
+          echo "runner_class=self-hosted" >> "$GITHUB_ENV"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Decide lane (classifier + event policy)
+        id: lane
+        shell: bash
+        # full_suite dispatch input forces FULL; otherwise the Windows-skew
+        # fast lane runs. NSE_FORCE_FULL_SUITE is read by decide_os_lane.bash.
+        env:
+          NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
+        run: scripts/ci/decide_os_lane.bash windows
+
+      - name: Run Windows-skewed subset (default dispatch lane)
+        if: steps.lane.outputs.mode == 'SKEW'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          exit $rc
+
+      - name: Run Full Critical Suite (full_suite=true)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+                 > "pytest-windows.txt" 2>&1
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          cat "pytest-windows.txt" | tail -60
+          exit $rc
+
+      - name: Lane report (always — required-context honesty contract)
+        if: always()
+        shell: bash
+        run: |
+          MODE="${{ steps.lane.outputs.mode }}"
+          if [ "$MODE" = "SKIP-REPORT" ]; then
+            echo "## Py Tests (windows, self-hosted): GREEN — lane classifier decided no execution required" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${CRIT_RC+set}" ]; then
+            echo "::error::mode=$MODE but pytest step never produced a result — failing closed"
+            exit 1
+          fi
+          echo "## Py Tests (windows, self-hosted): mode=$MODE rc=$CRIT_RC" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$CRIT_RC" -eq 0 ]
+
+      - name: Upload Windows suite evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-manual-suite-self-hosted-${{ github.run_id }}
+          path: |
+            pytest-windows.txt
+            pytest-os-skew.txt.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Telegram - OS tests finished
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python scripts/ci/telegram_notify.py --results ci-results os-finished --os "windows-self-hosted" || true
+
+  # -------------------------------------------------------------------------
+  # WINDOWS, GITHUB-HOSTED fallback leg — flag disabled (default), runner
+  # offline/busy, credential missing, or API error.
+  # -------------------------------------------------------------------------
+  tests-windows-hosted:
+    name: Py Tests (windows-latest, hosted)
+    needs: [runner-select, resolve-class]
+    if: ${{ always() && needs.resolve-class.outputs.runner_class != 'self-hosted' }}
+    # runs-on may not use the `env` context; value centralized in
+    # scripts/ci/runner_config.py (NSE_RUNNER_WINDOWS_HOSTED).
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      NSE_RUNNER_CLASS: "github-hosted"
+      NSE_SELECTION_REASON: ${{ needs.resolve-class.outputs.reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner selection record
+        shell: bash
+        run: |
+          echo "::notice::Py Tests (windows) on GITHUB-HOSTED runner. Reason: $NSE_SELECTION_REASON"
+          echo "runner_class=github-hosted" >> "$GITHUB_ENV"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: false
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Decide lane (classifier + event policy)
+        id: lane
+        shell: bash
+        # full_suite dispatch input forces FULL; otherwise the Windows-skew
+        # fast lane runs. NSE_FORCE_FULL_SUITE is read by decide_os_lane.bash.
+        env:
+          NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
+        run: scripts/ci/decide_os_lane.bash windows
+
+      - name: Run Windows-skewed subset (default dispatch lane)
+        if: steps.lane.outputs.mode == 'SKEW'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          exit $rc
+
+      - name: Run Full Critical Suite (full_suite=true)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+                 > "pytest-windows.txt" 2>&1
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          cat "pytest-windows.txt" | tail -60
+          exit $rc
+
+      - name: Lane report (always — required-context honesty contract)
+        if: always()
+        shell: bash
+        run: |
+          MODE="${{ steps.lane.outputs.mode }}"
+          if [ "$MODE" = "SKIP-REPORT" ]; then
+            echo "## Py Tests (windows, github-hosted): GREEN — lane classifier decided no execution required" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${CRIT_RC+set}" ]; then
+            echo "::error::mode=$MODE but pytest step never produced a result — failing closed"
+            exit 1
+          fi
+          echo "## Py Tests (windows, github-hosted): mode=$MODE rc=$CRIT_RC" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$CRIT_RC" -eq 0 ]
+
+      - name: Upload Windows suite evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-manual-suite-github-hosted-${{ github.run_id }}
+          path: |
+            pytest-windows.txt
+            pytest-os-skew.txt.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Telegram - OS tests finished
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python scripts/ci/telegram_notify.py --results ci-results os-finished --os "windows-github-hosted" || true

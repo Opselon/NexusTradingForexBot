@@ -1374,9 +1374,17 @@ jobs:
             echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
             exit 1
           fi
-          if [ "${{ needs.mt5-native.result }}" != "success" ]; then
-            echo "::error::MetaTrader 5 native Windows IPC certification failed or was skipped"
+          # CI runner-routing architecture (2026-11): the MT5 native line is
+          # scheduled/dispatch-only (Windows is excluded from automatic CI).
+          # A skipped MT5 line is therefore EXPECTED on PR/push and must not
+          # fail this verdict; on schedule/dispatch the leg runs and a
+          # non-success result (incl. a failure) still fails it.
+          if [ "${{ needs.mt5-native.result }}" != "success" ] && [ "${{ needs.mt5-native.result }}" != "skipped" ]; then
+            echo "::error::MetaTrader 5 native Windows IPC certification failed"
             exit 1
+          fi
+          if [ "${{ needs.mt5-native.result }}" = "skipped" ]; then
+            echo "::notice::MT5 native line skipped (Windows is manual-only on PR/push). Run it via Actions → mt5-native-windows.yml → Run workflow."
           fi
           echo "FULL RUNTIME CERTIFICATION: PASS"
 
@@ -1386,9 +1394,17 @@ jobs:
   # Authenticode-verified official installer + real mt5.initialize() IPC +
   # DirectMT5Adapter.connect() on a windows-latest runner, with NO broker
   # credentials. Demo (Level 2/3) legs are dispatch-only and never run here.
+  #
+  # CI runner-routing architecture (2026-11): Windows is excluded from
+  # AUTOMATIC CI, so this leg no longer runs on ordinary PR/push events.
+  # The MT5 infrastructure is fully preserved and runs on schedule and
+  # manual dispatch. `Full Runtime Overall Verdict` below tolerates a
+  # skipped MT5 line on PR/push (it still requires the provider matrix)
+  # and requires MT5 success on the events where the leg actually runs.
   # ---------------------------------------------------------------------------
   mt5-native:
     name: MetaTrader 5 Native Windows IPC
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     uses: ./.github/workflows/mt5-native-windows.yml
     permissions:
       contents: read
