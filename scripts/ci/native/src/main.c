@@ -28,6 +28,7 @@ static int cmd_plan(int argc, char **argv) {
     const char *sha = "";
     const char *event = "";
     const char *out = NULL;
+    const char *metadata_file = NULL;
     bool full = false;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--repo-root") == 0 && i + 1 < argc) repo_root = argv[++i];
@@ -36,6 +37,7 @@ static int cmd_plan(int argc, char **argv) {
         else if (strcmp(argv[i], "--event") == 0 && i + 1 < argc) event = argv[++i];
         else if (strcmp(argv[i], "--full-suite") == 0) full = true;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) out = argv[++i];
+        else if (strcmp(argv[i], "--metadata") == 0 && i + 1 < argc) metadata_file = argv[++i];
     }
     if (!files) {
         fprintf(stderr, "plan: --files required\n");
@@ -56,12 +58,28 @@ static int cmd_plan(int argc, char **argv) {
     PlanOptions opt = { sha, event, full };
     StrBuf json;
     sb_init(&json);
+    StrBuf meta;
+    sb_init(&meta);
+    const char *meta_json = NULL;
+    if (metadata_file) {
+        if (!read_file_all(metadata_file, &meta)) {
+            fprintf(stderr, "plan: cannot read metadata file %s\n", metadata_file);
+            sb_free(&nul);
+            sb_free(&json);
+            sb_free(&meta);
+            return 3;
+        }
+        meta_json = meta.data;
+    }
     char digest[65];
-    if (engine_build_plan(repo_root, nul.data ? nul.data : "\0", &opt, &json, digest) != 0) {
+    if (engine_build_plan_ex(repo_root, nul.data ? nul.data : "\0", &opt, &json,
+                             digest, meta_json) != 0) {
         sb_free(&nul);
         sb_free(&json);
+        sb_free(&meta);
         return 3;
     }
+    sb_free(&meta);
     /* append digest field (excluded from the hashed bytes by construction) */
     StrBuf final;
     sb_init(&final);
