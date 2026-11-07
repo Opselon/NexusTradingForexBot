@@ -36,8 +36,11 @@ void graph_init(Graph *g, Arena *a) {
     g->importer_counts = (size_t *)arena_alloc(a, g->mod_cap * sizeof(size_t));
     g->importer_caps = (size_t *)arena_alloc(a, g->mod_cap * sizeof(size_t));
     g->is_test = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
+    g->dynamic = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
     g->unparseable = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
     g->relative_unresolved = false;
+    g->dynamic_files = 0;
+    memset(g->dynamic, 0, g->mod_cap * sizeof(bool));
 }
 
 static void graph_ensure_cap(Graph *g, size_t need) {
@@ -50,6 +53,7 @@ static void graph_ensure_cap(Graph *g, size_t need) {
     size_t *nc = (size_t *)arena_alloc(g->arena, ncap * sizeof(size_t));
     size_t *nk = (size_t *)arena_alloc(g->arena, ncap * sizeof(size_t));
     bool *nt = (bool *)arena_alloc(g->arena, ncap * sizeof(bool));
+    bool *nd = (bool *)arena_alloc(g->arena, ncap * sizeof(bool));
     bool *nu = (bool *)arena_alloc(g->arena, ncap * sizeof(bool));
     memcpy(nn, g->mod_names, g->mod_count * sizeof(char *));
     memcpy(np, g->mod_paths, g->mod_count * sizeof(char *));
@@ -57,6 +61,7 @@ static void graph_ensure_cap(Graph *g, size_t need) {
     memcpy(nc, g->importer_counts, g->mod_count * sizeof(size_t));
     memcpy(nk, g->importer_caps, g->mod_count * sizeof(size_t));
     memcpy(nt, g->is_test, g->mod_count * sizeof(bool));
+    memcpy(nd, g->dynamic, g->mod_count * sizeof(bool));
     memcpy(nu, g->unparseable, g->mod_count * sizeof(bool));
     g->mod_names = nn;
     g->mod_paths = np;
@@ -64,11 +69,12 @@ static void graph_ensure_cap(Graph *g, size_t need) {
     g->importer_counts = nc;
     g->importer_caps = nk;
     g->is_test = nt;
+    g->dynamic = nd;
     g->unparseable = nu;
     g->mod_cap = ncap;
 }
 
-static size_t graph_add_new(Graph *g, const char *name, const char *path,
+size_t graph_add_new(Graph *g, const char *name, const char *path,
                             bool is_test) {
     graph_ensure_cap(g, g->mod_count + 1);
     size_t idx = g->mod_count++;
@@ -79,6 +85,7 @@ static size_t graph_add_new(Graph *g, const char *name, const char *path,
     g->importer_caps[idx] = 0;
     g->is_test[idx] = is_test;
     g->unparseable[idx] = false;
+    g->dynamic[idx] = false;
     return idx;
 }
 
@@ -92,14 +99,14 @@ bool graph_find(const Graph *g, const char *name, size_t *out_idx) {
     return false;
 }
 
-static size_t graph_find_or_add(Graph *g, const char *name, const char *path,
+size_t graph_find_or_add(Graph *g, const char *name, const char *path,
                                 bool is_test) {
     size_t idx;
     if (graph_find(g, name, &idx)) return idx;
     return graph_add_new(g, name, path, is_test);
 }
 
-static void graph_add_edge(Graph *g, size_t from, size_t to) {
+void graph_add_edge(Graph *g, size_t from, size_t to) {
     if (g->importer_counts[to] == g->importer_caps[to]) {
         size_t ncap = g->importer_caps[to] ? g->importer_caps[to] * 2 : 4;
         size_t *ni = (size_t *)arena_alloc(g->arena, ncap * sizeof(size_t));
