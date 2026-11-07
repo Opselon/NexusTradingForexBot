@@ -238,7 +238,7 @@ def parse_workflow(path: Path) -> WorkflowModel:
     # needs.<job>.outputs.<name> references validate against the real
     # declaration instead of an empty local ``outputs:`` block (which a
     # caller-side reusable job intentionally does not repeat).
-    for jname, jm in wf.jobs.items():
+    for _jname, jm in wf.jobs.items():
         uses = jm.raw.get("uses")
         if not isinstance(uses, str) or not uses.endswith(".yml"):
             continue

@@ -250,11 +250,9 @@ def authorize(
             windows_ok = True
         elif state == "pending":
             failures.append(f"{name}: pending (Windows evidence not completed)")
-        elif state is not None and state != "skipped" and state != "neutral":
+        elif state is not None and state not in {"skipped", "neutral"}:
             failures.append(f"{name}: {state} (a red Windows lane refuses the release)")
-    if not windows_ok and not any(
-        name in verdicts for name in REQUIRED_RELEASE_WINDOWS_EVIDENCE
-    ):
+    if not windows_ok and not any(name in verdicts for name in REQUIRED_RELEASE_WINDOWS_EVIDENCE):
         missing.append(
             "Windows lane evidence (none of: "
             + ", ".join(REQUIRED_RELEASE_WINDOWS_EVIDENCE)

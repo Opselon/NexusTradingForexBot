@@ -181,7 +181,9 @@ jobs:
     name: Go API (windows-latest, manual)
     needs: resolve-windows-class
     if: ${{ always() && github.event_name != 'pull_request' && github.event_name != 'push' }}
-    runs-on: ${{ env.NSE_RUNNER_WINDOWS_HOSTED }}
+    # runs-on may not use the `env` context; value centralized in
+    # scripts/ci/runner_config.py (NSE_RUNNER_WINDOWS_HOSTED).
+    runs-on: windows-latest
     timeout-minutes: 20
     env:
       NSE_RUNNER_CLASS: "github-hosted"

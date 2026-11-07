@@ -61,19 +61,11 @@ DEFAULT_ENABLE_MACOS_SELF_HOSTED = False
 # a persistent self-hosted runner, regardless of any enablement flag.
 FORK_PR_TRUSTED_RUNNER_CLASS = "github-hosted"
 
-# Environment variables consumed at workflow level.
-ENV_RUNNER_STATUS_TOKEN = "NSE_RUNNER_STATUS_TOKEN"
-
 #: Cache namespace prefix. GitHub's Actions cache is scoped to the repository
 #: already; the prefix separates trust boundaries (self-hosted vs hosted) and
 #: operating systems so a hosted job can never read a cache restored from an
 #: untrusted fork run on the same OS.
 CACHE_NAMESPACE = "nse"
-
-
-def flag_env_name(platform: str) -> str:
-    """Repository-variable name controlling self-hosted enablement."""
-    return f"ENABLE_{platform.upper()}_SELF_HOSTED"
 
 
 def snippet() -> str:
@@ -92,6 +84,9 @@ def snippet() -> str:
 
 
 def as_dict() -> dict[str, Any]:
+    """Configuration view. Deliberately contains NO credential names —
+    this is printed by ``--json`` and any secret-adjacent identifier would
+    be a clear-text-logging finding (CodeQL CWE-532)."""
     return {
         "linux_self_hosted_labels": list(LINUX_SELF_HOSTED_LABELS),
         "windows_self_hosted_labels": list(WINDOWS_SELF_HOSTED_LABELS),
@@ -102,11 +97,6 @@ def as_dict() -> dict[str, Any]:
         "default_enable_linux_self_hosted": DEFAULT_ENABLE_LINUX_SELF_HOSTED,
         "default_enable_windows_self_hosted": DEFAULT_ENABLE_WINDOWS_SELF_HOSTED,
         "default_enable_macos_self_hosted": DEFAULT_ENABLE_MACOS_SELF_HOSTED,
-        "flag_variable_names": {
-            "linux": flag_env_name("linux"),
-            "windows": flag_env_name("windows"),
-            "macos": flag_env_name("macos"),
-        },
         "fork_pr_runner_class": FORK_PR_TRUSTED_RUNNER_CLASS,
     }
 

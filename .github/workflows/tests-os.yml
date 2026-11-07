@@ -190,7 +190,11 @@ jobs:
     name: Py Tests (linux, hosted)
     needs: runner-select
     if: ${{ always() && needs.runner-select.outputs.runner_class != 'self-hosted' }}
-    runs-on: ${{ env.NSE_RUNNER_LINUX_HOSTED }}
+    # NOTE: runs-on may NOT use the `env` context (GitHub allows only
+    # github/needs/strategy/matrix/vars/inputs here), so the centralized
+    # fallback value is inlined. scripts/ci/runner_config.py is the single
+    # source of truth for this literal.
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
       NSE_RUNNER_CLASS: "github-hosted"

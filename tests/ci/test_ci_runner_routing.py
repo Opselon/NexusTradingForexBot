@@ -92,7 +92,6 @@ def test_reusable_workflow_outputs_resolve_to_callee():
         names = list(wf.jobs["runner-select"].outputs)
         assert "runner_class" in names, names
         assert "selection_reason" in names, names
-        findings = []
         for check in (
             c.check_undefined_outputs,
             c.check_silent_skip,
@@ -253,3 +252,35 @@ def test_decision_records_reason_and_eligibility():
     assert d["self_hosted_eligible"] is True
     assert d["reason"], "reason must be populated for observability"
     assert "self-hosted" in d["reason"]
+
+
+def test_malformed_repository_identifier_fails_open(monkeypatch=None):
+    """A bad --repository must not reach the network; it fails open."""
+    import subprocess
+    import sys as _sys
+
+    r = subprocess.run(
+        [
+            _sys.executable,
+            str(_CI / "runner_select.py"),
+            "--platform",
+            "linux",
+            "--labels",
+            "self-hosted,Linux,X64",
+            "--hosted",
+            "ubuntu-latest",
+            "--repository",
+            "not-a-valid-repo",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert r.returncode == 0, r.stderr
+    import json as _json
+
+    # The CLI pretty-prints the decision JSON; reassemble it.
+    start = r.stdout.index("{")
+    decision = _json.loads(r.stdout[start:])
+    _assert_class(decision, "github-hosted")
+    assert "malformed repository identifier" in decision["reason"]

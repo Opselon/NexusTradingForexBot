@@ -38,6 +38,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -45,6 +46,15 @@ from typing import Any
 
 API_VERSION = "2022-11-28"
 TIMEOUT_SECONDS = 15
+
+#: The ONLY host this preflight ever contacts. Hard-coded (never built from
+#: user input) so no request target can flow from a caller into the URL —
+#: this is what makes the fetch safe from a request-forgery standpoint.
+API_HOST = "api.github.com"
+
+#: A GitHub repository identifier is `owner/name` with a restricted alphabet.
+#: Validating it BEFORE it lands in a URL keeps the request target constant.
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 #: Conclusions emitted on stdout for the workflow (one JSON object).
 DECISION_KEYS = (
@@ -90,7 +100,7 @@ def list_runners(repository: str, token: str) -> list[dict[str, Any]] | None:
     runners: list[dict[str, Any]] = []
     page = 1
     while page <= 20:
-        url = f"https://api.github.com/repos/{repository}/actions/runners?per_page=100&page={page}"
+        url = f"https://{API_HOST}/repos/{repository}/actions/runners?per_page=100&page={page}"
         data = _gh_get(url, token)
         if data is None:
             return None
@@ -105,14 +115,20 @@ def list_runners(repository: str, token: str) -> list[dict[str, Any]] | None:
     return runners
 
 
-def eligible_runner(runners: list[dict[str, Any]], labels: tuple[str, ...] | list[str]) -> list[dict[str, Any]]:
+def eligible_runner(
+    runners: list[dict[str, Any]], labels: tuple[str, ...] | list[str]
+) -> list[dict[str, Any]]:
     """A runner is eligible when it is online, idle, and has every label."""
     wanted = set(labels)
     out = []
     for runner in runners:
         if runner.get("status") != "online" or runner.get("busy"):
             continue
-        have = {str(label.get("name")) for label in runner.get("labels") or [] if isinstance(label, dict)}
+        have = {
+            str(label.get("name"))
+            for label in runner.get("labels") or []
+            if isinstance(label, dict)
+        }
         if wanted <= have:
             out.append(runner)
     return out
@@ -136,7 +152,11 @@ def select(
 ) -> dict[str, Any]:
     """Decide the runner class. Pure function — returns a decision dict."""
     flag_name = f"ENABLE_{platform.upper()}_SELF_HOSTED"
-    enabled = _flag(env, flag_name, default=True) if platform == "linux" else _flag(env, flag_name, default=False)
+    enabled = (
+        _flag(env, flag_name, default=True)
+        if platform == "linux"
+        else _flag(env, flag_name, default=False)
+    )
 
     decision: dict[str, Any] = {
         "platform": platform,
@@ -156,7 +176,9 @@ def select(
         return decision
 
     if not enabled:
-        decision["reason"] = f"{flag_name} not enabled (default for this platform) -> github-hosted fallback"
+        decision["reason"] = (
+            f"{flag_name} not enabled (default for this platform) -> github-hosted fallback"
+        )
         return decision
 
     token = env.get("NSE_RUNNER_STATUS_TOKEN", "")
@@ -166,7 +188,9 @@ def select(
 
     runners = list_runners(repository, token)
     if runners is None:
-        decision["reason"] = "runner status API unavailable/error -> fail open to github-hosted fallback"
+        decision["reason"] = (
+            "runner status API unavailable/error -> fail open to github-hosted fallback"
+        )
         return decision
 
     matches = eligible_runner(runners, labels)
@@ -192,7 +216,9 @@ FORK_REASON = "untrusted code must not run on persistent trusted runners"
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--platform", required=True, choices=("linux", "windows", "macos"))
-    ap.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", "Opselon/NexusTradingForexBot"))
+    ap.add_argument(
+        "--repository", default=os.environ.get("GITHUB_REPOSITORY", "Opselon/NexusTradingForexBot")
+    )
     ap.add_argument("--labels", required=True, help="comma-separated self-hosted label set")
     ap.add_argument("--hosted", required=True, help="GitHub-hosted fallback image")
     ap.add_argument("--untrusted", action="store_true", help="fork PR: force github-hosted class")
@@ -200,6 +226,25 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     env = dict(os.environ)
+
+    # Validate the repository identifier BEFORE it reaches a URL: the fetch
+    # below may only ever target the hard-coded API_HOST with a well-formed
+    # owner/name segment.
+    if not _REPO_RE.match(args.repository or ""):
+        decision = {
+            "platform": args.platform,
+            "runner_class": "github-hosted",
+            "self_hosted_enabled": False,
+            "self_hosted_eligible": False,
+            "reason": (
+                f"malformed repository identifier {args.repository!r} -> "
+                "fail open to github-hosted fallback"
+            ),
+            "labels": [x for x in args.labels.split(",") if x],
+        }
+        print(json.dumps(decision, indent=2))
+        return 0
+
     decision = select(
         platform=args.platform,
         repository=args.repository,

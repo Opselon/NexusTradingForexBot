@@ -219,7 +219,9 @@ jobs:
     name: Py Tests (windows-latest, hosted)
     needs: [runner-select, resolve-class]
     if: ${{ always() && needs.resolve-class.outputs.runner_class != 'self-hosted' }}
-    runs-on: ${{ env.NSE_RUNNER_WINDOWS_HOSTED }}
+    # runs-on may not use the `env` context; value centralized in
+    # scripts/ci/runner_config.py (NSE_RUNNER_WINDOWS_HOSTED).
+    runs-on: windows-latest
     timeout-minutes: 60
     env:
       NSE_RUNNER_CLASS: "github-hosted"
