@@ -142,8 +142,15 @@ typedef struct Graph {
     size_t *importer_counts;
     size_t *importer_caps;
     bool *is_test;
+    bool *dynamic;
     bool *unparseable;
+    bool relative_unresolved; /* any relative import failed to resolve */
+    size_t dynamic_files;     /* files containing dynamic-import indicators */
 } Graph;
+
+/* ast_metadata.c — build the graph from the Python AST extractor's JSON. */
+int graph_build_from_metadata(Graph *g, const char *repo_root,
+                              const char *meta_json, char *err, size_t err_len);
 
 void graph_init(Graph *g, Arena *a);
 void graph_add_file(Graph *g, const char *rel_path, const char *abs_path);
@@ -167,7 +174,11 @@ typedef struct PlanOptions {
 
 /* changed_files: NUL-separated list of repo-relative paths. */
 int engine_build_plan(const char *repo_root, const char *changed_files,
-                      const PlanOptions *opt, StrBuf *json_out, char digest_hex[65]);
+                      const PlanOptions *opt, StrBuf *json_out,
+                      char digest_hex[65]);
+int engine_build_plan_ex(const char *repo_root, const char *changed_files,
+                         const PlanOptions *opt, StrBuf *json_out,
+                         char digest_hex[65], const char *metadata_json);
 
 /* ------------------------------------------------------------------ */
 /* Resource detection (cgroup v2/v1 + fallback).                       */
@@ -204,6 +215,9 @@ void normalize_path(char *path); /* backslashes -> /, strip leading ./ */
 bool nse_starts_with(const char *p, const char *pre);
 bool nse_ends_with(const char *p, const char *suf);
 long nse_sysconf_cpus(void);
+bool graph_find(const Graph *g, const char *name, size_t *out_idx);
+size_t graph_find_or_add(Graph *g, const char *name, const char *path, bool is_test);
+void graph_add_edge(Graph *g, size_t from, size_t to);
 void graph_scan_repo(Graph *g, const char *repo_root); /* dependency_graph.c */
 int engine_selftest(void);                                 /* tests/test_engine.c */
 int engine_selftest_fuzz(int argc, char **argv);           /* tests/test_engine.c */
