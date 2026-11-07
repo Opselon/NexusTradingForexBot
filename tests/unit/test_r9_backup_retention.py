@@ -117,6 +117,58 @@ def test_the_operation_is_batched(backup_dir: str) -> None:
     assert len(os.listdir(backup_dir)) == 1
 
 
+def test_batching_is_deterministic_when_mtimes_tie(backup_dir: str) -> None:
+    """Retention must not depend on how the filesystem happens to list a
+    directory when two backups share one mtime tick.
+
+    Reproduced on the self-hosted runner (ext4, hash-ordered ``os.listdir``):
+    10 backups created back-to-back land inside one coarse timestamp tick,
+    the mtime-only sort then followed ``os.listdir``'s arbitrary order, and
+    the batched prune deleted the NEWEST entries instead of the oldest.
+    The name's own ``YYYYMMDD-HHMMSS`` stamp is the tie-breaker.
+    """
+    names = [f"audit_backup_2026030{i}-000000.db" for i in range(10)]
+    for name in names:
+        _make_backup(backup_dir, name)
+    # Collapse every mtime onto one tick: the pathological, but real, case
+    # (a filesystem with coarse timestamps, or two backups written in the
+    # same tick — the "two identical snapshots 2 s apart" pattern R-9 found).
+    tie = os.stat(os.path.join(backup_dir, names[0])).st_mtime
+    for name in names:
+        path = os.path.join(backup_dir, name)
+        os.utime(path, (tie, tie))
+
+    one = prune_backups(backup_dir, max_snapshots=1, delete_batch=3)
+    two = prune_backups(backup_dir, max_snapshots=1, delete_batch=3)
+    assert one.removed == 3
+    assert two.removed == 3
+    # The NEWEST four survive, and the answer is the same no matter how the
+    # directory hash ordered the entries.
+    assert sorted(os.listdir(backup_dir)) == [
+        "audit_backup_20260306-000000.db",
+        "audit_backup_20260307-000000.db",
+        "audit_backup_20260308-000000.db",
+        "audit_backup_20260309-000000.db",
+    ]
+
+
+def test_mtime_stays_primary_over_the_name_tiebreak(backup_dir: str) -> None:
+    """The tie-breaker must never override a real age difference.
+
+    Producer snapshots (``audit_backup_...``) and registered orphan classes
+    (``audit_v7_...bak``, ``news_v0_...bak``) share one ordering. If the
+    name stamp were sorted BEFORE mtime, unrecognised orphan names would be
+    grouped apart from the producer class and the mixed oldest-first order
+    would break (caught by test_backup_retention_snapshot_sets).
+    """
+    _make_backup(backup_dir, "audit_backup_20260924-212854.db", age_days=1)
+    _make_backup(backup_dir, "audit_v7_20260924T005049.bak", age_days=5)
+    _make_backup(backup_dir, "news_v0_20260822T093437.bak", age_days=20)
+
+    ages = [age for _path, age, _size in list_backups(backup_dir)]
+    assert ages == sorted(ages), ages
+
+
 def test_only_the_producers_own_names_are_ever_removed(backup_dir: str) -> None:
     """A copied-in artifact or a hand-placed file is invisible to the pruner."""
     _make_backup(backup_dir, "audit_backup_20260101-000000.db", age_days=100)
