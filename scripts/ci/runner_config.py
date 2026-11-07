@@ -84,9 +84,12 @@ def snippet() -> str:
 
 
 def as_dict() -> dict[str, Any]:
-    """Configuration view. Deliberately contains NO credential names —
-    this is printed by ``--json`` and any secret-adjacent identifier would
-    be a clear-text-logging finding (CodeQL CWE-532)."""
+    """Serializable configuration view for ``--json``.
+
+    Deliberately carries only public routing facts (labels, fallback images,
+    enablement defaults). Credential identifiers are excluded so that
+    emitting this mapping can never leak access material.
+    """
     return {
         "linux_self_hosted_labels": list(LINUX_SELF_HOSTED_LABELS),
         "windows_self_hosted_labels": list(WINDOWS_SELF_HOSTED_LABELS),
