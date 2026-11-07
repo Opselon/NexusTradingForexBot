@@ -16,6 +16,7 @@ set(NSE_SOURCES
   src/test_selector.c
   src/fingerprint.c
   src/cache_metadata.c
+  src/ast_metadata.c
   src/selftest.c
 )
 
