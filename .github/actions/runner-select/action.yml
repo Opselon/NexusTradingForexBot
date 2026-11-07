@@ -25,6 +25,13 @@ inputs:
     description: "Comma-separated self-hosted label set (defaults to the platform's set)"
     required: false
     default: ""
+  fallback_labels:
+    description: >-
+      Comma-separated tier-2 self-hosted label set, tried ONLY when no
+      tier-1 runner is online+idle (e.g. the secondary box). Empty keeps
+      the single-tier behavior unchanged.
+    required: false
+    default: ""
   hosted:
     description: "GitHub-hosted fallback image (defaults to the platform's image)"
     required: false
@@ -43,6 +50,13 @@ outputs:
   decision_json:
     description: "Full JSON decision record (logs + summaries)"
     value: ${{ steps.select.outputs.decision_json }}
+  self_hosted_labels:
+    description: >-
+      JSON array of the winning self-hosted label set — feed it to
+      `runs-on: ${{ fromJSON(...) }}`. Empty when the class is
+      github-hosted (the self-hosted lane is skipped and never evaluates
+      its runs-on).
+    value: ${{ steps.select.outputs.runner_labels }}
 
 runs:
   using: "composite"
@@ -53,6 +67,7 @@ runs:
       env:
         NSE_RUNNER_PLATFORM: ${{ inputs.platform }}
         NSE_RUNNER_LABELS_IN: ${{ inputs.labels }}
+        NSE_RUNNER_FALLBACK_LABELS_IN: ${{ inputs.fallback_labels }}
         NSE_RUNNER_HOSTED_IN: ${{ inputs.hosted }}
         NSE_RUNNER_UNTRUSTED: ${{ inputs.untrusted }}
         # Credential presence is the ONLY secret-dependent input. Absent =>
@@ -75,6 +90,7 @@ runs:
         python3 scripts/ci/runner_select.py \
           --platform "$NSE_RUNNER_PLATFORM" \
           --labels "$LABELS" \
+          --fallback-labels "$NSE_RUNNER_FALLBACK_LABELS_IN" \
           --hosted "$HOSTED" \
           $UNTRUSTED
 
@@ -89,6 +105,7 @@ runs:
           echo "| platform | \`${{ inputs.platform }}\` |"
           echo "| runner class | \`${{ steps.select.outputs.runner_class }}\` |"
           echo "| self-hosted eligible | \`${{ steps.select.outputs.self_hosted_eligible }}\` |"
+          echo "| chosen label set | \`${{ steps.select.outputs.runner_labels }}\` |"
           echo "| reason | ${{ steps.select.outputs.selection_reason }} |"
           echo "| untrusted (fork) PR | \`${{ inputs.untrusted }}\` |"
           echo ''
