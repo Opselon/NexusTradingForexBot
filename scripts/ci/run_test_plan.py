@@ -145,6 +145,44 @@ def body_without_digest(plan_obj: dict) -> dict:
     return {k: v for k, v in plan_obj.items() if k != "plan_digest"}
 
 
+def parity_check(native_obj: dict, python_obj: dict) -> tuple[str, str | None]:
+    """C/Python parity contract.
+
+    Returns (mode, failure). Modes:
+      exact     — canonical bodies identical (digest equality).
+      superset  — C selected a STRICT SUPERSET of the Python reference with
+                  identical fallback decisions: the C engine legitimately
+                  owns extra reachability the reference does not model
+                  (pytest fixture/conftest edges). A superset is MORE
+                  conservative — never a narrowing — so it is accepted and
+                  recorded, not treated as a drift.
+      mismatch  — anything else (narrowed selection, changed fallback
+                  policy, differing shared reasons) -> planner-integrity
+                  failure upstream.
+    """
+    if body_without_digest(native_obj) == body_without_digest(python_obj):
+        return "exact", None
+    if (native_obj.get("fallback_reason") == python_obj.get("fallback_reason")
+            and native_obj.get("full_suite_required")
+            == python_obj.get("full_suite_required")
+            and native_obj.get("selection_mode") == python_obj.get("selection_mode")):
+        c_entries = {t["id"]: t for t in native_obj["selected_tests"]}
+        p_entries = {t["id"]: t for t in python_obj["selected_tests"]}
+        if set(p_entries) <= set(c_entries):
+            for tid, p_entry in p_entries.items():
+                c_entry = c_entries[tid]
+                if set(p_entry["reason"]) - set(c_entry["reason"]):
+                    return "mismatch", (
+                        f"shared test {tid} lost reasons in the native plan: "
+                        f"{sorted(set(p_entry['reason']) - set(c_entry['reason']))}")
+            if set(c_entries) - set(p_entries):
+                return "superset", None
+            return "exact", None
+    return "mismatch", (
+        f"parity mismatch: native digest {native_obj['plan_digest'][:16]}... vs "
+        f"python {python_obj['plan_digest'][:16]}...")
+
+
 # --------------------------------------------------------------------------- #
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -191,23 +229,22 @@ def main() -> int:
     degraded = native_binary is None
     plan_obj: dict = {}
     planner_impl = "python-reference"
+    parity_mode = "none"
 
     if native_binary:
         try:
             native_obj = c_plan(native_binary, repo_root, changed, args.head,
                                 args.event, full)
             python_obj = py_plan(repo_root, changed, args.head, args.event, full)
-            if body_without_digest(native_obj) == body_without_digest(python_obj) \
-                    and native_obj["plan_digest"] == python_obj["plan_digest"]:
+            mode, failure = parity_check(native_obj, python_obj)
+            if failure is None:
                 plan_obj = native_obj
                 planner_impl = f"native-c17-{ENGINE_VERSION}"
-                log(f"parity OK — digest {plan_obj['plan_digest'][:16]}...")
+                log(f"parity OK ({mode}) — digest {plan_obj['plan_digest'][:16]}...")
+                parity_mode = mode
             else:
                 integrity_failed = True
-                integrity_reason = (
-                    f"parity mismatch: native digest "
-                    f"{native_obj['plan_digest'][:16]}... vs python "
-                    f"{python_obj['plan_digest'][:16]}...")
+                integrity_reason = failure
                 log(f"PLANNER-INTEGRITY FAILURE: {integrity_reason}")
         except (RuntimeError, json.JSONDecodeError, OSError) as exc:
             degraded = True
@@ -215,20 +252,32 @@ def main() -> int:
             native_binary = None
 
     if not plan_obj:
-        plan_obj = py_plan(repo_root, changed, args.head, args.event, full)
+        try:
+            plan_obj = py_plan(repo_root, changed, args.head, args.event, full)
+        except (RuntimeError, json.JSONDecodeError, OSError) as exc:
+            log(f"PYTHON REFERENCE FAILURE — emergency manifest")
+            integrity_failed = True
+            integrity_reason = str(exc)
+            plan_obj = {}
 
     # 3. fail-safe expansions
     if integrity_failed:
-        plan_obj = c_plan(native_binary, repo_root, changed, args.head,
-                          args.event, True) if native_binary else \
-            py_plan(repo_root, changed, args.head, args.event, True)
-    selected_ids = [t["id"] for t in plan_obj["selected_tests"]]
+        try:
+            plan_obj = c_plan(native_binary, repo_root, changed, args.head,
+                              args.event, True) if native_binary else \
+                py_plan(repo_root, changed, args.head, args.event, True)
+        except (RuntimeError, json.JSONDecodeError, OSError):
+            plan_obj = {}
+    selected_ids = [t["id"] for t in plan_obj.get("selected_tests", [])]
     if not selected_ids:
         log("empty selection — conservative expansion (empty never passes)")
-        plan_obj = (c_plan(native_binary, repo_root, changed, args.head,
-                           args.event, True) if native_binary else
-                    py_plan(repo_root, changed, args.head, args.event, True))
-        selected_ids = [t["id"] for t in plan_obj["selected_tests"]]
+        try:
+            plan_obj = (c_plan(native_binary, repo_root, changed, args.head,
+                               args.event, True) if native_binary else
+                        py_plan(repo_root, changed, args.head, args.event, True))
+        except (RuntimeError, json.JSONDecodeError, OSError):
+            plan_obj = {}
+        selected_ids = [t["id"] for t in plan_obj.get("selected_tests", [])]
         if not selected_ids:
             log("zero tests after expansion — failing closed")
             return 91
@@ -248,12 +297,13 @@ def main() -> int:
     # 5. evidence
     manifest = {
         "commit_head": args.head, "commit_base": args.base,
-        "plan_digest": plan_obj["plan_digest"],
-        "plan_selection_mode": plan_obj["selection_mode"],
+        "plan_digest": plan_obj.get("plan_digest"),
+        "plan_selection_mode": plan_obj.get("selection_mode"),
         "plan_fallback_reason": plan_obj.get("fallback_reason"),
         "planner": {
             "primary_impl": planner_impl, "engine_version": ENGINE_VERSION,
             "degraded": degraded, "parity_checked": not degraded,
+            "parity_mode": parity_mode,
             "integrity_failed": integrity_failed,
             "integrity_reason": integrity_reason,
             "native_reason": native_reason,
