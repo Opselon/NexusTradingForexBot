@@ -138,17 +138,55 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  go-api:
-    name: Go API (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 20
+  # CI runner-routing architecture (2026-11): the Go gate is part of
+  # normal automated CI, but its WINDOWS leg must not be scheduled on
+  # ordinary PR/push events. The Windows leg is therefore a MANUAL job
+  # (workflow_dispatch / schedule only) that reuses the same steps; on
+  # PR/push only the Ubuntu leg runs. Self-hosted Windows integration is
+  # implemented and gated behind ENABLE_WINDOWS_SELF_HOSTED (default
+  # false) — see the resolve-class job below.
+  resolve-windows-class:
+    name: Resolve runner class (go-api windows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      runner_class: ${{ steps.resolve.outputs.runner_class }}
+      reason: ${{ steps.resolve.outputs.reason }}
+    steps:
+      - name: Decide Windows runner class without credential access
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          # No runner-status credential is consulted here: the Go Windows
+          # leg is manual-only, so its self-hosted adoption is decided by
+          # the flag alone (absent => disabled => github-hosted fallback).
+          FLAG="${ENABLE_WINDOWS_SELF_HOSTED:-}"
+          if [ "$FLAG" = "true" ]; then
+            echo "runner_class=self-hosted-pending" >> "$GITHUB_OUTPUT"
+            echo "reason=ENABLE_WINDOWS_SELF_HOSTED=true; the dispatch lanes route via runner-select.yml" >> "$GITHUB_OUTPUT"
+          else
+            echo "runner_class=github-hosted" >> "$GITHUB_OUTPUT"
+            echo "reason=ENABLE_WINDOWS_SELF_HOSTED not set (default disabled) -> github-hosted windows-latest" >> "$GITHUB_OUTPUT"
+          fi
+          echo "::notice::go-api windows runner class: $(cat $GITHUB_OUTPUT | tail -2 | head -1 | cut -d= -f2-)"
+        env:
+          ENABLE_WINDOWS_SELF_HOSTED: ${{ vars.ENABLE_WINDOWS_SELF_HOSTED }}
 
-    strategy:
-      # Keep Linux and Windows independent so every shipped OS reports its own
-      # Go build, unit-test, and full API-runtime result.
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+  # GO-API, WINDOWS leg — manual execution only. Preserved in full: the
+  # same build, runtime probe, vet, gofmt and test steps as the Ubuntu
+  # leg. Never scheduled by PR/push; see the resolve-windows-class job
+  # above for the self-hosted adoption path.
+  go-api-windows:
+    name: Go API (windows-latest, manual)
+    needs: resolve-windows-class
+    if: ${{ always() && github.event_name != 'pull_request' && github.event_name != 'push' }}
+    runs-on: ${{ env.NSE_RUNNER_WINDOWS_HOSTED }}
+    timeout-minutes: 20
+    env:
+      NSE_RUNNER_CLASS: "github-hosted"
+      NSE_RUNNER_WINDOWS_HOSTED: "windows-latest"
+      NSE_SELECTION_REASON: ${{ needs.resolve-windows-class.outputs.reason }}
 
     steps:
       - name: Checkout repository
@@ -212,7 +250,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: go-api-runtime-${{ matrix.os }}-${{ github.run_id }}
+          name: go-api-runtime-windows-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/nse-go-api/evidence/
             ${{ runner.temp }}/nse-go-api/nexus-api*
@@ -257,6 +295,6 @@ jobs:
         if: always()
         shell: bash
         run: |
-          echo "go-api gate finished on ${{ matrix.os }}: \
+          echo "go-api gate finished on windows-latest (runner_class=${NSE_RUNNER_CLASS:-github-hosted}): \
             conclusion=${{ job.status }}"
           exit 0

@@ -1,0 +1,320 @@
+name: Tests (macOS, manual)
+
+# ---------------------------------------------------------------------------
+# macOS TEST SUITE — manual execution only (CI runner-routing architecture,
+# 2026-11). Never scheduled by an ordinary PR or push event.
+#
+# This workflow REPLACES the former tests-macos-compat.yml (weekly schedule
+# + dispatch, advisory). The full macOS critical suite is fully preserved
+# and available on demand here; the weekly cron is deliberately REMOVED —
+# macOS is excluded from automatic CI per the runner-routing architecture.
+# When the suite is needed, run it manually (Actions → tests-macos.yml →
+# Run workflow); the evidence artifact is the same this file always
+# produced.
+#
+# Self-hosted-ready: when the repository variable ENABLE_MACOS_SELF_HOSTED
+# is "true" AND an online+idle runner matching (self-hosted, macOS, ARM64)
+# exists, the suite runs there. Otherwise it runs on the github-hosted
+# macos-latest fallback. Flipping the flag is the ONLY action needed to
+# adopt a self-hosted macOS runner — no workflow edit, no redesign.
+#
+# ARCHITECTURE NOTE (ARM64 vs x64). macos-latest is Apple Silicon (ARM64)
+# since GitHub's runner fleet refresh; the macOS self-hosted label set is
+# deliberately (self-hosted, macOS, ARM64) so both classes share ONE
+# architecture and a test verdict means the same thing on either. A
+# self-hosted Intel Mac must be registered with (self-hosted, macOS, X64)
+# instead, and its fallback image must be macos-13 (the last x64 image) —
+# macos-latest would silently change the architecture under the suite.
+# That is the one line to edit in scripts/ci/runner_config.py; no workflow
+# change is required.
+#
+# Fork-safety: workflow_dispatch requires write access to the repository,
+# so a fork contributor cannot route code onto a persistent self-hosted
+# macOS machine.
+# ---------------------------------------------------------------------------
+
+on:
+  workflow_dispatch:
+    inputs:
+      full_suite:
+        description: "Run the FULL critical suite (default: macOS-skewed fast lane)"
+        type: boolean
+        default: false
+      runner_class:
+        description: "Force a runner class: auto | self-hosted | github-hosted"
+        type: string
+        default: "auto"
+
+permissions:
+  contents: read
+
+# Manual runs should not be cancelled by a subsequent dispatch of the same
+# ref — a user is waiting on the result.
+concurrency:
+  group: tests-macos-manual-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: "3.11"
+  NSE_RUNNER_MACOS_SELF_HOSTED_LABELS: "self-hosted,macOS,ARM64"
+  NSE_RUNNER_MACOS_HOSTED: "macos-latest"
+  # Feature flag (repository variable, default disabled).
+  ENABLE_MACOS_SELF_HOSTED: ${{ vars.ENABLE_MACOS_SELF_HOSTED }}
+  TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+  TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+  USER_ID: ${{ secrets.USER_ID }}
+
+jobs:
+  # -------------------------------------------------------------------------
+  # Preflight: macOS runner availability (GitHub-hosted infrastructure).
+  # -------------------------------------------------------------------------
+  runner-select:
+    name: Runner Selector (macos)
+    uses: ./.github/workflows/runner-select.yml
+    permissions:
+      contents: read
+    with:
+      platform: macos
+      # workflow_dispatch is trusted (write-access users only).
+      untrusted: false
+
+  resolve-class:
+    name: Resolve runner class (macos)
+    needs: runner-select
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      runner_class: ${{ steps.resolve.outputs.runner_class }}
+      reason: ${{ steps.resolve.outputs.reason }}
+    steps:
+      - name: Resolve
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          AUTO="${{ needs.runner-select.outputs.runner_class }}"
+          FORCE="${{ inputs.runner_class }}"
+          CLASS="$AUTO"
+          REASON="auto: ${{ needs.runner-select.outputs.selection_reason }}"
+          if [ "$FORCE" = "self-hosted" ] || [ "$FORCE" = "github-hosted" ]; then
+            CLASS="$FORCE"
+            REASON="manual override (runner_class input): $FORCE (auto was: $AUTO)"
+          fi
+          echo "runner_class=$CLASS" >> "$GITHUB_OUTPUT"
+          echo "reason=$REASON" >> "$GITHUB_OUTPUT"
+          echo "::notice::macos runner class: $CLASS — $REASON"
+
+  # -------------------------------------------------------------------------
+  # macOS, SELF-HOSTED leg — only when ENABLE_MACOS_SELF_HOSTED=true AND
+  # the preflight found an online+idle (self-hosted, macOS, ARM64) runner.
+  # Mutually exclusive with the hosted leg: exactly one reports.
+  # -------------------------------------------------------------------------
+  tests-macos-self-hosted:
+    name: Py Tests (macos-latest, self-hosted)
+    needs: [runner-select, resolve-class]
+    if: ${{ always() && needs.resolve-class.outputs.runner_class == 'self-hosted' }}
+    runs-on: [self-hosted, macOS, ARM64]
+    timeout-minutes: 60
+    env:
+      NSE_RUNNER_CLASS: "self-hosted"
+      NSE_SELECTION_REASON: ${{ needs.resolve-class.outputs.reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner selection record
+        shell: bash
+        run: |
+          echo "::notice::Py Tests (macos) on SELF-HOSTED (labels: self-hosted,macOS,ARM64) runner. Reason: $NSE_SELECTION_REASON"
+          echo "runner_class=self-hosted" >> "$GITHUB_ENV"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: true
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Decide lane (classifier + event policy)
+        id: lane
+        shell: bash
+        # full_suite dispatch input forces FULL; otherwise the Windows-skew
+        # fast lane runs. NSE_FORCE_FULL_SUITE is read by decide_os_lane.bash.
+        env:
+          NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
+        run: scripts/ci/decide_os_lane.bash macos
+
+      - name: Run Windows-skewed subset (default dispatch lane)
+        if: steps.lane.outputs.mode == 'SKEW'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          exit $rc
+
+      - name: Run Full Critical Suite (full_suite=true)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+                 > "pytest-macos.txt" 2>&1
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          cat "pytest-macos.txt" | tail -60
+          exit $rc
+
+      - name: Lane report (always — required-context honesty contract)
+        if: always()
+        shell: bash
+        run: |
+          MODE="${{ steps.lane.outputs.mode }}"
+          if [ "$MODE" = "SKIP-REPORT" ]; then
+            echo "## Py Tests (windows, self-hosted): GREEN — lane classifier decided no execution required" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${CRIT_RC+set}" ]; then
+            echo "::error::mode=$MODE but pytest step never produced a result — failing closed"
+            exit 1
+          fi
+          echo "## Py Tests (windows, self-hosted): mode=$MODE rc=$CRIT_RC" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$CRIT_RC" -eq 0 ]
+
+      - name: Upload Windows suite evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-manual-suite-self-hosted-${{ github.run_id }}
+          path: |
+            pytest-macos.txt
+            pytest-os-skew.txt.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Telegram - OS tests finished
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python scripts/ci/telegram_notify.py --results ci-results os-finished --os "macos-self-hosted" || true
+
+  # -------------------------------------------------------------------------
+  # macOS, GITHUB-HOSTED fallback leg — flag disabled (default), runner
+  # offline/busy, credential missing, or API error.
+  # -------------------------------------------------------------------------
+  tests-macos-hosted:
+    name: Py Tests (macos-latest, hosted)
+    needs: [runner-select, resolve-class]
+    if: ${{ always() && needs.resolve-class.outputs.runner_class != 'self-hosted' }}
+    runs-on: ${{ env.NSE_RUNNER_MACOS_HOSTED }}
+    timeout-minutes: 60
+    env:
+      NSE_RUNNER_CLASS: "github-hosted"
+      NSE_SELECTION_REASON: ${{ needs.resolve-class.outputs.reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Runner selection record
+        shell: bash
+        run: |
+          echo "::notice::Py Tests (macos) on GITHUB-HOSTED runner. Reason: $NSE_SELECTION_REASON"
+          echo "runner_class=github-hosted" >> "$GITHUB_ENV"
+
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: "pip"
+
+      - name: Install uv (pinned — the canonical lock tool)
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.12.10"
+          enable-cache: false
+          cache-dependency-glob: requirements.lock
+
+      - name: Install via lock (hash-verified requirements.lock)
+        shell: bash
+        run: |
+          uv pip install --system -r requirements.lock
+          uv pip install --system --no-deps -e .
+
+      - name: Decide lane (classifier + event policy)
+        id: lane
+        shell: bash
+        # full_suite dispatch input forces FULL; otherwise the Windows-skew
+        # fast lane runs. NSE_FORCE_FULL_SUITE is read by decide_os_lane.bash.
+        env:
+          NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
+        run: scripts/ci/decide_os_lane.bash macos
+
+      - name: Run Windows-skewed subset (default dispatch lane)
+        if: steps.lane.outputs.mode == 'SKEW'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          exit $rc
+
+      - name: Run Full Critical Suite (full_suite=true)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+                 > "pytest-macos.txt" 2>&1
+          rc=$?
+          echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
+          cat "pytest-macos.txt" | tail -60
+          exit $rc
+
+      - name: Lane report (always — required-context honesty contract)
+        if: always()
+        shell: bash
+        run: |
+          MODE="${{ steps.lane.outputs.mode }}"
+          if [ "$MODE" = "SKIP-REPORT" ]; then
+            echo "## Py Tests (windows, github-hosted): GREEN — lane classifier decided no execution required" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [ -z "${CRIT_RC+set}" ]; then
+            echo "::error::mode=$MODE but pytest step never produced a result — failing closed"
+            exit 1
+          fi
+          echo "## Py Tests (windows, github-hosted): mode=$MODE rc=$CRIT_RC" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "$CRIT_RC" -eq 0 ]
+
+      - name: Upload Windows suite evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-manual-suite-github-hosted-${{ github.run_id }}
+          path: |
+            pytest-macos.txt
+            pytest-os-skew.txt.xml
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Telegram - OS tests finished
+        if: always()
+        continue-on-error: true
+        shell: bash
+        run: |
+          python scripts/ci/telegram_notify.py --results ci-results os-finished --os "macos-github-hosted" || true
