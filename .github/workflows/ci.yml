@@ -506,6 +506,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The C planner resolves changed files with
+          #   git diff --name-only base...head
+          # which needs the merge base. The default depth-1 checkout has no
+          # base commit, so the engine exited rc=3 ("git diff failed") and the
+          # planner never produced a plan. 0 = full history for this job.
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
