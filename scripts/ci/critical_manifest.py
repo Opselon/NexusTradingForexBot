@@ -352,7 +352,11 @@ def main(argv: list[str] | None = None) -> int:
         cov_report = (
             coverage_gate(cov_path)
             if cov_path.exists()
-            else {"ok": False, "failures": [f"coverage XML not found: {cov_path}"]}
+            else {
+                "ok": False,
+                "rows": [],
+                "failures": [f"coverage XML not found: {cov_path}"],
+            }
         )
 
     if args.json:

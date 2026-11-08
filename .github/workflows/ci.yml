@@ -575,12 +575,21 @@ jobs:
             echo "restored binary failed verification — rebuilding"
             rm -f scripts/ci/native/artifacts/nse-ci-engine
           fi
-          # Self-hosted tiers may not ship cmake: install the portable PyPI
-          # cmake wheel (no root required) when the system one is missing.
+          # Self-hosted tiers may not ship cmake. The venv created above is a
+          # `uv venv`, which has NO pip inside it, so `python3 -m pip install
+          # --user cmake` silently failed on tier-2 (nexus-runner) and the job
+          # then died in run_test_plan.py with
+          #   FileNotFoundError: [Errno 2] No such file or directory: 'cmake'
+          # Install it with uv into the SAME venv that is already on PATH.
           if ! command -v cmake >/dev/null 2>&1; then
-            echo "cmake not found — installing the portable wheel"
-            python3 -m pip install --user --quiet cmake || true
-            export PATH="${HOME}/.local/bin:${PATH}"
+            echo "cmake not found — installing the portable wheel via uv"
+            uv pip install --quiet cmake || true
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            # uv installs the wheel as a console script in the venv bin dir.
+            for d in "$PWD/${VENV_DIR}/bin" "$HOME/.local/bin"; do
+              [ -x "$d/cmake" ] && export PATH="$d:$PATH" && break
+            done
           fi
           if ! command -v cmake >/dev/null 2>&1; then
             echo "::error::cmake unavailable on this runner — native C17 planner cannot build; failing closed (never degrade to Python planning)"
