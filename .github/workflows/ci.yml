@@ -547,18 +547,61 @@ jobs:
           python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-started || true
 
       # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --
+      - name: Restore trusted native engine (shared cache)
+        id: native_cache
+        # Layer-B shared cache (mission §7): a portable, trusted build artifact
+        # reused across tiers. FORK PRs never reach the self-hosted lanes and
+        # never participate in this cache. Restored binaries are VALIDATED
+        # (version + selftest) before use — an incompatible entry is a miss.
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scripts/ci/native/artifacts/nse-ci-engine
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
+          fail-on-cache-miss: false
+
       - name: Build & verify native C17 engine
         id: native
         continue-on-error: true
         run: |
           set -euo pipefail
-          # The C17 engine is the PRIMARY test planner; a build/selftest
-          # failure degrades observably to the Python reference inside
-          # run_test_plan.py (never silently, never reported as native).
+          # A restored binary wins only if it passes version + selftest.
+          if [ -f scripts/ci/native/artifacts/nse-ci-engine ]; then
+            if scripts/ci/native/artifacts/nse-ci-engine version | grep -qx "0.1.0" \
+               && scripts/ci/native/artifacts/nse-ci-engine selftest >/dev/null; then
+              echo "binary=scripts/ci/native/artifacts/nse-ci-engine" >> "$GITHUB_OUTPUT"
+              echo "source=restored-trusted-cache" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "restored binary failed verification — rebuilding"
+            rm -f scripts/ci/native/artifacts/nse-ci-engine
+          fi
+          # Self-hosted tiers may not ship cmake: install the portable PyPI
+          # cmake wheel (no root required) when the system one is missing.
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "cmake not found — installing the portable wheel"
+            python3 -m pip install --user --quiet cmake || true
+            export PATH="${HOME}/.local/bin:${PATH}"
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "::warning::cmake unavailable on this runner — native planner degrades to the Python reference (observable, never silent)"
+            exit 0
+          fi
           cmake -S scripts/ci/native -B scripts/ci/native/build -DCMAKE_BUILD_TYPE=Release
           cmake --build scripts/ci/native/build -j "$(nproc)"
           scripts/ci/native/build/nse-ci-engine selftest
-          echo "binary=scripts/ci/native/build/nse-ci-engine" >> "$GITHUB_OUTPUT"
+          mkdir -p scripts/ci/native/artifacts
+          cp scripts/ci/native/build/nse-ci-engine scripts/ci/native/artifacts/nse-ci-engine
+          echo "binary=scripts/ci/native/artifacts/nse-ci-engine" >> "$GITHUB_OUTPUT"
+          echo "source=built-this-run" >> "$GITHUB_OUTPUT"
+
+      - name: Save native engine to trusted cache
+        # Policy (cache-by-event table): trusted main pushes and full
+        # validations SEED the shared cache; ordinary PRs restore only.
+        if: steps.native.outputs.source == 'built-this-run' && (github.ref_name == 'main' || inputs.full == true || github.event_name == 'schedule')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scripts/ci/native/artifacts/nse-ci-engine
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
 
       - name: Planner-driven pytest (C17 primary + Python parity)
         id: pytest
