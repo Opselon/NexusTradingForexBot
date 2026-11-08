@@ -559,18 +559,6 @@ jobs:
           key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
           fail-on-cache-miss: false
 
-      - name: Restore trusted native engine (shared cache)
-        id: native_cache
-        # Layer-B shared cache (mission §7): a portable, trusted build artifact
-        # reused across tiers. FORK PRs never reach the self-hosted lanes and
-        # never participate in this cache. Restored binaries are VALIDATED
-        # (version + selftest) before use — an incompatible entry is a miss.
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: scripts/ci/native/artifacts/nse-ci-engine
-          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
-          fail-on-cache-miss: false
-
       - name: Build & verify native C17 engine
         id: native
         continue-on-error: true
@@ -633,36 +621,6 @@ jobs:
             --event "${{ github.event_name }}" \
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
-            --xdist 4 \
-            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --cov-report=html:$CI_RESULTS_DIR/pytest/htmlcov --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
-            --out-dir "$CI_RESULTS_DIR/test-plan" \
-            --runner-name "${{ runner.name }}" \
-            --attempt "${{ github.run_attempt }}" \
-            > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-          rc=$?
-          # rc: real pytest exit code, or 90 = planner-integrity failure
-          # (conservative evidence was still collected above — fail closed).
-          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "planner-selected execution — see pytest/junit.xml + test-plan/execution-manifest.json" || true
-          exit $rc
-
-      - name: Planner-driven pytest (C17 primary + Python parity)
-        id: pytest
-        continue-on-error: true
-        run: |
-          set +e
-          # C17 plans (changed-file driven); Python executes via pytest.
-          # targeted on PR/push; full on schedule + full dispatch (policy).
-          MODE=targeted
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
-          NATIVE=auto
-          if [ -z "${{ steps.native.outputs.binary }}" ]; then NATIVE=off; fi
-          python scripts/ci/run_test_plan.py \
-            --repo-root . \
-            --base "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            --head "${{ github.sha }}" \
-            --event "${{ github.event_name }}" \
-            --mode "$MODE" \
-            --native "$NATIVE" \
             --xdist 4 \
             --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --cov-report=html:$CI_RESULTS_DIR/pytest/htmlcov --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
