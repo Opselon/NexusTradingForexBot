@@ -509,6 +509,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             any = true;
         }
         if (reg.items[i].reasons & R_FALLBACK) {
+            if (any) sb_append_ch(&sb, ',');
             sb_append(&sb, "\"conservative_fallback\"");
             any = true;
         }
