@@ -33,7 +33,6 @@ import shutil
 import subprocess
 import sys
 import time
-from pathlib import Path
 
 ENGINE_VERSION = "0.1.0"
 EXIT_PLANNER_INTEGRITY = 90
@@ -45,15 +44,13 @@ def log(msg: str) -> None:
 
 def sh(argv: list[str], cwd: str | None = None, timeout: int = 600):
     started = time.time()
-    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True,
-                          timeout=timeout)
+    proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False)
     return proc, time.time() - started
 
 
 def engine_version(binary: str) -> str | None:
     try:
-        proc = subprocess.run([binary, "version"], capture_output=True, text=True,
-                              timeout=15)
+        proc = subprocess.run([binary, "version"], capture_output=True, text=True, timeout=15, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return None
     return proc.stdout.strip() if proc.returncode == 0 else None
@@ -61,8 +58,7 @@ def engine_version(binary: str) -> str | None:
 
 def selftest_ok(binary: str) -> bool:
     try:
-        proc = subprocess.run([binary, "selftest"], capture_output=True, text=True,
-                              timeout=60)
+        proc = subprocess.run([binary, "selftest"], capture_output=True, text=True, timeout=60, check=False)
     except (OSError, subprocess.TimeoutExpired):
         return False
     return proc.returncode == 0
@@ -89,7 +85,7 @@ def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
         if bld.returncode != 0:
             raise RuntimeError(f"cmake build failed: {bld.stderr[-200:]}")
     except (OSError, subprocess.TimeoutExpired) as exc:
-        raise RuntimeError(f"native build error: {exc}")
+        raise RuntimeError(f"native build error: {exc}") from exc
 
     fresh = os.path.join(build_dir, "nse-ci-engine")
     if not os.path.isfile(fresh) or engine_version(fresh) != ENGINE_VERSION \
@@ -288,19 +284,18 @@ def main() -> int:
             return 91
 
     # 4. execute with REAL pytest
-    pytest_argv = [sys.executable, "-m", "pytest"] + selected_ids
+    pytest_argv = [sys.executable, "-m", "pytest", *selected_ids]
     if args.xdist > 0:
         pytest_argv += ["-n", str(args.xdist), "--dist", "loadgroup"]
     if args.pytest_extra:
         pytest_argv += args.pytest_extra.split()
     log(f"pytest: {len(selected_ids)} test files | argv: {' '.join(pytest_argv)}")
     t0 = time.time()
-    proc = subprocess.run(pytest_argv, cwd=repo_root)
+    proc = subprocess.run(pytest_argv, cwd=repo_root, check=False)
     pytest_rc, pytest_seconds = proc.returncode, time.time() - t0
     log(f"pytest exit: {pytest_rc}")
 
     # 5. evidence
-    ended = time.time()
     manifest = {
         "commit_head": args.head,
         "commit_base": args.base,
@@ -337,8 +332,8 @@ def main() -> int:
         with open(gout, "a", encoding="utf-8") as fh:
             fh.write(f"plan_digest={manifest['plan_digest']}\n")
             fh.write(f"planner_impl={planner_impl}\n")
-            fh.write(f"degraded=False\n")
-            fh.write(f"integrity_failed=False\n")
+            fh.write("degraded=False\n")
+            fh.write("integrity_failed=False\n")
             fh.write(f"selected_count={len(selected_ids)}\n")
             fh.write(f"parity_mode={parity_mode}\n")
 
