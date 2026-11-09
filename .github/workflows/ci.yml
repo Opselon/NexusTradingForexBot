@@ -642,11 +642,15 @@ jobs:
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
             --attempt "${{ github.run_attempt }}" \
-            > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-          rc=$?
+            2>&1 | tee "$CI_RESULTS_DIR/pytest/pytest.txt"
+          rc=${PIPESTATUS[0]}
           # rc: real pytest exit code, or 90 = planner-integrity failure
           # (conservative evidence was still collected above — fail closed).
           python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "planner-selected execution — see pytest/junit.xml + test-plan/execution-manifest.json" || true
+          # Human-readable C17 impact report (colourised + step summary).
+          python scripts/ci/ci_plan_report.py \
+            --results "$CI_RESULTS_DIR" \
+            --plan "$CI_RESULTS_DIR/test-plan/plan.json" || true
           exit $rc
 
       # -------- Whole-application SMOKE CHAIN (one-file E2E heartbeat) --------
@@ -1653,8 +1657,8 @@ jobs:
           pytest "${EXT_FILES[@]}" \
                  -n auto --dist loadgroup -q --tb=short \
                  --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
-                 > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-          rc=$?
+                 2>&1 | tee "$CI_RESULTS_DIR/pytest/pytest.txt"
+          rc=${PIPESTATUS[0]}
           { echo "EXT_RC=$rc"; } >> "$GITHUB_ENV"
           # NOTE: intentionally NOT make_ci_results.py check ... extended — the
           # quality job's ci_final_gate CHECKS tuple is the shared run-info

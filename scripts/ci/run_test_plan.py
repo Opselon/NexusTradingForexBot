@@ -308,6 +308,23 @@ def main() -> int:
         return EXIT_PLANNER_INTEGRITY
 
     plan_obj = native_obj  # C engine is primary
+    # --- C17 impact summary (visible in the job log) -------------------
+    _sel = plan_obj["selected_tests"]
+    _reasons = {}
+    for _t in _sel:
+        for _r in _t.get("reason", []):
+            _reasons[_r] = _reasons.get(_r, 0) + 1
+    _crit = sum(1 for _t in _sel if _t.get("priority") == "critical")
+    log(
+        f"C17 PLAN: mode={plan_obj['selection_mode']} "
+        f"full_suite={plan_obj['full_suite_required']} "
+        f"selected={len(_sel)} critical={_crit}"
+    )
+    if plan_obj.get("fallback_reason"):
+        log(f"C17 FALLBACK: {plan_obj['fallback_reason']}")
+    log("C17 REASONS: " + ", ".join(f"{k}={v}" for k, v in sorted(_reasons.items())))
+    log(f"C17 CHANGED: {len(changed)} file(s) -> {len(_sel)} test file(s)")
+
     log(f"parity OK ({parity_mode}) — digest {plan_obj['plan_digest'][:16]}...")
 
     # 3. selected tests
@@ -331,10 +348,14 @@ def main() -> int:
     if args.pytest_extra:
         pytest_argv += args.pytest_extra.split()
     log(f"pytest: {len(selected_ids)} test files | argv: {' '.join(pytest_argv)}")
+    log("PYTEST SELECTED (first 15): " + ", ".join(selected_ids[:15]))
+    if len(selected_ids) > 15:
+        log(f"PYTEST SELECTED: ... and {len(selected_ids) - 15} more")
+
     t0 = time.time()
     proc = subprocess.run(pytest_argv, cwd=repo_root, check=False)
     pytest_rc, pytest_seconds = proc.returncode, time.time() - t0
-    log(f"pytest exit: {pytest_rc}")
+    log(f"pytest exit: {pytest_rc} after {pytest_seconds:.1f}s")
 
     # 5. evidence
     manifest = {
