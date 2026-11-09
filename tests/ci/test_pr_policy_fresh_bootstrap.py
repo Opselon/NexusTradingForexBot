@@ -178,12 +178,21 @@ def test_fetch_script_actually_unshallows() -> None:
 
 
 def test_setup_action_has_pypi_fallback_index() -> None:
-    """setup-python-env must add PyPI as an extra index (mirror lag)."""
+    """setup-python-env must add PyPI as an extra index (mirror lag).
+
+    UV_INDEX_STRATEGY is load-bearing: uv's default first-index
+    strategy uses the FIRST index that has a package and never consults
+    the others for it — the extra index alone was proven a no-op by the
+    proof/leaf-timing run (PIP_EXTRA_INDEX_URL set, filelock 4.2.10
+    still unresolvable). unsafe-best-match considers all indexes.
+    """
     text = (REPO / ".github" / "actions" / "setup-python-env" / "action.yml").read_text(
         encoding="utf-8"
     )
     assert "PIP_EXTRA_INDEX_URL" in text, "setup action must set PIP_EXTRA_INDEX_URL"
     assert "https://pypi.org/simple/" in text, "fallback index must be PyPI"
+    assert "UV_INDEX_STRATEGY" in text, "setup action must set UV_INDEX_STRATEGY"
+    assert "unsafe-best-match" in text, "index strategy must be unsafe-best-match"
 
 
 def test_os_workflow_has_pypi_fallback_index() -> None:
@@ -192,6 +201,9 @@ def test_os_workflow_has_pypi_fallback_index() -> None:
     env = wf.get("env", {})
     assert env.get("PIP_EXTRA_INDEX_URL") == "https://pypi.org/simple/", (
         "tests-os.yml top-level env must set PIP_EXTRA_INDEX_URL to PyPI"
+    )
+    assert env.get("UV_INDEX_STRATEGY") == "unsafe-best-match", (
+        "tests-os.yml top-level env must set UV_INDEX_STRATEGY to unsafe-best-match"
     )
 
 

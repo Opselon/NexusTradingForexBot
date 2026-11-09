@@ -53,11 +53,21 @@ runs:
       shell: bash
       env:
         # PyPI as a FALLBACK index (2026-11-09): the Aliyun mirror lags
-        # PyPI for fresh releases (typer 0.29.0 missing -> `uv pip
-        # install` unresolvable on a fresh machine, tier-1). uv queries
-        # the primary (mirror, fast) first and the extra (PyPI) for any
-        # version the mirror lacks, so installs stay fast AND correct.
+        # PyPI for fresh releases (typer 0.29.0, then filelock 4.2.10
+        # missing -> `uv pip install` unresolvable on a fresh machine,
+        # tier-1). uv queries the primary (mirror, fast) first and the
+        # extra (PyPI) for any version the mirror lacks, so installs stay
+        # fast AND correct. UV_INDEX_STRATEGY is load-bearing here: uv's
+        # default first-index strategy uses the FIRST index that has a
+        # package and never consults the others for it — the mirror HAS
+        # filelock (4.2.9), so without unsafe-best-match PyPI's 4.2.10
+        # stays invisible and the extra index is a no-op (proven by the
+        # proof/leaf-timing run: PIP_EXTRA_INDEX_URL set, filelock 4.2.10
+        # still unresolvable). unsafe-best-match considers all indexes
+        # and picks the best version; downloads still prefer the mirror
+        # when it has the chosen version.
         PIP_EXTRA_INDEX_URL: "https://pypi.org/simple/"
+        UV_INDEX_STRATEGY: "unsafe-best-match"
       run: |
         set -euo pipefail
         # Automatic runner hygiene (2026-11-09): prune stale hash-bound
