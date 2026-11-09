@@ -34,6 +34,7 @@ from fastapi.testclient import TestClient
 
 from nexus_scalp.strategies.factory.provider_gate import redact_url
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 SEED = 20260902
 
@@ -41,7 +42,7 @@ SEED = 20260902
 def _client() -> TestClient:
     # raise_server_exceptions=False: we are testing the APP's observable
     # error behavior (status + body), not that exceptions propagate.
-    return TestClient(create_app(engine_ref=None), raise_server_exceptions=False)
+    return authenticated_test_client(create_app(engine_ref=None), raise_server_exceptions=False)
 
 
 # ---------------------------------------------------------------------------

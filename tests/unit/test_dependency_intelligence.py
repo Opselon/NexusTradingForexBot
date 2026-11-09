@@ -10,6 +10,8 @@ fabricated data). Heavy scans are memoised per-session via a module fixture.
 
 from __future__ import annotations
 
+from tests.helpers.authenticated_client import authenticated_test_client
+
 import importlib.util
 import subprocess
 import sys
@@ -271,11 +273,10 @@ def test_impact_direct_and_transitive(graph):
 
 @requires_pkg
 def test_api_summary_shape():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get("/api/dependency/summary")
     assert r.status_code == 200
     body = r.json()
@@ -285,11 +286,10 @@ def test_api_summary_shape():
 
 @requires_pkg
 def test_api_graph_shape():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get("/api/dependency/graph")
     assert r.status_code == 200
     body = r.json()
@@ -298,22 +298,20 @@ def test_api_graph_shape():
 
 @requires_pkg
 def test_api_node_lookup():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get("/api/dependency/node/nexus_scalp.cli.main")
     assert r.status_code in (200, 404)  # 200 if exists; contract is a valid response
 
 
 @requires_pkg
 def test_api_path_lookup():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get(
         "/api/dependency/path",
         params={
@@ -327,11 +325,10 @@ def test_api_path_lookup():
 
 @requires_pkg
 def test_api_impact_response():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get(
         "/api/dependency/impact", params={"path": "mod:nexus_scalp.configuration.config"}
     )
@@ -341,11 +338,10 @@ def test_api_impact_response():
 
 @requires_pkg
 def test_api_unknown_node_404():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get("/api/dependency/node/does.not.exist.module")
     assert r.status_code == 404
 
@@ -357,11 +353,10 @@ def test_api_unknown_node_404():
 
 @requires_pkg
 def test_dependency_route_exists():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     r = client.get("/dependency")
     assert r.status_code == 200
     assert b"Dependency Intelligence" in r.content
@@ -369,11 +364,10 @@ def test_dependency_route_exists():
 
 @requires_pkg
 def test_frontend_bootstrap_present():
-    from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
 
-    client = TestClient(create_app(engine_ref=None))
+    client = authenticated_test_client(create_app(engine_ref=None))
     html = client.get("/dependency").content.decode("utf-8", "replace")
     for token in ("dependency_api.js", "dependency_graph.js", "dependency_ui.js", "graph-svg"):
         assert token in html, f"missing {token} in /dependency page"
