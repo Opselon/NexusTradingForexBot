@@ -13,6 +13,7 @@ static void usage(void) {
         "usage:\n"
         "  nse-ci-engine plan --repo-root DIR --files \"a.py b.py\" [--commit-sha SHA]\n"
         "                     [--event NAME] [--full-suite] [--out FILE]\n"
+        "                     [--metadata FILE] [--pyproject-scope SCOPE]\n"
         "  nse-ci-engine classify --base SHA --head SHA [--repo-root DIR]\n"
         "  nse-ci-engine fingerprint --repo-root DIR --test tests/unit/test_x.py\n"
         "  nse-ci-engine validate-plan plan.json\n"
@@ -29,6 +30,7 @@ static int cmd_plan(int argc, char **argv) {
     const char *event = "";
     const char *out = NULL;
     const char *metadata_file = NULL;
+    const char *pyproject_scope = NULL;
     bool full = false;
     for (int i = 0; i < argc; i++) {
         if (strcmp(argv[i], "--repo-root") == 0 && i + 1 < argc) repo_root = argv[++i];
@@ -38,6 +40,7 @@ static int cmd_plan(int argc, char **argv) {
         else if (strcmp(argv[i], "--full-suite") == 0) full = true;
         else if (strcmp(argv[i], "--out") == 0 && i + 1 < argc) out = argv[++i];
         else if (strcmp(argv[i], "--metadata") == 0 && i + 1 < argc) metadata_file = argv[++i];
+        else if (strcmp(argv[i], "--pyproject-scope") == 0 && i + 1 < argc) pyproject_scope = argv[++i];
     }
     if (!files) {
         fprintf(stderr, "plan: --files required\n");
@@ -55,7 +58,7 @@ static int cmd_plan(int argc, char **argv) {
     }
     sb_append_ch(&nul, '\0'); /* terminate the NUL-separated list */
 
-    PlanOptions opt = { sha, event, full };
+    PlanOptions opt = { sha, event, full, pyproject_scope };
     StrBuf json;
     sb_init(&json);
     StrBuf meta;

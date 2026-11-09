@@ -45,6 +45,7 @@ void graph_init(Graph *g, Arena *a) {
     g->unparseable = (bool *)arena_alloc(a, g->mod_cap * sizeof(bool));
     g->relative_unresolved = false;
     g->dynamic_files = 0;
+    g->dynamic_unresolved_files = 0;
     memset(g->dynamic, 0, g->mod_cap * sizeof(bool));
 }
 
@@ -453,6 +454,42 @@ void graph_scan_repo(Graph *g, const char *repo_root) {
  * still selects its direct test importers. */
 #define HUB_IMPORTER_THRESHOLD 25
 
+/* One-hop expansion cap: a reached hub's direct test importers are
+ * included only when there are at most this many of them. An UNCAPPED
+ * one-hop re-introduces the explosion hub-bounding exists to prevent:
+ * measured on this repo, a one-line change in research/worker.py selects
+ * 219 files with uncapped one-hop (94 via the research/__init__ facade,
+ * 73 via live_engine, 70 via web/server, with overlaps) versus 7
+ * bounded. The cap mirrors the hub threshold: a hub whose direct test
+ * fan-out fits the bound is a shared intermediate (the audit's scenario)
+ * and its tests are included; a composition root with a larger test
+ * fan-out stays a hard boundary, and the truncation stays visible via
+ * hub_bounded / the plan notes. */
+#define HUB_ONE_HOP_MAX_TESTS 25
+
+/* Select the direct TEST importers of a hub (bounded one-hop expansion).
+ * Returns the hub's direct-test count when the expansion applied
+ * (0 when the hub has no direct tests, or when its test fan-out exceeds
+ * the cap and the hub stays a hard boundary). The traversal never
+ * continues past the hub: only its immediate test importers are added,
+ * so the expansion is bounded by the cap instead of the transitive
+ * closure below it. */
+static size_t hub_direct_tests(const Graph *g, size_t hub_idx, bool *sel_test) {
+    size_t n = 0;
+    for (size_t e = 0; e < g->importer_counts[hub_idx]; e++) {
+        size_t importer = g->importers[hub_idx][e];
+        if (importer < g->mod_count && g->is_test[importer]) n++;
+    }
+    if (n == 0 || n > HUB_ONE_HOP_MAX_TESTS) return 0;
+    for (size_t e = 0; e < g->importer_counts[hub_idx]; e++) {
+        size_t importer = g->importers[hub_idx][e];
+        if (importer < g->mod_count && g->is_test[importer]) {
+            sel_test[importer] = true;
+        }
+    }
+    return n;
+}
+
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
                            size_t *out_tests_len, size_t **out_covered,
@@ -494,8 +531,19 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
     while (top > 0) {
         size_t idx = stack[--top];
         if (is_hub[idx] && !is_changed[idx]) {
-            /* Intermediate hub: boundary — never expand through it. */
+            /* Intermediate hub: boundary — never expand through it. But
+             * never silently drop its dependents either: conservatively
+             * include the hub's direct test importers (bounded one-hop
+             * expansion). A change below a hub can only reach a test by
+             * changing the hub's observable behaviour, and the hub's
+             * direct tests are the tests that exercise that surface — so
+             * the changed module counts as covered by them. Tests that
+             * reach the hub only via a non-test intermediate (distance
+             * >= 2 past the hub) are still not selected; that residual
+             * is documented in docs/C17_ARCHITECTURE.md and visible in
+             * the plan notes (hub_bounded), never silent. */
             hub_bounded = true;
+            if (hub_direct_tests(g, idx, sel_test) > 0) covered[idx] = true;
             continue;
         }
         if (g->is_test[idx]) covered[idx] = true; /* changed test covers itself */
@@ -509,8 +557,14 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                 covered[idx] = true;
             } else if (is_hub[importer]) {
                 /* Do not cross a hub: its dependents are not selected
-                 * through this path, and it does not cover the module. */
+                 * through this path — except its DIRECT test importers,
+                 * which the bounded one-hop expansion includes (see
+                 * above). If the hub has at least one, the module counts
+                 * as covered by those tests. */
                 hub_bounded = true;
+                if (hub_direct_tests(g, importer, sel_test) > 0) {
+                    has_importer = true;
+                }
             } else {
                 has_importer = true;
                 if (!visited[importer]) {

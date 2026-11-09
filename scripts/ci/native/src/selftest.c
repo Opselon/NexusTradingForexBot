@@ -184,7 +184,7 @@ static int test_plan_fixture(void) {
     fputs("tests/unit/test_unrelated.py\n", f);
     fclose(f);
 
-    PlanOptions opt = { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "", false };
+    PlanOptions opt = { "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "", false, NULL };
     StrBuf plan;
     sb_init(&plan);
     char digest[65];

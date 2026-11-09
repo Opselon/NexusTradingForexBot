@@ -7,16 +7,85 @@
  *
  * Graph identity: every file is ONE node keyed by its repo-relative path.
  * A module->node index resolves absolute/relative import targets. Edges:
- *   MODULE_IMPORT / RELATIVE_IMPORT (high)   — resolved imports
+ *   MODULE_IMPORT / RELATIVE_IMPORT (high)   — resolved imports; a symbol
+ *       of `from X import sym` is ALSO resolved as the submodule X.sym
+ *       (a namespace package `X` alone owns no file), and every resolved
+ *       module also edges to its ancestor package nodes (parent chain),
+ *       so changing a package __init__.py selects submodule importers.
+ *   DYNAMIC_IMPORT (high)                    — literal importlib targets
  *   FIXTURE_DEPENDENCY  (high)               — fixture args -> definer node
  *   FIXTURE_DEPENDENCY  (high)               — autouse conftest -> scoped tests
  *   UNKNOWN (unresolved)                     — relative_unresolved -> expansion
+ * A stale absolute import (target module deleted, still referenced behind
+ * try/except) keeps a SYNTHETIC node, mirroring the line scanner: the edge
+ * exists but no file can ever be selected through it, and it sets no
+ * uncertainty flag. Only an unresolvable RELATIVE import flips
+ * relative_unresolved.
  */
 #include "nse_ci_engine.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+/* Resolve a dotted module name to its graph node, or SIZE_MAX. */
+static size_t find_module_node(char **modules, size_t *node_idx, size_t n,
+                               const char *name) {
+    for (size_t j = 0; j < n; j++) {
+        if (strcmp(modules[j], name) == 0) return node_idx[j];
+    }
+    return SIZE_MAX;
+}
+
+/* True when `name` is a namespace package: no __init__.py of its own, but
+ * a strict prefix of at least one known module (PEP 420). Importing it
+ * alone owns no file, so it contributes no edge and no uncertainty. */
+static bool is_namespace_prefix(char **modules, size_t n, const char *name) {
+    size_t len = strlen(name);
+    for (size_t j = 0; j < n; j++) {
+        if (strncmp(modules[j], name, len) == 0 && modules[j][len] == '.') return true;
+    }
+    return false;
+}
+
+/* Edge to a module node plus each ancestor package node that exists —
+ * the metadata-path mirror of the line scanner's register_chain().
+ * Without the chain, changing a package __init__.py would miss every
+ * importer of the package's submodules (a false negative). */
+static void add_module_edge(Graph *g, size_t self_idx, const char *target,
+                            char **modules, size_t *node_idx, size_t n) {
+    char prefix[1024];
+    snprintf(prefix, sizeof(prefix), "%s", target);
+    for (;;) {
+        size_t t = find_module_node(modules, node_idx, n, prefix);
+        if (t != SIZE_MAX) graph_add_edge(g, self_idx, t);
+        char *dot = strrchr(prefix, '.');
+        if (!dot) break;
+        *dot = '\0';
+    }
+}
+
+/* Try to resolve `target` as a module; on success add the edge (+ parent
+ * chain) and return true. Also resolves the target as a file path
+ * (tests tree targets, where the dotted name and the path agree). */
+static bool resolve_target_edge(Graph *g, size_t self_idx, const char *target,
+                                char **modules, size_t *node_idx,
+                                char **paths, size_t n) {
+    if (find_module_node(modules, node_idx, n, target) != SIZE_MAX) {
+        add_module_edge(g, self_idx, target, modules, node_idx, n);
+        return true;
+    }
+    char as_py[1200];
+    snprintf(as_py, sizeof(as_py), "%s.py", target);
+    for (char *c = as_py; *c; c++) if (*c == '.') *c = '/';
+    for (size_t j = 0; j < n; j++) {
+        if (strcmp(paths[j], as_py) == 0) {
+            graph_add_edge(g, self_idx, node_idx[j]);
+            return true;
+        }
+    }
+    return false;
+}
 
 int graph_build_from_metadata(Graph *g, const char *repo_root,
                               const char *meta_json, char *err, size_t err_len) {
@@ -55,8 +124,21 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
         if (mv && mv->type == JSON_STRING) snprintf(mod, sizeof(mod), "%s", mv->str);
         modules[i] = arena_strdup(&a, mod);
         char pkg[1024] = "";
-        char *dot = strrchr(mod, '.');
-        if (dot) snprintf(pkg, sizeof(pkg), "%.*s", (int)(dot - mod), mod);
+        /* A package's __init__.py IS the package: its relative imports
+         * resolve against the full module name. The line scanner fixed
+         * this in own_package_for() (2026-11-09, release/__init__.py);
+         * the metadata builder had the same bug — `from .paths import …`
+         * inside release/__init__.py resolved to `nexus_scalp.paths`
+         * (nonexistent) and flipped the whole graph to
+         * relative_unresolved, so every metadata plan expanded. */
+        size_t rlen = strlen(rel);
+        bool is_init = rlen >= 12 && strcmp(rel + rlen - 12, "/__init__.py") == 0;
+        if (is_init) {
+            snprintf(pkg, sizeof(pkg), "%s", mod);
+        } else {
+            char *dot = strrchr(mod, '.');
+            if (dot) snprintf(pkg, sizeof(pkg), "%.*s", (int)(dot - mod), mod);
+        }
         packages[i] = arena_strdup(&a, pkg);
     }
 
@@ -82,17 +164,48 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
             }
             int level = (int)lv->num;
             const char *m = mv->str;
+            const JsonValue *syms0 = json_obj_get(imp, "symbols");
 
             if (level == 0) {
-                if (!nse_starts_with(m, "nexus_scalp")) continue;
-                size_t tidx = SIZE_MAX;
-                for (size_t j = 0; j < n; j++) {
-                    if (strcmp(modules[j], m) == 0) { tidx = node_idx[j]; break; }
+                /* Absolute import. The extractor records the module part
+                 * (`from X import a, b` -> m=X, symbols=[a, b]); a symbol
+                 * is very often itself a submodule (`from nexus_scalp.web
+                 * import server` -> nexus_scalp.web.server), and `X` alone
+                 * may not even exist as a file (namespace package, no
+                 * __init__.py). Resolve X AND every X.symbol as modules:
+                 * an edge to X alone misses a change to the submodule
+                 * file (a false negative the line scanner shares). */
+                if (!nse_starts_with(m, "nexus_scalp") &&
+                    !nse_starts_with(m, "tests")) {
+                    continue;
                 }
-                if (tidx != SIZE_MAX) {
+                bool resolved_any = false;
+                if (resolve_target_edge(g, self_idx, m, modules, node_idx,
+                                        paths, n)) {
+                    resolved_any = true;
+                }
+                if (syms0 && syms0->type == JSON_ARRAY) {
+                    for (size_t s = 0; s < syms0->count; s++) {
+                        if (syms0->items[s]->type != JSON_STRING) continue;
+                        char sub[1024];
+                        snprintf(sub, sizeof(sub), "%s.%s", m,
+                                 syms0->items[s]->str);
+                        if (resolve_target_edge(g, self_idx, sub, modules,
+                                                node_idx, paths, n)) {
+                            resolved_any = true;
+                        }
+                    }
+                }
+                if (!resolved_any && !is_namespace_prefix(modules, n, m)) {
+                    /* Stale/broken absolute import (a module deleted after
+                     * a refactor, still referenced behind try/except — e.g.
+                     * nexus_scalp.database.audit_repository): mirror the
+                     * line scanner and keep a synthetic node so the edge
+                     * exists but no file can ever be selected through it.
+                     * No expansion flag — the target has no file, so it
+                     * can never be a changed file. */
+                    size_t tidx = graph_find_or_add(g, m, NULL, false);
                     graph_add_edge(g, self_idx, tidx);
-                } else {
-                    g->relative_unresolved = true;
                 }
                 continue;
             }
@@ -104,52 +217,83 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
                 if (!dot) { pkg[0] = '\0'; break; }
                 *dot = '\0';
             }
-            size_t resolved = SIZE_MAX;
+            bool resolved_any = false;
             if (m[0]) {
                 char target[1024];
                 if (pkg[0]) snprintf(target, sizeof(target), "%s.%s", pkg, m);
                 else snprintf(target, sizeof(target), "%s", m);
-                for (size_t j = 0; j < n; j++) {
-                    if (strcmp(modules[j], target) == 0) { resolved = j; break; }
+                if (resolve_target_edge(g, self_idx, target, modules,
+                                        node_idx, paths, n)) {
+                    resolved_any = true;
                 }
-                if (resolved == SIZE_MAX) {
-                    char as_path[1024];
-                    snprintf(as_path, sizeof(as_path), "%s", target);
-                    for (char *c = as_path; *c; c++) if (*c == '.') *c = '/';
-                    char as_py[1200];
-                    snprintf(as_py, sizeof(as_py), "%s.py", as_path);
-                    for (size_t j = 0; j < n; j++) {
-                        if (strcmp(paths[j], as_py) == 0) { resolved = j; break; }
+                /* `from .pkg import sub` — sub may be the real module
+                 * while pkg is only a namespace package. */
+                if (syms0 && syms0->type == JSON_ARRAY) {
+                    for (size_t s = 0; s < syms0->count; s++) {
+                        if (syms0->items[s]->type != JSON_STRING) continue;
+                        char sub[1024];
+                        snprintf(sub, sizeof(sub), "%s.%s", target,
+                                 syms0->items[s]->str);
+                        if (resolve_target_edge(g, self_idx, sub, modules,
+                                                node_idx, paths, n)) {
+                            resolved_any = true;
+                        }
                     }
                 }
             } else {
                 const JsonValue *syms = json_obj_get(imp, "symbols");
                 if (syms && syms->type == JSON_ARRAY) {
-                    for (size_t s = 0; s < syms->count && resolved == SIZE_MAX; s++) {
+                    for (size_t s = 0; s < syms->count; s++) {
                         if (syms->items[s]->type != JSON_STRING) continue;
                         char target[1024];
                         if (pkg[0]) snprintf(target, sizeof(target), "%s.%s", pkg, syms->items[s]->str);
                         else snprintf(target, sizeof(target), "%s", syms->items[s]->str);
-                        for (size_t j = 0; j < n; j++) {
-                            if (strcmp(modules[j], target) == 0) { resolved = j; break; }
-                        }
-                        if (resolved == SIZE_MAX) {
-                            char as_py[1200];
-                            snprintf(as_py, sizeof(as_py), "%s.py", target);
-                            for (size_t j = 0; j < n; j++) {
-                                if (strcmp(paths[j], as_py) == 0) { resolved = j; break; }
-                            }
+                        if (resolve_target_edge(g, self_idx, target, modules,
+                                                node_idx, paths, n)) {
+                            resolved_any = true;
                         }
                     }
                 }
             }
-            if (resolved != SIZE_MAX) {
-                graph_add_edge(g, self_idx, node_idx[resolved]);
-            } else if (nse_starts_with(m, "nexus_scalp") ||
-                       nse_starts_with(m, "tests") || level > 0) {
+            if (!resolved_any) {
                 g->relative_unresolved = true;
             }
         }
+    }
+
+    /* dynamic imports (importlib.import_module / __import__ with a literal
+     * target): the line scanner cannot see these at all, so a test that
+     * depends on a module ONLY through a dynamic import was previously
+     * unselectable. Literal nexus_scalp/tests targets get real edges.
+     * A non-literal target ("<dynamic>") is unknowable statically: it is
+     * counted (g->dynamic_files, surfaced in the plan notes) but does NOT
+     * force expansion — 11 files in the tree use one, and expanding every
+     * plan for them would make the metadata path useless. Residual risk
+     * is documented in docs/C17_ARCHITECTURE.md. */
+    for (size_t i = 0; i < n; i++) {
+        const JsonValue *info = files->items[i];
+        size_t self_idx = node_idx[i];
+        const JsonValue *dyn = json_obj_get(info, "dynamic_imports");
+        if (!dyn || dyn->type != JSON_ARRAY || dyn->count == 0) continue;
+        g->dynamic[self_idx] = true;
+        g->dynamic_files++;
+        bool has_unresolved_dynamic = false;
+        for (size_t k = 0; k < dyn->count; k++) {
+            if (dyn->items[k]->type != JSON_STRING) continue;
+            const char *t = dyn->items[k]->str;
+            if (strcmp(t, "<dynamic>") == 0) {
+                has_unresolved_dynamic = true;
+                continue;
+            }
+            if (!nse_starts_with(t, "nexus_scalp") && !nse_starts_with(t, "tests")) {
+                continue;
+            }
+            if (!resolve_target_edge(g, self_idx, t, modules, node_idx, paths, n)) {
+                size_t tidx = graph_find_or_add(g, t, NULL, false);
+                graph_add_edge(g, self_idx, tidx);
+            }
+        }
+        if (has_unresolved_dynamic) g->dynamic_unresolved_files++;
     }
 
     /* fixture registry */

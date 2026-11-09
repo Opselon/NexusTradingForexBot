@@ -1,7 +1,12 @@
 /* test_selector.c — plan assembly (canonical JSON form, same digest basis).
  *
  * Selection semantics:
- *   - global invalidation files/prefixes -> conservative fallback expansion
+ *   - global invalidation -> conservative fallback expansion. THE canonical
+ *     policy lives here and ONLY here (is_global_invalidation): no other
+ *     file decides it. pyproject.toml is classified semantically by the
+ *     scope string Python passes in (--pyproject-scope, computed from the
+ *     parsed base/head toml diff); every other global file invalidates
+ *     unconditionally. See docs/C17_ARCHITECTURE.md.
  *   - unparseable python -> conservative expansion
  *   - missing test mapping (changed source module with no reachable test)
  *     -> reported by FILE PATH + conservative expansion
@@ -25,14 +30,53 @@
 #include <string.h>
 
 static const char *GLOBAL_INVALIDATION_FILES[] = {
-    "pyproject.toml", "requirements.lock", "requirements.txt", "uv.lock",
+    "requirements.lock", "requirements.txt", "uv.lock",
     "tests/conftest.py", "pytest.ini", "setup.cfg", "tox.ini",
 };
 static const char *GLOBAL_INVALIDATION_PREFIXES[] = { "configs/" };
 static const char *FALLBACK_SUITE_FILES[] = { "tests/critical_suite.txt",
                                               "tests/fast_suite.txt" };
 
-static bool is_global_invalidation(const char *path) {
+/* Semantic verdict for a pyproject.toml change, from the scope string
+ * Python computed by diffing the parsed base/head toml
+ * (classify_pyproject_diff in run_test_plan.py). Tokens:
+ *   pytest — [tool.pytest.ini_options] (collection/behaviour for every test)
+ *   deps   — [project] dependencies / requires-python / optional-dependencies
+ *   build  — [build-system] / [tool.setuptools.*] (what tests run against)
+ *   mypy   — [tool.mypy.*] only (type-checking; mypy runs in its own step)
+ *   lint   — [tool.ruff.*] only (lint; ruff runs in its own step)
+ *   meta   — [project] name/version/description/scripts only
+ *   unknown — an unrecognised section, or the diff could not be classified
+ * Global iff any token is pytest/deps/build/unknown. A NULL scope (old
+ * callers that do not pass --pyproject-scope) -> global (fail closed).
+ * An EMPTY scope means "no semantic difference" (comment/whitespace-only
+ * diff) -> NOT global.
+ * mypy/lint/meta-only changes are NOT global: they select the tests/ci
+ * integrity suite (CI-tooling scope, same as a workflow change) instead
+ * of the full critical suite. */
+static bool pyproject_scope_is_global(const char *scope) {
+    if (!scope) return true; /* unclassified -> fail closed */
+    if (!*scope) return false; /* no semantic difference */
+    /* comma-separated tokens; global on any of pytest/deps/build/unknown */
+    const char *p = scope;
+    while (*p) {
+        const char *comma = strchr(p, ',');
+        size_t len = comma ? (size_t)(comma - p) : strlen(p);
+        if ((len == 6 && strncmp(p, "pytest", 6) == 0) ||
+            (len == 4 && strncmp(p, "deps", 4) == 0) ||
+            (len == 5 && strncmp(p, "build", 5) == 0) ||
+            (len == 7 && strncmp(p, "unknown", 7) == 0)) {
+            return true;
+        }
+        p = comma ? comma + 1 : p + len;
+    }
+    return false;
+}
+
+static bool is_global_invalidation(const char *path, const char *pyproject_scope) {
+    if (strcmp(path, "pyproject.toml") == 0) {
+        return pyproject_scope_is_global(pyproject_scope);
+    }
     for (size_t i = 0;
          i < sizeof(GLOBAL_INVALIDATION_FILES) / sizeof(GLOBAL_INVALIDATION_FILES[0]);
          i++) {
@@ -44,6 +88,14 @@ static bool is_global_invalidation(const char *path) {
         if (nse_starts_with(path, GLOBAL_INVALIDATION_PREFIXES[i])) return true;
     }
     return false;
+}
+
+/* Append one evidence note ("; "-separated, single string in the plan). */
+static void note_append(char *buf, size_t buf_len, const char *text) {
+    if (buf[0]) {
+        strncat(buf, "; ", buf_len - strlen(buf) - 1);
+    }
+    strncat(buf, text, buf_len - strlen(buf) - 1);
 }
 
 /* Selected-entry registry: test id -> reason flags (bitmask). */
@@ -151,14 +203,20 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
     char note_buf[2048];
     note_buf[0] = '\0';
     bool hub_bounded = false;
+    bool metadata_used = false; /* the graph really came from AST metadata */
 
     /* classify changed sets */
     bool has_python_src = false, has_test_py = false, has_global = false;
+    bool pyproject_tooling = false; /* pyproject.toml, non-global scope */
     for (size_t i = 0; i < changed_count; i++) {
         const char *f = changed[i].path;
         if (nse_ends_with(f, ".py") && nse_starts_with(f, "src/")) has_python_src = true;
         if (nse_starts_with(f, "tests/") && nse_ends_with(f, ".py")) has_test_py = true;
-        if (is_global_invalidation(f)) has_global = true;
+        if (is_global_invalidation(f, opt->pyproject_scope)) has_global = true;
+        if (strcmp(f, "pyproject.toml") == 0 &&
+            !is_global_invalidation(f, opt->pyproject_scope)) {
+            pyproject_tooling = true;
+        }
     }
 
     /* files list as NUL-separated for graph scanner */
@@ -186,9 +244,15 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
         sb_append(&r, "global invalidation: ");
         bool first = true;
         for (size_t i = 0; i < changed_count && i < 999; i++) {
-            if (is_global_invalidation(changed[i].path)) {
+            if (is_global_invalidation(changed[i].path, opt->pyproject_scope)) {
                 if (!first) sb_append(&r, ", ");
                 sb_append(&r, changed[i].path);
+                if (strcmp(changed[i].path, "pyproject.toml") == 0 &&
+                    opt->pyproject_scope && *opt->pyproject_scope) {
+                    sb_append(&r, " (");
+                    sb_append(&r, opt->pyproject_scope);
+                    sb_append(&r, ")");
+                }
                 first = false;
                 if (r.len > 300) { sb_append(&r, ", ..."); break; }
             }
@@ -199,12 +263,32 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
         Graph g;
         graph_init(&g, &arena);
         if (metadata_json) {
-            if (graph_build_from_metadata(&g, repo_root, metadata_json, NULL, 0) != 0) {
-                /* malformed metadata: fall back to the line scanner */
-                graph_scan_repo(&g, repo_root);
+            /* Production path: the graph comes from the AST metadata
+             * Python extracted. Malformed metadata FAILS CLOSED — falling
+             * back to the weaker line scanner would silently change
+             * selection semantics (and hide the extractor bug). */
+            char meta_err[256] = "";
+            if (graph_build_from_metadata(&g, repo_root, metadata_json, meta_err,
+                                          sizeof(meta_err)) != 0) {
+                fprintf(stderr, "plan: metadata graph build failed: %s\n",
+                        meta_err[0] ? meta_err : "unknown error");
+                sb_free(&py_files);
+                arena_free(&arena);
+                return -1;
             }
+            metadata_used = true;
         } else {
             graph_scan_repo(&g, repo_root);
+        }
+        if (metadata_used && g.dynamic_unresolved_files > 0) {
+            /* Non-literal dynamic imports are counted, not expanded (see
+             * ast_metadata.c); the note keeps the residual visible. */
+            char dyn_note[128];
+            snprintf(dyn_note, sizeof(dyn_note),
+                     "%zu file(s) use non-literal dynamic imports "
+                     "(statically unresolvable)",
+                     g.dynamic_unresolved_files);
+            note_append(note_buf, sizeof(note_buf), dyn_note);
         }
 
         bool any_unparseable = false;
@@ -391,7 +475,9 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             sel_add(&reg, p, R_FALLBACK);
         }
         sb_free(&suite);
-        snprintf(note_buf, sizeof(note_buf), "%s", fallback_reason);
+        /* Append, do not overwrite: notes recorded earlier (e.g. the
+         * dynamic-import note) are evidence too. */
+        note_append(note_buf, sizeof(note_buf), fallback_reason);
     }
 
     /* mandatory safety expansion */
@@ -412,28 +498,31 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             sb_free(&suite);
             char safety_note[1024];
             snprintf(safety_note, sizeof(safety_note), "safety-critical modules changed: %s", f);
-            if (note_buf[0]) {
-                strncat(note_buf, "; ", sizeof(note_buf) - strlen(note_buf) - 1);
-            }
-            strncat(note_buf, safety_note, sizeof(note_buf) - strlen(note_buf) - 1);
+            note_append(note_buf, sizeof(note_buf), safety_note);
             break; /* one note line is enough for the evidence trail */
         }
-
-    /* Hub-bounded reachability: recorded in the
-     * plan notes so the evidence trail shows the selection was truncated. */
-    if (hub_bounded) {
-        const char *hub_note =
-            "hub-bounded reachability: modules with >25 importers are selection boundaries";
-        if (note_buf[0]) {
-            strncat(note_buf, "; ", sizeof(note_buf) - strlen(note_buf) - 1);
-        }
-        strncat(note_buf, hub_note, sizeof(note_buf) - strlen(note_buf) - 1);
     }
+
+    /* Hub-bounded reachability: recorded ONCE in the plan notes so the
+     * evidence trail shows the selection was truncated (and how: the
+     * hub's direct test importers are included by the bounded one-hop
+     * expansion). Previously this sat inside the loop above and was
+     * appended once per changed file. */
+    if (hub_bounded) {
+        note_append(note_buf, sizeof(note_buf),
+                    "hub-bounded reachability: modules with >25 importers are "
+                    "selection boundaries; a reached hub's direct test "
+                    "importers are included only when there are at most 25 "
+                    "of them (bounded one-hop expansion)");
     }
 
     /* CI tooling:
      * scripts/ci/<name>.py -> tests/ci/test_<name>.py when present;
-     * workflow changes select the whole tests/ci integrity suite. */
+     * workflow changes select the whole tests/ci integrity suite.
+     * A pyproject.toml change whose semantic scope is NOT global
+     * (mypy/lint/meta only) is CI-tooling scope too: it selects the
+     * tests/ci integrity suite as a smoke check instead of the full
+     * critical suite. */
     int workflows_changed = 0;
     for (size_t i = 0; i < changed_count; i++) {
         if (nse_starts_with(changed[i].path, ".github/workflows/")) {
@@ -441,7 +530,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             break;
         }
     }
-    if (workflows_changed) {
+    if (workflows_changed || pyproject_tooling) {
         char ci_dir[1024];
         snprintf(ci_dir, sizeof(ci_dir), "%s/tests/ci", repo_root);
         DIR *d = opendir(ci_dir);
@@ -457,6 +546,18 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             }
             closedir(d);
         }
+    }
+    if (pyproject_tooling) {
+        /* Evidence for why the full suite did NOT run on a pyproject.toml
+         * change: the semantic scope excludes pytest/deps/build. */
+        char tool_note[256];
+        snprintf(tool_note, sizeof(tool_note),
+                 "pyproject.toml change limited to %s — CI-tooling scope, "
+                 "full suite not required",
+                 opt->pyproject_scope && *opt->pyproject_scope
+                     ? opt->pyproject_scope
+                     : "no semantic difference");
+        note_append(note_buf, sizeof(note_buf), tool_note);
     }
     for (size_t i = 0; i < changed_count; i++) {
         const char *f = changed[i].path;
@@ -484,8 +585,9 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
     /* ---------------- canonical JSON (sorted keys, compact) ----------------
      * Python: json.dumps(obj, sort_keys=True, separators=(",", ":"))
      * Top-level sorted keys:
-     *   commit_sha, fallback_reason, full_suite_required, missing_mappings,
-     *   notes, plan_version, selected_tests, selection_mode, skipped_groups
+     *   cached_results, commit_sha, fallback_reason, full_suite_required,
+     *   metadata_used, missing_mappings, notes, plan_version,
+     *   pyproject_scope, selected_tests, selection_mode, skipped_groups
      * (plan_digest excluded, then computed over these exact bytes)
      */
     StrBuf sb;
@@ -498,12 +600,17 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
     else sb_append(&sb, "null");
     sb_append(&sb, ",\"full_suite_required\":");
     sb_append(&sb, fallback_reason ? "true" : "false");
+    sb_append(&sb, ",\"metadata_used\":");
+    sb_append(&sb, metadata_used ? "true" : "false");
     sb_append(&sb, ",\"missing_mappings\":");
     json_write_str_array(&sb, missing, missing_len);
     sb_append(&sb, ",\"notes\":[");
     if (note_buf[0]) json_write_escaped(&sb, note_buf);
     sb_append(&sb, "]");
     sb_append(&sb, ",\"plan_version\":\"" NSE_PLAN_VERSION "\"");
+    sb_append(&sb, ",\"pyproject_scope\":");
+    if (opt->pyproject_scope) json_write_escaped(&sb, opt->pyproject_scope);
+    else sb_append(&sb, "null");
     sb_append(&sb, ",\"selected_tests\":[");
     for (size_t i = 0; i < reg.count; i++) {
         if (i) sb_append_ch(&sb, ',');

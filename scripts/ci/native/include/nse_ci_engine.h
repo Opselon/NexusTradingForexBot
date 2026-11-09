@@ -15,7 +15,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#define NSE_ENGINE_VERSION "0.1.0"
+#define NSE_ENGINE_VERSION "0.2.0"
 #define NSE_PLAN_VERSION "1"
 
 /* ------------------------------------------------------------------ */
@@ -146,6 +146,8 @@ typedef struct Graph {
     bool *unparseable;
     bool relative_unresolved; /* any relative import failed to resolve */
     size_t dynamic_files;     /* files containing dynamic-import indicators */
+    size_t dynamic_unresolved_files; /* files with a NON-LITERAL dynamic
+        import target ("<dynamic>"): statically unknowable */
 } Graph;
 
 /* ast_metadata.c — build the graph from the Python AST extractor's JSON. */
@@ -157,7 +159,14 @@ void graph_add_file(Graph *g, const char *rel_path, const char *abs_path);
 /* BFS reverse reachability from changed module indices. Also reports
  * (via out_hub_bounded, may be NULL) whether hub-bounding truncated the
  * expansion: a module with more than _HUB_IMPORTER_THRESHOLD importers is
- * a selection boundary (hub-bounded reachability). */
+ * a selection boundary (hub-bounded reachability). The truncation is NOT
+ * silent: when the traversal reaches a hub it conservatively includes the
+ * hub's DIRECT test importers, but only when there are at most
+ * HUB_ONE_HOP_MAX_TESTS (25) of them — a composition root with a larger
+ * test fan-out stays a hard boundary — and marks the traversal
+ * hub-bounded, so the plan notes record it. Tests that reach a hub only
+ * via a non-test intermediate (distance >= 2 past the hub) are still not
+ * selected — see docs/C17_ARCHITECTURE.md for the model. */
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
                            size_t *out_tests_len, size_t **out_covered,
@@ -173,6 +182,11 @@ typedef struct PlanOptions {
     const char *commit_sha;
     const char *event;         /* "" | pull_request | push | schedule | workflow_dispatch */
     bool full_suite_required;  /* explicit override */
+    const char *pyproject_scope; /* comma-joined semantic scope of a
+        pyproject.toml change (pytest,deps,build,mypy,lint,meta,unknown),
+        or NULL when pyproject.toml did not change / scope unknown.
+        NULL + a pyproject.toml change means global invalidation
+        (fail closed); see test_selector.c. */
 } PlanOptions;
 
 /* changed_files: NUL-separated list of repo-relative paths. */

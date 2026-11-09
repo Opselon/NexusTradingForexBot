@@ -5,10 +5,23 @@ Architecture contract (C plans, Python executes — no Python planner):
   * scripts/ci/native/nse-ci-engine  — the SOLE test planner (C17):
     changed files, selection, validation. There is no Python planner
     and no parity twin; a missing or failed engine fails the lane.
+  * scripts/ci/ast_extract.py       — minimal AST metadata extraction
+    ONLY (stdlib `ast`: imports, fixtures, test args, dynamic-import
+    targets). Python extracts structure; C owns dependency resolution,
+    graph construction, impact analysis and final selection. The
+    extractor runs on every plan and its JSON is passed to the engine
+    via --metadata; a failed extraction fails the lane closed — the
+    engine NEVER silently plans from the weaker line scanner in
+    production.
   * THIS FILE                        — subprocess glue: build/verify the C
-    engine, run its plan (digest-checked), execute the selected tests
-    with real pytest, write evidence, fail closed. Python never selects
-    tests; it only runs the files the C engine found.
+    engine, extract AST metadata, run its plan (digest-checked), execute
+    the selected tests with real pytest, write evidence, fail closed.
+    Python never selects tests; it only runs the files the C engine
+    found. The ONE classification Python performs is the semantic scope
+    of a pyproject.toml change (classify_pyproject_diff, parsed-toml
+    diff); the engine owns the final invalidation verdict.
+    There is no Python-side global-invalidation list: the canonical
+    policy lives in the C engine (test_selector.c) and nowhere else.
 
 Gate semantics:
   * Native C engine MUST build & pass selftest. Any failure -> exit non-zero.
@@ -36,8 +49,9 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 
-ENGINE_VERSION = "0.1.0"
+ENGINE_VERSION = "0.2.0"
 
 
 def log(msg: str) -> None:
@@ -50,6 +64,115 @@ def sh(argv: list[str], cwd: str | None = None, timeout: int = 600):
         argv, cwd=cwd, capture_output=True, text=True, timeout=timeout, check=False
     )
     return proc, time.time() - started
+
+
+def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
+    """Classify a pyproject.toml change by semantic section.
+
+    Parses the base and head versions of the file (tomllib) and compares
+    them section by section, instead of trusting the file name. Returns a
+    comma-joined scope set drawn from:
+      pytest — [tool.pytest.ini_options] (collection/behaviour for every test)
+      deps   — [project] dependencies / requires-python / optional-dependencies
+      build  — [build-system] / [tool.setuptools.*]
+      mypy   — [tool.mypy.*] only
+      lint   — [tool.ruff.*] only
+      meta   — [project] name/version/description/scripts only
+      unknown — an unrecognised section, or the diff could not be classified
+    "" (empty) means the two versions are semantically identical
+    (comment/whitespace-only diff). The C engine owns the final verdict:
+    pytest/deps/build/unknown (or an absent scope) -> global invalidation;
+    mypy/lint/meta-only -> CI-tooling scope, no full suite. A git or parse
+    failure returns "unknown" (fail closed, same as today's behaviour).
+    """
+
+    def _load(rev: str) -> dict | None:
+        proc, _ = sh(["git", "show", f"{rev}:pyproject.toml"], cwd=repo_root, timeout=60)
+        if proc.returncode != 0:
+            return None
+        try:
+            return tomllib.loads(proc.stdout)
+        except (tomllib.TOMLDecodeError, ValueError):
+            return None
+
+    old, new = _load(base), _load(head)
+    if old is None or new is None:
+        return "unknown"
+    scopes: set[str] = set()
+
+    def _project_scope(op: dict, np: dict) -> None:
+        for key in set(op) | set(np):
+            if op.get(key) != np.get(key):
+                if key in ("dependencies", "requires-python", "optional-dependencies"):
+                    scopes.add("deps")
+                else:
+                    scopes.add("meta")
+
+    op, np = old.get("project"), new.get("project")
+    if isinstance(op, dict) and isinstance(np, dict):
+        _project_scope(op, np)
+    elif op != np:
+        scopes.add("deps")  # structural change to [project] -> conservative
+    if old.get("build-system") != new.get("build-system"):
+        scopes.add("build")
+    ot, nt = old.get("tool"), new.get("tool")
+    if not isinstance(ot, dict):
+        ot = {}
+    if not isinstance(nt, dict):
+        nt = {}
+    for key in set(ot) | set(nt):
+        if ot.get(key) == nt.get(key):
+            continue
+        if key == "pytest":
+            scopes.add("pytest")
+        elif key == "mypy":
+            scopes.add("mypy")
+        elif key == "ruff":
+            scopes.add("lint")
+        elif key == "setuptools":
+            scopes.add("build")
+        else:
+            scopes.add("unknown")
+    for key in (set(old) | set(new)) - {"project", "build-system", "tool"}:
+        if old.get(key) != new.get(key):
+            scopes.add("unknown")
+    return ",".join(sorted(scopes))
+
+
+def extract_ast_metadata(repo_root: str, out_path: str) -> dict | None:
+    """Run the minimal AST extractor and write its JSON to out_path.
+
+    Returns the parsed metadata dict, or None on ANY failure. The caller
+    fails closed on None — a plan is never built without metadata (the
+    line scanner is a weaker graph and must not silently substitute).
+    """
+    proc, _ = sh(
+        [
+            sys.executable,
+            os.path.join(repo_root, "scripts", "ci", "ast_extract.py"),
+            repo_root,
+        ],
+        cwd=repo_root,
+        timeout=300,
+    )
+    if proc.returncode != 0:
+        log(f"AST extraction failed (rc={proc.returncode}): {proc.stderr[-200:]}")
+        return None
+    try:
+        meta = json.loads(proc.stdout)
+    except json.JSONDecodeError as exc:
+        log(f"AST extraction produced invalid JSON: {exc}")
+        return None
+    if (
+        not isinstance(meta, dict)
+        or meta.get("schema") != "nse-ast-meta-v1"
+        or not isinstance(meta.get("files"), dict)
+    ):
+        log("AST extraction produced unexpected schema (want nse-ast-meta-v1)")
+        return None
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(meta, fh)
+    return meta
 
 
 def engine_version(binary: str) -> str | None:
@@ -161,7 +284,14 @@ def validate_plan(plan_obj: dict) -> str | None:
 
 
 def c_plan(
-    binary: str, repo_root: str, files: list[str], head: str, event: str, full: bool
+    binary: str,
+    repo_root: str,
+    files: list[str],
+    head: str,
+    event: str,
+    full: bool,
+    metadata_path: str | None = None,
+    pyproject_scope: str | None = None,
 ) -> dict:
     argv = [
         binary,
@@ -177,6 +307,10 @@ def c_plan(
     ]
     if full:
         argv.append("--full-suite")
+    if metadata_path:
+        argv += ["--metadata", metadata_path]
+    if pyproject_scope is not None:
+        argv += ["--pyproject-scope", pyproject_scope]
     proc, _ = sh(argv, cwd=repo_root, timeout=120)
     if proc.returncode != 0:
         raise RuntimeError(f"native planner exit {proc.returncode}: {proc.stderr[-200:]}")
@@ -228,27 +362,40 @@ def main() -> int:
     changed = [f for f in proc.stdout.split("\n") if f]
     log(f"changed files: {len(changed)}")
 
-    # Global invalidation forces full mode (policy, mirrored from planner).
-    if not full:
-        for f in changed:
-            if f in {
-                "pyproject.toml",
-                "requirements.lock",
-                "requirements.txt",
-                "uv.lock",
-                "tests/conftest.py",
-                "pytest.ini",
-                "setup.cfg",
-                "tox.ini",
-            } or f.startswith(("configs/",)):
-                log(f"global invalidation via {f} — full critical suite")
-                full = True
-                break
+    # Semantic scope of a pyproject.toml change (parsed-toml diff). The
+    # C engine owns the invalidation verdict; Python only classifies.
+    # NOTE: there is deliberately NO Python-side global-invalidation list
+    # here — the canonical policy lives in the C engine (test_selector.c).
+    pyproject_scope = None
+    if "pyproject.toml" in changed:
+        pyproject_scope = classify_pyproject_diff(repo_root, args.base, args.head)
+        log(
+            f"C17 PYPROJECT SCOPE: {pyproject_scope if pyproject_scope else '(no semantic change)'}"
+        )
+
+    # AST metadata: extracted on every plan and passed to the engine.
+    # A failed extraction fails the lane closed (exit 90) — never plan
+    # from the weaker line scanner in production.
+    metadata_path = os.path.join(out_dir, "ast-metadata.json")
+    meta = extract_ast_metadata(repo_root, metadata_path)
+    if meta is None:
+        log("AST metadata extraction failed — failing closed (no line-scan fallback)")
+        return 90
+    log(f"C17 METADATA: {len(meta['files'])} files, schema nse-ast-meta-v1 -> {metadata_path}")
 
     # 2. plan: C native ONLY — the sole planner. No Python fallback.
     planner_impl = f"native-c17-{ENGINE_VERSION}"
     try:
-        native_obj = c_plan(native_binary, repo_root, changed, args.head, args.event, full)
+        native_obj = c_plan(
+            native_binary,
+            repo_root,
+            changed,
+            args.head,
+            args.event,
+            full,
+            metadata_path=metadata_path,
+            pyproject_scope=pyproject_scope,
+        )
     except (RuntimeError, json.JSONDecodeError, OSError) as exc:
         log(f"NATIVE PLANNER FAILED: {exc}")
         return 90  # planner integrity failure — no fallback, fail closed
@@ -279,6 +426,10 @@ def main() -> int:
         f"full_suite={plan_obj['full_suite_required']} "
         f"selected={len(_sel)} of {total_tests} test files critical={_crit}"
     )
+    log(
+        f"C17 METADATA USED: {plan_obj.get('metadata_used')} "
+        f"pyproject_scope={plan_obj.get('pyproject_scope')}"
+    )
     if plan_obj.get("fallback_reason"):
         log(f"C17 FALLBACK: {plan_obj['fallback_reason']}")
     else:
@@ -298,7 +449,16 @@ def main() -> int:
     if not selected_ids:
         log("empty selection — conservative expansion (empty never passes)")
         try:
-            plan_obj = c_plan(native_binary, repo_root, changed, args.head, args.event, True)
+            plan_obj = c_plan(
+                native_binary,
+                repo_root,
+                changed,
+                args.head,
+                args.event,
+                True,
+                metadata_path=metadata_path,
+                pyproject_scope=pyproject_scope,
+            )
         except (RuntimeError, json.JSONDecodeError, OSError) as exc:
             log(f"conservative re-plan failed: {exc}")
             return 90
@@ -334,6 +494,12 @@ def main() -> int:
         "plan_digest": plan_obj["plan_digest"],
         "plan_selection_mode": plan_obj["selection_mode"],
         "plan_fallback_reason": plan_obj.get("fallback_reason"),
+        "plan_metadata_used": plan_obj.get("metadata_used"),
+        "plan_pyproject_scope": plan_obj.get("pyproject_scope"),
+        "metadata_path": metadata_path,
+        "metadata_schema": "nse-ast-meta-v1",
+        "metadata_files": len(meta["files"]),
+        "pyproject_scope": pyproject_scope,
         "planner": {
             "primary_impl": planner_impl,
             "engine_version": ENGINE_VERSION,
