@@ -6,8 +6,11 @@
 # mode vocabulary the workflow has always used:
 #
 #   FULL         = full critical_suite.txt
-#   SKEW         = C-planned targeted subset (PR fast lane): the C17 engine
-#                  selects tests from the diff; no fixed list runs anymore.
+#   SKEW         = fast lane: C-planned targeted subset on Linux/macOS
+#                  (the C17 engine selects tests from the diff; no fixed
+#                  list runs there). Windows still runs the fixed skew
+#                  subset under the same mode name until its C-engine
+#                  build is validated (step-by-step: Linux first).
 #   SKIP-REPORT  = classifier decided nothing to run (required-context
 #                  always-report green; installs nothing, runs no tests)
 #

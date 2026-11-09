@@ -31,6 +31,7 @@ import argparse
 import hashlib
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import sys
@@ -254,15 +255,36 @@ def main() -> int:
         for _r in _t.get("reason", []):
             _reasons[_r] = _reasons.get(_r, 0) + 1
     _crit = sum(1 for _t in _sel if _t.get("priority") == "critical")
+    # Total test files in the tree, so the log reads "7 of 860" instead of
+    # a bare count: the whole point of the planner is selecting a few
+    # from many, and the log must show that ratio at a glance.
+    _tests_dir = pathlib.Path(repo_root) / "tests"
+    total_tests = (
+        sum(
+            1
+            for _p in _tests_dir.rglob("*.py")
+            if _p.name.startswith("test_") or _p.name == "conftest.py"
+        )
+        if _tests_dir.is_dir()
+        else 0
+    )
     log(
         f"C17 PLAN: mode={plan_obj['selection_mode']} "
         f"full_suite={plan_obj['full_suite_required']} "
-        f"selected={len(_sel)} critical={_crit}"
+        f"selected={len(_sel)} of {total_tests} test files critical={_crit}"
     )
     if plan_obj.get("fallback_reason"):
         log(f"C17 FALLBACK: {plan_obj['fallback_reason']}")
+    else:
+        # Say so explicitly: silence here would leave the reader guessing
+        # whether the fallback check ran at all.
+        log("C17 FALLBACK: none — pure change-based selection")
     log("C17 REASONS: " + ", ".join(f"{k}={v}" for k, v in sorted(_reasons.items())))
     log(f"C17 CHANGED: {len(changed)} file(s) -> {len(_sel)} test file(s)")
+    _shown = ", ".join(changed[:20])
+    if len(changed) > 20:
+        _shown += f", ... and {len(changed) - 20} more"
+    log(f"C17 CHANGED FILES: {_shown}" if _shown else "C17 CHANGED FILES: (none)")
     log(f"C17 DIGEST: {plan_obj['plan_digest'][:16]}...")
 
     # 3. selected tests
@@ -278,6 +300,10 @@ def main() -> int:
         if not selected_ids:
             log("zero tests after expansion — failing closed")
             return 91
+        log(
+            f"C17 EXPANDED: selected={len(selected_ids)} "
+            f"(fallback: {plan_obj.get('fallback_reason') or 'none'})"
+        )
 
     # 4. execute with REAL pytest
     pytest_argv = [sys.executable, "-m", "pytest", *selected_ids]
@@ -310,6 +336,7 @@ def main() -> int:
         },
         "selected_tests": selected_ids,
         "selected_count": len(selected_ids),
+        "total_test_files": total_tests,
         "changed_file_count": len(changed),
         "pytest_argv": pytest_argv,
         "pytest_exit_code": pytest_rc,
@@ -341,7 +368,12 @@ def main() -> int:
             fh.write(f"| planner | `{planner_impl}` |\n")
             fh.write(f"| plan digest | `{manifest['plan_digest']}` |\n")
             fh.write(f"| selection mode | {manifest['plan_selection_mode']} |\n")
-            fh.write(f"| selected tests | {len(selected_ids)} |\n")
+            fh.write(
+                f"| fallback | {manifest.get('plan_fallback_reason') or 'none — pure change-based selection'} |\n"
+            )
+            fh.write(
+                f"| selected tests | {len(selected_ids)} of {manifest['total_test_files']} |\n"
+            )
             fh.write(f"| changed files | {len(changed)} |\n")
             fh.write(f"| pytest exit | {pytest_rc} |\n")
             fh.write(f"| runner | {args.runner_name} (attempt {args.attempt}) |\n")
