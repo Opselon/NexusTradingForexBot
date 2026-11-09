@@ -18,8 +18,13 @@
 #include <string.h>
 #if defined(_WIN32)
 #include <io.h>
+#include <stdlib.h>
 #define access _access
 #define F_OK 0
+/* MSVC spells the reentrant tokenizer strtok_s; the signature is identical.
+ * Without this the file does not compile on Windows at all (implicit
+ * declaration of strtok_r, then a link error). */
+#define strtok_r strtok_s
 #else
 #include <unistd.h>
 #endif
@@ -160,9 +165,19 @@ static void own_package_for(const char *rel_path, bool is_test, char *pkg,
         nparts--;
     }
     size_t mod_len = is_init ? nparts - 1 : nparts;
-    /* package = module parts minus the last one */
+    /* package = module parts minus the last one.
+     *
+     * For a package's __init__.py the module IS the package, so the package
+     * keeps every part. Python reference:
+     *   src/nexus_scalp/release/__init__.py -> ('nexus_scalp.release',
+     *                                          'nexus_scalp.release')
+     * Dropping the last segment here made `from .paths import ...` inside
+     * release/__init__.py resolve to `nexus_scalp.paths` (nonexistent)
+     * instead of `nexus_scalp.release.paths`, which flipped the whole graph
+     * to relative_unresolved and forced conservative expansion. */
+    size_t pkg_len_parts = is_init ? mod_len : (mod_len ? mod_len - 1 : 0);
     pkg[0] = '\0';
-    for (size_t i = 0; i + 1 < mod_len; i++) {
+    for (size_t i = 0; i < pkg_len_parts; i++) {
         if (i) strncat(pkg, ".", pkg_len - strlen(pkg) - 1);
         strncat(pkg, parts[i], pkg_len - strlen(pkg) - 1);
     }
@@ -371,11 +386,61 @@ static void walk_dir(Graph *g, const char *root, const char *rel_base,
     closedir(d);
 }
 
+/* Pre-register every .py under `root` as a node, WITHOUT scanning imports.
+ *
+ * The Python reference does this in two passes: it collects all test-tree
+ * paths first, then resolves imports. A single-pass walk cannot resolve a
+ * relative import to a file it has not reached yet — `tests/unit/
+ * test_bug542_*.py` sorts before `test_live_state_contract.py`, so
+ * `from .test_live_state_contract import _FakeEngine` looked unresolvable
+ * and flipped the whole graph to conservative expansion. */
+static void preregister_dir(Graph *g, const char *root, const char *rel_base) {
+    DIR *d = opendir(root);
+    if (!d) return;
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        if (strcmp(ent->d_name, "__pycache__") == 0) continue;
+        char child_rel[1024];
+        char child_abs[2048];
+        if (rel_base[0]) {
+            snprintf(child_rel, sizeof(child_rel), "%s/%s", rel_base, ent->d_name);
+        } else {
+            snprintf(child_rel, sizeof(child_rel), "%s", ent->d_name);
+        }
+        snprintf(child_abs, sizeof(child_abs), "%s/%s", root, ent->d_name);
+        if (nse_ends_with(child_rel, ".py")) {
+            if (nse_starts_with(child_rel, "tests/")) {
+                /* test-tree nodes are keyed by their repo path */
+                graph_find_or_add(g, child_rel, child_rel, true);
+            } else {
+                char mod[512];
+                const char *base = nse_starts_with(child_rel, "src/") ? child_rel + 4 : child_rel;
+                snprintf(mod, sizeof(mod), "%s", base);
+                size_t ml = strlen(mod);
+                if (ml >= 3 && strcmp(mod + ml - 3, ".py") == 0) mod[ml - 3] = '\0';
+                for (char *c = mod; *c; c++) {
+                    if (*c == '/') *c = '.';
+                }
+                if (nse_ends_with(mod, ".__init__")) mod[strlen(mod) - 9] = '\0';
+                graph_find_or_add(g, mod, child_rel, false);
+            }
+        } else {
+            preregister_dir(g, child_abs, child_rel);
+        }
+    }
+    closedir(d);
+}
+
 void graph_scan_repo(Graph *g, const char *repo_root) {
     char src_root[1024];
     snprintf(src_root, sizeof(src_root), "%s/src/nexus_scalp", repo_root);
     char tests_root[1024];
     snprintf(tests_root, sizeof(tests_root), "%s/tests", repo_root);
+    /* Pass 1: every node exists before any import is resolved. */
+    preregister_dir(g, src_root, "src/nexus_scalp");
+    preregister_dir(g, tests_root, "tests");
+    /* Pass 2: scan imports and add edges. */
     walk_dir(g, src_root, "src/nexus_scalp", repo_root);
     walk_dir(g, tests_root, "tests", repo_root);
 }

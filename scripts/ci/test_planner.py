@@ -78,7 +78,19 @@ _SOURCE_ROOTS = ("src/nexus_scalp", "tests")
 
 
 def _norm(path: str) -> str:
-    return path.replace("\\", "/").lstrip("./").lstrip("/")
+    """Normalise a repo-relative path to forward slashes, no leading "./".
+
+    str.lstrip takes a CHARACTER SET, not a prefix: the previous
+    ``.lstrip("./")`` stripped every leading "." and "/", so
+    ".github/workflows/ci.yml" became "github/workflows/ci.yml" and the
+    workflow-change safety rule below (which tests
+    f.startswith(".github/workflows/")) was dead code. Strip the "./"
+    PREFIX explicitly.
+    """
+    p = path.replace("\\", "/")
+    while p.startswith("./"):
+        p = p[2:]
+    return p.lstrip("/")
 
 
 def _module_name_for_file(path: str) -> str | None:
