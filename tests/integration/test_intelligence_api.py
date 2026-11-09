@@ -46,15 +46,20 @@ def _flush(repo) -> None:
 
 
 @pytest.fixture
-def wired_engine(tmp_path):
+def wired_engine(tmp_path, verified_test_model_bundle):
     """A full LiveEngine wired against a paper adapter and temp DB."""
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
+    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+    model_path = copy_verified_trained_bundle(
+        verified_test_model_bundle, tmp_path / "model.pt"
+    )
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
             "mode": "PAPER",
         },
-        model={"model_artifact_path": str(tmp_path / "model.pt")},
+        model={"model_artifact_path": str(model_path)},
     )
     # Use a lightweight adapter (paper) so no MT5 is required.
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
