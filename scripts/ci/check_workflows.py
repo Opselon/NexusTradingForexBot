@@ -51,6 +51,16 @@ Checks (each is a finding with a severity; CI fails on any ERROR):
      the `python run_test_plan.py \` continuation and the step died with
      "--pytest-extra: command not found" (2026-11-09). Comments belong
      ABOVE the command, never inside its continuation.
+ 11. A `uv` job whose index config is only `PIP_INDEX_URL` (ERROR): uv reads
+     UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so a runner image
+     that exports them (tier-1's opselon/gh-runner hard-codes the Aliyun
+     mirror) silently overrides the workflow's primary index. Regression:
+     5e50710d's regenerated lock pinned typer 0.29.0 (published
+     2026-11-09T18:48Z); Aliyun did not carry it yet while TUNA did, and
+     every self-hosted lane died in ~2 s with "no version of
+     typer==0.29.0" even though `curl $PIP_INDEX_URL/simple/typer/` listed
+     it. Set UV_DEFAULT_INDEX (+ UV_INDEX_URL) wherever PIP_INDEX_URL is
+     set for a lane that runs uv.
 
 Lane vocabulary is DERIVED FROM THE ACTUAL REPO, not hard-coded to a foreign
 reference. The classifier (classify_changes.py) is the canonical lane list;
@@ -595,6 +605,56 @@ def check_job_env_contexts(wf: WorkflowModel) -> None:
             )
 
 
+_UV_RUN_RE = re.compile(r"\buv\s+(?:pip|sync|lock|export)\b")
+
+
+def check_uv_index_env(wf: WorkflowModel) -> None:
+    """`uv` lanes must pin UV_INDEX_URL, not only PIP_INDEX_URL.
+
+    uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX ahead of PIP_INDEX_URL, so a
+    runner image that exports them (tier-1's opselon/gh-runner image
+    hard-codes the Aliyun mirror) silently overrides the workflow's primary
+    index: uv then answers "no version of <pkg>==<ver>" while the primary
+    simple API lists it. Regression: 5e50710d's regenerated lock pinned
+    typer 0.29.0 (published 2026-11-09T18:48Z); Aliyun lacked it, TUNA
+    carried it, and every self-hosted lane failed in ~2 s during install.
+    """
+    raw = wf.raw
+    if not isinstance(raw, dict):
+        return
+    wf_env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
+    for jname, jbody in (raw.get("jobs") or {}).items():
+        if not isinstance(jbody, dict):
+            continue
+        scopes: list[dict] = [wf_env]
+        if isinstance(jbody.get("env"), dict):
+            scopes.append(jbody["env"])
+        runs_uv = False
+        for step in _gather_steps(jbody):
+            if isinstance(step.get("env"), dict):
+                scopes.append(step["env"])
+            run_cmd = step.get("run")
+            if isinstance(run_cmd, str) and _UV_RUN_RE.search(run_cmd):
+                runs_uv = True
+        if not runs_uv:
+            continue
+        keys = {key for env in scopes for key in env}
+        if "PIP_INDEX_URL" not in keys:
+            continue
+        if "UV_INDEX_URL" in keys or "UV_DEFAULT_INDEX" in keys:
+            continue
+        wf.error(
+            jname,
+            "uv-index-env-override",
+            "this job runs `uv` and sets PIP_INDEX_URL but neither "
+            "UV_INDEX_URL nor UV_DEFAULT_INDEX. uv reads the UV_* variables "
+            "FIRST, so a runner image that exports them (Aliyun on tier-1) "
+            "overrides the primary index and the install fails with "
+            "'no version of <pkg>==<ver>' even though the primary lists it. "
+            "Set UV_DEFAULT_INDEX (and UV_INDEX_URL) to the same primary.",
+        )
+
+
 def check_continuation_comments(wf: WorkflowModel) -> None:
     """A `#` comment line inside a backslash-continued shell command.
 
@@ -645,6 +705,7 @@ def analyze_workflow(wf: WorkflowModel) -> None:
     check_action_pins(wf)
     check_job_env_contexts(wf)
     check_continuation_comments(wf)
+    check_uv_index_env(wf)
 
 
 def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel], int]:

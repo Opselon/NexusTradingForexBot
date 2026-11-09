@@ -81,6 +81,12 @@ env:
   # primary already carries (proven by the proof/leaf-timing run).
   PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
   PIP_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+  # uv reads UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so the
+  # primary above is a no-op unless both are pinned: the tier-1 runner image
+  # exports them pointing at Aliyun (5e50710d: "no version of typer==0.29.0"
+  # although TUNA listed it).
+  UV_DEFAULT_INDEX: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+  UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   # Centralized runner configuration (scripts/ci/runner_config.py is the
   # single source of truth; these values mirror it at workflow level).

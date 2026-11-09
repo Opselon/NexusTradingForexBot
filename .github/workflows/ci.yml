@@ -221,7 +221,13 @@ jobs:
       # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
       # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
       # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      # uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+      # both are pinned here: the tier-1 image exports them (Aliyun) and
+      # would otherwise override this primary (5e50710d: "no version of
+      # typer==0.29.0" while TUNA listed it).
       PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
       PIP_DEFAULT_TIMEOUT: "30"
 
     steps:
@@ -531,7 +537,13 @@ jobs:
       # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
       # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
       # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      # uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+      # both are pinned here: the tier-1 image exports them (Aliyun) and
+      # would otherwise override this primary (5e50710d: "no version of
+      # typer==0.29.0" while TUNA listed it).
       PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
       PIP_DEFAULT_TIMEOUT: "30"
       # Test-database isolation (fail-closed): this lane NEVER talks to a
       # real/shared database. The self-hosted runners are persistent

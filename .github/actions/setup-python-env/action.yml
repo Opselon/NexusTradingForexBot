@@ -68,6 +68,16 @@ runs:
         # and picks the best version; downloads prefer the primary when
         # it has the chosen version.
         PIP_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+        # uv reads UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+        # the workflow's PIP_INDEX_URL primary is a no-op on any runner
+        # whose image exports them (tier-1's opselon/gh-runner image
+        # hard-codes the Aliyun mirror). 5e50710d: uv resolved against
+        # Aliyun only and reported "no version of typer==0.29.0" while the
+        # TUNA primary already listed it. Pin both UV variables here so the
+        # primary is identical on every machine of the fleet.
+        UV_DEFAULT_INDEX: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+        UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+        UV_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
         UV_INDEX_STRATEGY: "unsafe-best-match"
       run: |
         set -euo pipefail
