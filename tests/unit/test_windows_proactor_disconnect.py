@@ -41,6 +41,14 @@ import sys
 
 import pytest
 
+from nexus_scalp.web.transports import (
+    classify_transport_disconnect,
+    expected_disconnect_codes,
+    install_transport_disconnect_handler,
+    is_transport_disconnect_exception,
+)
+
+
 def _windows_disconnect_error(code: int, message: str = "remote endpoint disconnected"):
     """Build a Windows-shaped socket error on every host OS.
 
@@ -53,14 +61,6 @@ def _windows_disconnect_error(code: int, message: str = "remote endpoint disconn
     if getattr(exc, "winerror", None) is None:
         exc.winerror = code
     return exc
-
-
-from nexus_scalp.web.transports import (
-    classify_transport_disconnect,
-    expected_disconnect_codes,
-    install_transport_disconnect_handler,
-    is_transport_disconnect_exception,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -97,9 +97,7 @@ def test_production_netname_deleted_exception_is_classified():
     ``errno`` as EINVAL(22); EINVAL alone must NOT be trusted (see the guard
     test below), so the Windows code is what carries the classification.
     """
-    exc = _windows_disconnect_error(
-        64, "The specified network name is no longer available"
-    )
+    exc = _windows_disconnect_error(64, "The specified network name is no longer available")
     assert exc.errno == errno.EINVAL and exc.winerror == 64
     assert is_transport_disconnect_exception(exc)
     assert classify_transport_disconnect(exc, context=_proactor_context(exc))
@@ -286,7 +284,10 @@ def test_loop_handler_is_idempotent():
         loop.close()
 
 
-@pytest.mark.skipif(not hasattr(asyncio, "ProactorEventLoop"), reason="Windows Proactor loop is unavailable on this platform")
+@pytest.mark.skipif(
+    not hasattr(asyncio, "ProactorEventLoop"),
+    reason="Windows Proactor loop is unavailable on this platform",
+)
 def test_loop_handler_installs_on_proactor_runtime():
     """On the actual supported runtime the handler attaches to the real loop."""
     loop = asyncio.ProactorEventLoop()

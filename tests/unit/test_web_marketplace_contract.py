@@ -88,7 +88,9 @@ class TestMarketplaceJsContract:
             # Static layout may interpolate trusted i18n strings via t().
             # API-derived values must still never flow through innerHTML.
             interpolations = re.findall(r"\$\{([^}]*)\}", expr)
-            unsafe = [value.strip() for value in interpolations if not re.match(r"^t\s*\(", value.strip())]
+            unsafe = [
+                value.strip() for value in interpolations if not re.match(r"^t\s*\(", value.strip())
+            ]
             assert not unsafe, (
                 f"innerHTML assignment contains non-i18n template interpolation: {unsafe[:3]!r}"
             )

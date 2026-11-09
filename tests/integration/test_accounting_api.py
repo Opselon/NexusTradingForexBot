@@ -31,8 +31,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 from nexus_scalp.application.live_engine import LiveEngine
@@ -46,6 +44,7 @@ from nexus_scalp.experience.models import (
 )
 from nexus_scalp.experience.quality import compute_behavior_metrics
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo: AuditRepository) -> None:
@@ -136,6 +135,16 @@ def _seed_closed_trade(
         was_sl_modified=0,
         mae_usd=-50.0,
         mfe_usd=150.0,
+        # BUG-226 provenance: the engine boot-tags ledger writes with the
+        # runtime execution mode, and this suite wires a PAPER-mode engine,
+        # so untagged rows land as account_source='PAPER' — which
+        # AccountingCore.load_trades deliberately EXCLUDES from performance
+        # metrics (paper-simulator contamination guard). But these seeds are
+        # the test's *historical real-broker* fixtures (the exact thing the
+        # filter is designed to KEEP), so tag them explicitly as LIVE.
+        # Without this the endpoint reports closed_trades=0 and every
+        # totals assertion in this file fails.
+        account_source="LIVE",
     )
     _flush(repo)
 

@@ -10,14 +10,14 @@ fabricated data). Heavy scans are memoised per-session via a module fixture.
 
 from __future__ import annotations
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 import importlib.util
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from tests.helpers.authenticated_client import authenticated_test_client
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC = REPO_ROOT / "src" / "nexus_scalp"

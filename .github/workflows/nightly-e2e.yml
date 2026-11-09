@@ -61,7 +61,13 @@ jobs:
           # no operator .env — generate a throwaway PAPER-mode token here
           # (never echoed, single-run, torn down in the always() step).
           echo "NSE_WEB_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
-          echo "NSE_PG_PASSWORD=ci-nopg" >> .env
+          # Throwaway value: the E2E lane never starts the optional postgres
+          # service (it sits behind the `postgres` compose profile), but
+          # docker-compose still evaluates ${NSE_PG_PASSWORD:?...} at project
+          # load, so the variable must merely be *set*. Generate it per run
+          # instead of hardcoding a literal — a hardcoded password, even a
+          # useless one, fails the GitGuardian secret-scan gate.
+          echo "NSE_PG_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')" >> .env
           docker compose up -d --build core
           docker compose ps
 

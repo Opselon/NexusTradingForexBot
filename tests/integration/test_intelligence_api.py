@@ -30,8 +30,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
@@ -41,6 +39,7 @@ from nexus_scalp.experience.models import (
     StrategyContext,
 )
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo) -> None:
@@ -53,9 +52,7 @@ def wired_engine(tmp_path, verified_test_model_bundle):
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
     from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    model_path = copy_verified_trained_bundle(
-        verified_test_model_bundle, tmp_path / "model.pt"
-    )
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
@@ -224,9 +221,9 @@ class TestIntelligenceAPI:
         """Evidence-based anomaly events are exposed over the API (TASK-2)."""
         repo, engine = wired_engine
         # Persist one anomaly event directly through the audit queue.
-        from nexus_scalp.intelligence.behavior import (
+        from nexus_scalp.intelligence.behavior_canonical import _persist_anomaly
+        from nexus_scalp.intelligence.behavior_detect import (
             ANOMALY_ALGORITHM_VERSION,
-            _persist_anomaly,
         )
         from nexus_scalp.intelligence.models import AnomalyEvent
 

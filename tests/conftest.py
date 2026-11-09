@@ -34,8 +34,8 @@ from __future__ import annotations
 # same tree (also a no-op).
 # ---------------------------------------------------------------------------
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if os.path.isdir(os.path.join(_ROOT, "src", "nexus_scalp")):

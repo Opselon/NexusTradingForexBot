@@ -10,8 +10,6 @@ Verifies the News subsystem end-to-end:
 
 from __future__ import annotations
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from nexus_scalp.news import NewsConfig, NewsDatabase, NewsEngine, seed_news_database
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 @pytest.fixture

@@ -30,8 +30,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
@@ -45,6 +43,7 @@ from nexus_scalp.experience.models import (
 )
 from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry, StrategyScore
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo) -> None:
@@ -57,9 +56,7 @@ def wired_engine(tmp_path, verified_test_model_bundle):
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'research_api.db'}")
     from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    model_path = copy_verified_trained_bundle(
-        verified_test_model_bundle, tmp_path / "model.pt"
-    )
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",

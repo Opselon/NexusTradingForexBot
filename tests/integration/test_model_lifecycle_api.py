@@ -24,8 +24,6 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
@@ -37,6 +35,7 @@ from nexus_scalp.experience.models import (
     StrategyContext,
 )
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo) -> None:
@@ -49,9 +48,7 @@ def wired_engine(tmp_path, verified_test_model_bundle):
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'models_api.db'}")
     from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    model_path = copy_verified_trained_bundle(
-        verified_test_model_bundle, tmp_path / "model.pt"
-    )
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
@@ -460,22 +457,30 @@ class TestModelsIntegrityRegression:
 
     def test_integrity_endpoint_valid_champion(self, wired_engine):
         _repo, engine = wired_engine
-        # Write a REAL ScalpNet artifact for the engine's declared schema so
-        # the champion loads and the payload reports tensor truth.
-        import torch
-
-        from nexus_scalp.models.scalp_net import ScalpNet
-
-        dim = engine.FEATURE_DIM
-        artifact = engine.config.model.model_artifact_path
-        net = ScalpNet(num_features=dim, num_classes=4)
-        torch.save({k: v.clone() for k, v in net.state_dict().items()}, artifact)
+        # Write a REAL ScalpNet artifact for the engine's DECLARED CHAMPION
+        # schema so the champion loads and the payload reports tensor truth.
         import hashlib
         import json
         from pathlib import Path
 
+        import torch
+
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        # The wired fixture (verified_test_model_bundle) provisions a 70D
+        # scalp_v3 champion. The legacy class-level LiveEngine.FEATURE_DIM
+        # still bootstraps 50 (scalp_v1), so building the artifact from THAT
+        # constant overwrote a VALID 70D champion with a 50D tensor that the
+        # champion manager rejects as a dimension mismatch (NO_CHAMPION) —
+        # and the endpoint then omits the compatibility key entirely. Read
+        # the dimension the Champion contract actually declares from the
+        # bundle manifest instead.
+        artifact = engine.config.model.model_artifact_path
         manifest_path = Path(artifact).parent / "manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        dim = int(manifest["feature_schema_dimension"])
+        net = ScalpNet(num_features=dim, num_classes=4)
+        torch.save({k: v.clone() for k, v in net.state_dict().items()}, artifact)
         manifest.update(
             model_sha256=hashlib.sha256(Path(artifact).read_bytes()).hexdigest(),
             num_classes=4,

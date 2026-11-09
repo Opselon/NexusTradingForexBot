@@ -21,14 +21,13 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from tests.helpers.authenticated_client import authenticated_test_client
-
 from nexus_scalp.features.liquidity_engine import LIQUIDITY_FEATURE_NAMES
 from nexus_scalp.features.liquidity_runtime import (
     DIMENSION_70D,
     SCHEMA_70D,
     LiquidityGovernor,
 )
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 class _FakeEngine:
