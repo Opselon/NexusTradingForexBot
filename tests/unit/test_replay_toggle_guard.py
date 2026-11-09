@@ -89,6 +89,7 @@ def test_replay_toggle_off_restores_prior_mode(monkeypatch) -> None:
 
 def test_replay_toggle_requires_auth(monkeypatch) -> None:
     """State-mutating mode routes stay behind the web-auth token."""
+    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
     monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "sec-audit-token-12345")
     engine = _FakeEngine(ExecutionMode.PAPER)
     app = create_app(engine_ref=engine)  # type: ignore[arg-type]
