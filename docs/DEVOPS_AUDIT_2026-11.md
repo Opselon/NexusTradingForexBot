@@ -21,7 +21,7 @@ changes in the accompanying PR.
 | `js-tests.yml`, `go-api.yml`, `docs.yml` | PR/push, path-filtered | Required `Frontend JS Unit Tests`, Go gate, `Validate documentation` + Pages |
 | `release.yml` (882 ln) | `v*` tags, dispatch | fail-closed SHA-evidence auth gate → validate → extended gates → windows-x64 build → signed publish |
 | `nightly-qa.yml`, `nightly-e2e.yml`, `qa-deep-assurance.yml`, `nightly-ml-benchmark.yml` | cron | Deep validation tiers |
-| `perf-benchmark.yml`, `pr-evidence.yml`, `lockfile-diff.yml`, `official-model.yml`, `docker.yml`, `drift-debug.yml` | PR paths / dispatch | Advisory lanes |
+| `perf-benchmark.yml`, `pr-evidence.yml`, `official-model.yml`, `docker.yml`, `drift-debug.yml` | PR paths / dispatch | Advisory lanes |
 
 ### Required status checks (branch protection, 11 contexts, enforce_admins=true)
 

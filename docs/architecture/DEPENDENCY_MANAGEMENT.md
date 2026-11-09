@@ -13,8 +13,8 @@
 | Frontend (`/frontend`) | `package.json` | `package-lock.json` (npm-managed, in lockstep) | **No — build/dev-time only.** Node never runs the production engine; `frontend/` is compiled to static assets. Do not introduce Node into the runtime path. |
 | GitHub Actions | `.github/workflows/*` | — | n/a (CI supply chain) |
 
-`uv.lock` exists as a resolution artifact referenced by `lockfile-diff.yml`,
-`osv-scanner.yml`, and `scripts/ci/classify_changes.py`; the install/drift
+`uv.lock` exists as a resolution artifact referenced by
+`osv-scanner.yml` and `scripts/ci/classify_changes.py`; the install/drift
 contract below runs through `requirements.lock`.
 
 ## 2. Python lockfile synchronization (verified contract)
@@ -139,9 +139,9 @@ Branch protection on `main` requires (relevant subset):
 - **Actions PRs:** `CI Integrity and Change Classification` + `Validate
   documentation` (workflows are classified as CI changes) — and CI green on
   the PR itself.
-- Advisory-but-expected: `Lockfile Diff` job summary shows reviewers exactly
-  which dependency manifests moved (it never fails the build; the drift gate
-  is the enforcing control).
+- Advisory-but-expected: the `Dependency drift (lock vs pyproject)` job in
+  `dependency-lock.yml` is the single enforcing drift control (the former
+  `Lockfile Diff` report duplicated it and was removed).
 
 Never weaken, skip, or context-swap a required check to land a dependency PR.
 
@@ -170,7 +170,7 @@ Never weaken, skip, or context-swap a required check to land a dependency PR.
 | Grouped security updates | UI-only toggle; repo-level API does not expose it (404) | API 404 on `automated-security-fixes/grouped`; operator verifies/sets in Security → Dependabot if UI shows the toggle |
 | Malware (dev-environment) alerts | Not exposed by repository admin API | No repo-level endpoint; not configurable by this credential/plan |
 | Secret scanning + push protection | ENABLED | `security_and_analysis` in repo metadata |
-| Code scanning (CodeQL) / Trivy / OSV-Scanner / Dependency Review | Present as CI workflows (`security.yml`, `osv-scanner.yml`, `lockfile-diff.yml`) with required contexts | `.github/workflows/` |
+| Code scanning (CodeQL) / Trivy / OSV-Scanner / Dependency Review | Present as CI workflows (`security.yml`, `osv-scanner.yml`) with required contexts | `.github/workflows/` |
 | Dependabot rules (org-level policy rules) | No repository-visible API (404); no org policy rule interacts with `.github/dependabot.yml` | API evidence as above |
 
 ## 11. Operator/owner notes

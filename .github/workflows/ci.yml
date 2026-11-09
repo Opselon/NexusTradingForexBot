@@ -123,6 +123,14 @@ jobs:
           # governance preflight must import + self-check cleanly. Read-only.
           python scripts/ci/check_git_governance.py
 
+      - name: Secret scan (canonical — one run per CI run)
+        run: |
+          # The ONLY secret scan on the PR path. docs.yml and release.yml
+          # used to run scan_secrets.py under their own gates, so a normal
+          # PR ran it 0 times while the external GitGuardian check still
+          # flagged the diff. stdlib-only, no venv needed.
+          python scripts/ci/scan_secrets.py
+
       # NOTE (2026-09-14 reconstruction): lane gating is applied in
       # tests-os.yml (OS matrix) — where a skip is an explicit, auditable
       # SKIP-REPORT. It is deliberately NOT applied to the quality job's
@@ -207,21 +215,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      # One canonical environment (setup-python + pinned uv + lock venv):
+      # ./.github/actions/setup-python-env. The dependency-intelligence
+      # cache restore below is venv-independent, so it runs after setup.
+      - name: Set up Python environment (canonical)
+        uses: ./.github/actions/setup-python-env
         with:
           python-version: "3.11"
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          # Self-hosted tiers keep their warmth in the runner's own
-          # persistent volumes; uploading a multi-GB uv cache from a
-          # tethered box burns hours of Post time and cache storage. The
-          # GitHub cache only pays off on hosted lanes.
-          enable-cache: ${{ env.NSE_RUNNER_CLASS != 'self-hosted' }}
-          cache-dependency-glob: requirements.lock
+          runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
       - name: Cache dependency intelligence graph
         if: env.NSE_RUNNER_CLASS != 'self-hosted'
@@ -231,23 +232,6 @@ jobs:
           key: dep-graph-v1-${{ hashFiles('src/nexus_scalp/**/*.py') }}
           restore-keys: |
             dep-graph-v1-
-
-      - name: Install via lock (hash-verified requirements.lock)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # venv, never --system: PEP-668 externally-managed system Pythons
-          # (every self-hosted Ubuntu) refuse bare uv system installs, and
-          # the venv name binds to the lockfile hash so a dependency switch
-          # can never reuse a stale environment. Works byte-identical on
-          # hosted and self-hosted classes.
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${PYTHON_VERSION}"
-          VENV_DIR=".venv-ci-${VENV_KEY}"
-          uv venv --python "${PYTHON_VERSION}" "${VENV_DIR}"
-          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
-          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
-          echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
-          echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
 
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
@@ -494,10 +478,15 @@ jobs:
     name: Quality — Tests & Runtime Certification
     needs: runner-select
     runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
-    # The pytest critical suite alone measured ~1010s under -n auto on a
-    # loaded shared runner (see the pre-split comment history); the split
-    # moves lint/type off this clock, so 25m is pytest+smoke+runtime gates.
-    timeout-minutes: 25
+    # Budget: the pytest critical suite alone measured ~1010s under -n auto
+    # on a loaded 8-thread runner; on the tier-2 box (nexus-2core, 2 vCPU)
+    # xdist drops to -n 2 and the same suite runs materially slower, and a
+    # global-invalidation plan (e.g. a tests/conftest.py touch selects the
+    # whole 327-file critical set) needs the headroom too. 25m killed PR
+    # #731 at 25m36s mid-pytest — the timeout must cover pytest + smoke +
+    # runtime gates on the SLOWEST tier, not the fastest. 45m matches the
+    # extended / heavy lanes.
+    timeout-minutes: 45
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
@@ -517,33 +506,13 @@ jobs:
           # planner never produced a plan. 0 = full history for this job.
           fetch-depth: 0
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      # One canonical environment (setup-python + pinned uv + lock venv):
+      # ./.github/actions/setup-python-env — same block quality-lint uses.
+      - name: Set up Python environment (canonical)
+        uses: ./.github/actions/setup-python-env
         with:
           python-version: "3.11"
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          # See quality-lint: self-hosted warmth lives in the runner volumes;
-          # a multi-GB cache upload over a tethered uplink is pure loss.
-          enable-cache: ${{ env.NSE_RUNNER_CLASS != 'self-hosted' }}
-          cache-dependency-glob: requirements.lock
-
-      - name: Install via lock (hash-verified requirements.lock)
-        shell: bash
-        run: |
-          set -euo pipefail
-          # venv, never --system (PEP-668 on self-hosted) — same contract as
-          # quality-lint above.
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${PYTHON_VERSION}"
-          VENV_DIR=".venv-ci-${VENV_KEY}"
-          uv venv --python "${PYTHON_VERSION}" "${VENV_DIR}"
-          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
-          VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
-          echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
-          echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
+          runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
       - name: Initialize results tree
         run: |

@@ -1,0 +1,63 @@
+name: "NSE Python environment"
+
+description: >-
+  Canonical Python environment for CI jobs: setup-python, pinned uv, and a
+  hash-bound venv installed from requirements.lock. ONE definition — the
+  quality lanes in ci.yml (and any future lane) use this instead of
+  copy-pasting the setup-python / setup-uv / lock-install block per job.
+  The venv name binds to the lockfile hash + Python version, so a
+  dependency switch can never reuse a stale environment. Installs into a
+  project venv, never --system (PEP-668 externally-managed system Pythons
+  on the self-hosted tiers refuse bare system installs).
+
+  Checkout stays in the calling job (the workflow-integrity scan requires
+  actions/checkout before any local composite action), and the results
+  tree is initialized by the caller so lane-specific ordering is kept.
+
+inputs:
+  python-version:
+    description: "Python version to provision"
+    required: false
+    default: "3.11"
+  runner-class:
+    description: "Runner class from the runner-select preflight: self-hosted | github-hosted (drives uv cache enablement)"
+    required: false
+    default: "github-hosted"
+
+outputs:
+  venv-dir:
+    description: "Relative path of the created venv (also exported as VENV_DIR)"
+    value: ${{ steps.install.outputs.venv_dir }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv (pinned — the canonical lock tool)
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        version: "0.12.10"
+        # Self-hosted tiers keep their warmth in the runner's own
+        # persistent volumes; uploading a multi-GB uv cache from a
+        # tethered box burns hours of Post time and cache storage. The
+        # GitHub cache only pays off on hosted lanes.
+        enable-cache: ${{ inputs.runner-class != 'self-hosted' }}
+        cache-dependency-glob: requirements.lock
+
+    - name: Install via lock (hash-verified requirements.lock)
+      id: install
+      shell: bash
+      run: |
+        set -euo pipefail
+        VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
+        VENV_DIR=".venv-ci-${VENV_KEY}"
+        uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
+        VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
+        VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
+        echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
+        echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
+        echo "venv_dir=${VENV_DIR}" >> "$GITHUB_OUTPUT"

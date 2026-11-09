@@ -20,7 +20,6 @@ on:
       - "JS Tests"
       - "Docs"
       - "Dependency Lock & Migration Safety"
-      - "Lockfile Diff"
       - "OSV Dependency Scan"
       - "Go API"
       - "QA Deep Assurance"

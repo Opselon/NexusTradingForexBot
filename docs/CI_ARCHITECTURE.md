@@ -18,11 +18,11 @@ this file is the CI-specific companion.
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
 | `tests-os.yml` | push/PR main·develop·ci-tests; Monday cron; dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
+| `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + hash-bound lock venv (one definition, no per-job copy) | ci |
 | `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
 | `tests-macos.yml` | `workflow_dispatch` ONLY | **Manual macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
-| `lockfile-diff.yml` | PR main·develop; dispatch | Dependency manifest diff report (advisory) | deps |
 | `docker.yml` | push `docker` branch; dispatch | Build + publish GHCR image | docker |
 | `release.yml` | `v*` tags; dispatch | validate → quality gates → windows build/installer → publish | release/python |
 
@@ -274,7 +274,7 @@ the decision is visible in the PR Checks UI without opening the log.
 
 ## Optional / advisory checks
 
-* `osv-scanner`, `lockfile-diff` — dependency visibility, never blocking.
+* `osv-scanner` — dependency visibility, never blocking.
 * `security.yml` scheduled run — weekly drift.
 * `docker.yml` — only on the `docker` branch, never on normal dev.
 * `tests-windows.yml` / `tests-macos.yml` — manual platform lanes.
