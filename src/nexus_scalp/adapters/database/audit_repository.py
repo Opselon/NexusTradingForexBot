@@ -2887,7 +2887,7 @@ class AuditRepository:
         # hold a read transaction while a writer commits. Wait in both places
         # instead of surfacing SQLITE_BUSY as an application error.
         conn.execute("PRAGMA busy_timeout = " + str(int(timeout * 1000)))
-        return conn
+        return connn
 
     def provision_sqlite_schema(self, statements: list[str]) -> bool:
         """Apply extra DDL on the audit SQLite file (domain provisioning).
