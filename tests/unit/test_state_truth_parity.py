@@ -56,9 +56,10 @@ def api_payload() -> dict[str, Any]:
     from fastapi.testclient import TestClient
 
     from nexus_scalp.web.server import create_app
+    from tests.helpers.authenticated_client import authenticated_test_client
 
     app = create_app(engine_ref=None)
-    with TestClient(app) as client:
+    with authenticated_test_client(app) as client:
         resp = client.get("/api/status")
     assert resp.status_code == 200, resp.text[:400]
     payload: dict[str, Any] = resp.json()
