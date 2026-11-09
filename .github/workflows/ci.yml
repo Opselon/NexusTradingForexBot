@@ -604,8 +604,11 @@ jobs:
           curl -s --max-time 25 https://mirrors.aliyun.com/pypi/simple/filelock/ -o /tmp/mirror-filelock.html \
             && grep -o 'filelock-4\.2\.10[^"]*' /tmp/mirror-filelock.html | head -3 \
             || echo "4.2.10 NOT listed by the mirror (or curl failed)"
-          echo "=== uv dry-run, filelock only ==="
-          uv pip install --dry-run --no-cache filelock==4.2.10 2>&1 | tail -4 || true
+          echo "=== uv dry-run, filelock only (current env: mirror primary + PyPI extra + best-match) ==="
+          uv pip install --dry-run --system --no-cache filelock==4.2.10 2>&1 | tail -6 || true
+          echo "=== uv dry-run, filelock only (PyPI primary via flags, mirror extra) ==="
+          uv pip install --dry-run --system --no-cache --index https://pypi.org/simple/ --extra-index-url https://mirrors.aliyun.com/pypi/simple/ --index-strategy unsafe-best-match filelock==4.2.10 2>&1 | tail -6 || true
+          echo "=== uv version ==="; uv --version
 
       # Per-run temp paths for the test DBs (see the job-level env comment:
       # ${{ runner.temp }} is step-only, so this step exports them via
