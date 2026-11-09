@@ -202,7 +202,9 @@ jobs:
     name: Quality — Lint, Types & Static Gates
     needs: runner-select
     runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
-    timeout-minutes: 20
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes; target 3-5 min. Lint measured 115s.
+    timeout-minutes: 10
 
     env:
       CI_RESULTS_DIR: ci-results-lint
@@ -494,15 +496,20 @@ jobs:
     name: Quality — Tests & Runtime Certification
     needs: runner-select
     runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
-    # Budget: the pytest critical suite alone measured ~1010s under -n auto
-    # on a loaded 8-thread runner; on the tier-2 box (nexus-2core, 2 vCPU)
-    # xdist drops to -n 2 and the same suite runs materially slower, and a
-    # global-invalidation plan (e.g. a tests/conftest.py touch selects the
-    # whole 327-file critical set) needs the headroom too. 25m killed PR
-    # #731 at 25m36s mid-pytest — the timeout must cover pytest + smoke +
-    # runtime gates on the SLOWEST tier, not the fastest. 45m matches the
-    # extended / heavy lanes.
-    timeout-minutes: 45
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes; target 3-5 min. This cap lands WITH the
+    # tier-1 speedup, never alone: on the 2-core tier-2 box the expanded
+    # pytest alone measured 1449.8s (run 42678149634), so tier-2 CANNOT fit
+    # this job in 10 min — the routing must prefer tier-1 (8-thread,
+    # pytest -n 8, same suite ~8 min on hosted). History: 25m killed PR
+    # #731 at 25m36s mid-pytest, which is why this was 45m; the 45m is
+    # gone because the user requires the cap AND the tier-1 speedup
+    # together. If tier-1 is offline the job times out at 10m on the
+    # fallback instead of running 27m — that is the fail-closed guard
+    # doing its job, not a bug: bring tier-1 back, do not raise the cap.
+    # Leaf PRs (targeted selection, ~7 files) run in ~1-2 min; the
+    # expanded suite is the remaining wall — see docs/CI_ARCHITECTURE.md.
+    timeout-minutes: 10
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}

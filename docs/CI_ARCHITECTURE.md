@@ -245,6 +245,49 @@ record feeds the step summary and `review-status.json` but is outside
 the `ci_final_gate.py` CHECKS vocabulary, so the final gate cannot
 verdict it (that tuple is frozen by contract).
 
+## PR speed budget (10-minute cap, 2026-11-09)
+
+Hard user requirement: no PR-feedback job runs longer than 10 minutes;
+target 3-5 minutes. Pinned by `tests/ci/test_pr_policy_speed_cap.py`
+(`timeout-minutes: 10` on ci.yml quality-lint / quality-tests and the
+tests-os.yml Linux legs). The cap lands WITH the tier-1 speedup, never
+alone — it is a fail-closed guard, not a speedup by itself.
+
+Measured breakdown, Quality lane, run 42678149634 (head 7d2fa45d,
+tier-2 nexus-runner, 2 vCPU, expanded plan, 353 files, 5630 tests):
+
+| phase | wall time |
+| :--- | ---: |
+| checkout + Python env + caches | ~30 s |
+| AST metadata extraction + C17 plan | ~16 s (1681 files) |
+| planner-driven pytest (`--cov`, `-n 2`) | **1449.8 s** |
+| performance-budget step (uninstrumented) | ~18 s |
+| smoke chain | ~26 s |
+| plan report + review-status + final gate | ~60 s |
+| **job total** | **~1640 s (~27 min)** |
+
+Same head, OS Linux lane (no coverage, `-n 2`): 1028 s total.
+Lint lane: 115 s. The pytest step is 92% of the Quality job — the
+20-30 minute lanes are the 2-core box + coverage overhead, not one
+slow test. Coverage overhead on tier-2: ~483 s (1449.8 s with `--cov`
+vs 966.4 s without, same expanded set). Slowest single tests: four
+`test_dependency_intelligence.py` setups at ~110 s each (module-scoped
+graph build under coverage) — a ~110 s floor on any lane, not the wall.
+
+Why tier-1 fits the cap: xdist is sized to the runner (`nproc`, capped
+at 8) — tier-1 runs pytest at `-n 8` vs tier-2's `-n 2`, and the same
+full suite measured ~8 minutes on a GitHub-hosted runner. Expected
+tier-1 Quality job: ~8-9 minutes (leaf PRs, targeted ~7 files: ~1-2
+min). The next run after tier-1 came back online is the live proof.
+
+Deliberate non-goals: the cap covers the PR-feedback path ONLY.
+Schedule/manual-only heavy jobs (extended, heavy-ci, full-runtime,
+db-fabric) and the dispatch-only macOS/Windows FULL lanes keep their
+longer budgets — capping them would kill legitimate long runs every
+time. No test is removed, skipped, or moved to nightly to hit the
+number; the expanded suite stays the blocking gate for global-impact
+PRs.
+
 ## Runner routing architecture (2026-11)
 
 Centralized, single-source-of-truth runner selection. No workflow hard-codes

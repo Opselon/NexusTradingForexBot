@@ -126,7 +126,11 @@ jobs:
     needs: runner-select
     if: ${{ always() && needs.runner-select.outputs.runner_class == 'self-hosted' }}
     runs-on: ${{ fromJSON(needs.runner-select.outputs.self_hosted_labels) }}
-    timeout-minutes: 45
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes. Lands WITH the tier-1 speedup (pytest
+    # -n 8); on the 2-core tier-2 box this lane measured 1028s (run
+    # 42678150060), so tier-2 cannot fit it — routing must prefer tier-1.
+    timeout-minutes: 10
     env:
       NSE_RUNNER_CLASS: "self-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
@@ -350,7 +354,10 @@ jobs:
     # fallback value is inlined. scripts/ci/runner_config.py is the single
     # source of truth for this literal.
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes. The hosted fallback runs the same full
+    # suite in ~8 min (measured), so 10 min is the fail-closed guard.
+    timeout-minutes: 10
     env:
       NSE_RUNNER_CLASS: "github-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
