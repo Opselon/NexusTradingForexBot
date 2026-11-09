@@ -154,7 +154,7 @@ reduced / advisory form.
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | CI integrity + change classification (`ci-integrity`) | ✓ | ✓ | ✓ | ✓ | — |
 | Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
-| C17 planner validation + targeted tests (`quality-tests`, OS SKEW) | ✓ | ✓ | ✓ | ✓ | — |
+| C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Linux legs SKIP on PR/push/schedule and run FULL (dispatch) or SKEW (dispatch) only — they used to re-run the same selection back-to-back. |
 | Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
 | Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans the gate records N/A explicitly, never a silent skip. |
 | Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
@@ -245,13 +245,25 @@ record feeds the step summary and `review-status.json` but is outside
 the `ci_final_gate.py` CHECKS vocabulary, so the final gate cannot
 verdict it (that tuple is frozen by contract).
 
-## PR speed budget (10-minute cap, 2026-11-09)
+## PR speed budget (10-minute cap, 1–2 minute target, 2026-11-09)
 
 Hard user requirement: no PR-feedback job runs longer than 10 minutes;
-target 3-5 minutes. Pinned by `tests/ci/test_pr_policy_speed_cap.py`
+target **1–2 minutes end-to-end for a leaf PR** (it was 10 minutes
+before this PR, and at 10 minutes nobody would have touched it). The
+mechanism has exactly one job — the C engine finds the related tests,
+Python runs them — so a leaf PR selects ~7 files and runs them in
+~1–2 minutes. Pinned by `tests/ci/test_pr_policy_speed_cap.py`
 (`timeout-minutes: 10` on ci.yml quality-lint / quality-tests and the
-tests-os.yml Linux legs). The cap lands WITH the tier-1 speedup, never
-alone — it is a fail-closed guard, not a speedup by itself.
+tests-os.yml Linux legs) and by
+`tests/ci/test_pr_policy_single_execution.py` (one execution per PR).
+The cap lands WITH the tier-1 speedup, never alone — it is a
+fail-closed guard, not a speedup by itself. Timings are reported
+against the 1–2 minute target, not against the 10-minute cap.
+
+This PR's own diff (pyproject.toml + tests/conftest.py) forces the
+expanded suite ONCE — that is a one-time cost of this PR, not the
+steady state. The 1–2 minute shape is proven by a real leaf-change run
+(see the leaf-change benchmark below), not by this PR's expanded run.
 
 Measured breakdown, Quality lane, run 42678149634 (head 7d2fa45d,
 tier-2 nexus-runner, 2 vCPU, expanded plan, 353 files, 5630 tests):
@@ -266,7 +278,9 @@ tier-2 nexus-runner, 2 vCPU, expanded plan, 353 files, 5630 tests):
 | plan report + review-status + final gate | ~60 s |
 | **job total** | **~1640 s (~27 min)** |
 
-Same head, OS Linux lane (no coverage, `-n 2`): 1028 s total.
+Same head, OS Linux lane (no coverage, `-n 2`): 1028 s total — that
+lane no longer runs on PRs (2026-11-09: it re-ran the same selection,
+so it was removed from the PR path; dispatch-only now).
 Lint lane: 115 s. The pytest step is 92% of the Quality job — the
 20-30 minute lanes are the 2-core box + coverage overhead, not one
 slow test. Coverage overhead on tier-2: ~483 s (1449.8 s with `--cov`
@@ -287,6 +301,54 @@ longer budgets — capping them would kill legitimate long runs every
 time. No test is removed, skipped, or moved to nightly to hit the
 number; the expanded suite stays the blocking gate for global-impact
 PRs.
+
+## Fresh-machine bootstrap (2026-11-09)
+
+Hard user requirement: a fresh runner must take a job and go green with
+zero manual steps — tomorrow we add 100 servers and this must not error
+differently on each one. Everything is automatic IN THE CI CODE, never
+a per-machine setup step. Pinned by
+`tests/ci/test_pr_policy_fresh_bootstrap.py`.
+
+What broke on tier-1's first jobs (head fe1fe521, all three self-hosted
+jobs failed while hosted macOS/Windows passed):
+
+| job | failure | root cause | fix (in CI code) |
+| :--- | :--- | :--- | :--- |
+| Quality 129395787680 | depth-1 checkout + blobless SHA fetch printed "blobless history fetched" but `git merge-base` failed; job dead in 31 s | On a virgin shallow clone the SHA fetch can exit 0 yet bring nothing (the server excludes objects reachable from the shallow merge commit's parents). It worked on tier-2 only because that machine had accumulated deep history. The failure does NOT reproduce on a local virgin clone with the same commands and git version, so the step cannot trust the fetch's exit code. | `scripts/ci/fetch_planner_history.bash` (shared by Quality + both OS SKEW steps): blobless fetch, VERIFY merge-base, escalate to `--unshallow` (blobless) if unreachable, fail closed only if that also fails. Unshallowing is the guarantee; it is a one-time cost per runner because `_work` persists. |
+| Lint 129395787984 | `uv pip install -r requirements.lock` failed: "no version of typer==0.29.0"; the venv was created empty and every check reported "missing" | The Aliyun mirror (PIP_INDEX_URL) lags PyPI for fresh releases; a fresh machine could not install the lock. | `PIP_EXTRA_INDEX_URL: https://pypi.org/simple/` (setup-python-env action + tests-os.yml top-level env): uv queries the mirror (fast) first and PyPI for any version the mirror lacks — fast AND correct. |
+| OS Linux 129395775112 | Same install failure in the inline venv step; the lane-decision step never ran, so mode was empty and the lane report failed closed | Same mirror lag (its inline venv step) | Same extra index (tests-os.yml env) + the shared fetch script. |
+
+Related, same day: the Dependency Lock & Migration Safety workflow
+failed on 7d2fa45d and fe1fe521 with "requirements.lock is STALE"
+— cause was a freshly published `filelock` 4.2.10 (the only differing
+pin; typer had already been fixed by the 4dae9b58 regen). The
+Dependency Lock Self-Heal workflow regenerated the lock and pushed
+2eb09ea7 (`filelock==4.2.9` → `4.2.10`, `[skip ci]`). No code change
+was needed; the self-heal is the mechanism for upstream-release drift.
+
+Also automatic now (same commit):
+
+* **cmake bootstraps itself** — `run_test_plan.py::_ensure_cmake()`
+  installs the `cmake` wheel via `uv pip install --python
+  sys.executable` when cmake is absent (the OS lane already did this
+  inline; the Quality lane did not). A missing C compiler fails fast
+  with the exact install command (`apt-get install -y
+  build-essential`) instead of a confusing cmake-configure error.
+* **Automatic prune** — `scripts/ci/prune_runner_state.bash`, run at
+  the start of every lane (setup action + both OS venv steps):
+  hash-bound venvs and nse-ci caches older than 30 days, /tmp test
+  artifacts (`tmp*`, `pytest-*`) older than 24h. Age-gated and
+  failure-proof; it never touches the current venv, the uv wheel cache,
+  or anything a live job could own. (The Dubai box held 107 tmp* dirs,
+  1687 model.pt files, 3.5G of pytest sessions on 2026-11-09.)
+
+Acceptance test: a fresh runner (or a wiped `_work` dir + empty
+`~/.cache`) takes a job and goes green with zero manual steps. The
+policy test `test_fetch_script_actually_unshallows` is the miniature
+version (virgin depth-1 checkout of the PR merge commit → the script
+makes merge-base reachable); the full acceptance is the first real job
+on a fresh runner after this lands.
 
 ## Runner routing architecture (2026-11)
 
@@ -322,7 +384,7 @@ GitHub event (push / PR / schedule / dispatch)
 | `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace (import-only; `--verify` self-check). |
 | `scripts/ci/runner_select.py` | Availability preflight + runner-class decision. Pure `select()` function; fail-open to github-hosted on ANY error. |
 | `.github/actions/runner-select` | Composite action: availability preflight + class decision, used by every lane's preflight job. (A reusable *workflow* cannot declare workflow-level `outputs:` in this repository — verified by experiment — so the shared component is an action.) |
-| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. |
+| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. SKIP-REPORT on PR/push/schedule (Quality owns execution, one run per PR); FULL/SKEW on dispatch only. |
 | `.github/workflows/tests-windows.yml` | Manual Windows suite (full coverage preserved) + `ENABLE_WINDOWS_SELF_HOSTED` flag. |
 | `.github/workflows/tests-macos.yml` | Manual macOS suite (full coverage preserved) + `ENABLE_MACOS_SELF_HOSTED` flag. |
 

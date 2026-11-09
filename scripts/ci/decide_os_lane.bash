@@ -6,13 +6,24 @@
 # mode vocabulary the workflow has always used:
 #
 #   FULL         = full critical_suite.txt
-#   SKEW         = fast lane: C-planned targeted subset on Linux/macOS
-#                  (the C17 engine selects tests from the diff; no fixed
-#                  list runs there). Windows still runs the fixed skew
-#                  subset under the same mode name until its C-engine
-#                  build is validated (step-by-step: Linux first).
+#   SKEW         = fast lane: C-planned targeted subset (dispatch-only
+#                  since 2026-11-09 — see below; the C17 engine selects
+#                  tests from the diff; no fixed list runs there).
+#                  Windows still runs the fixed skew subset under the
+#                  same mode name until its C-engine build is validated
+#                  (step-by-step: Linux first).
 #   SKIP-REPORT  = classifier decided nothing to run (required-context
 #                  always-report green; installs nothing, runs no tests)
+#
+# OWNERSHIP (design correction, 2026-11-09 — simplify): ONE execution
+# per PR. The Quality lane (ci.yml quality-tests) owns test execution on
+# PRs: it runs the C-planned selection, with coverage, on the routed
+# runner. The OS Linux legs used to re-run the SAME selection back-to-back
+# (on this PR: the same 353 files in Quality AND in the OS lane — 24 min
+# + 17 min for one PR). They now SKIP on pull_request / push / schedule.
+# The expanded/full suite runs ONCE: on schedule it runs in Quality;
+# on explicit dispatch it runs here (FULL). SKEW survives only as the
+# manual dispatch shape (targeted subset on demand), never automatic.
 #
 # Usage:   scripts/ci/decide_os_lane.bash <platform>      (linux|windows|macos)
 # Outputs: mode=<FULL|SKEW|SKIP-REPORT> into $GITHUB_OUTPUT
@@ -23,16 +34,16 @@ MODE="FULL"
 
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
-    # PR fast shape: every platform uses the C-planned targeted subset.
-    MODE="SKEW" ;;
+    # ONE execution per PR (2026-11-09): Quality owns test execution.
+    # This leg must not re-run the same selection back-to-back.
+    MODE="SKIP-REPORT" ;;
   push)
-    # CI quota diet (2026-11): the FULL suite is semi-monthly-schedule and
-    # full-dispatch only. A main push takes the fast skewed subset on the
-    # tiered self-hosted pool, exactly like a PR.
-    MODE="SKEW" ;;
+    # Same: Quality owns the push diff; this leg runs on dispatch only.
+    MODE="SKIP-REPORT" ;;
   schedule)
-    # Semi-monthly health sweep: the only AUTOMATIC FULL run.
-    MODE="FULL" ;;
+    # The FULL suite runs ONCE on schedule — in the Quality lane.
+    # This leg does not re-run it.
+    MODE="SKIP-REPORT" ;;
   workflow_dispatch)
     if [ "${NSE_FORCE_FULL_SUITE:-false}" = "true" ]; then MODE="FULL"; else MODE="SKEW"; fi ;;
 esac

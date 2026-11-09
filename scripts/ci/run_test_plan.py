@@ -205,6 +205,57 @@ def selftest_ok(binary: str) -> bool:
     return proc.returncode == 0
 
 
+def _ensure_cmake() -> str:
+    """Return a cmake executable, bootstrapping it if absent.
+
+    A fresh runner may have no cmake (tier-1, 2026-11-09: the Quality
+    job died before the planner, so cmake presence there is unproven).
+    The C engine bootstraps its own toolchain: install the `cmake` wheel
+    (a pip package shipping a cmake binary) into THIS interpreter's
+    environment via uv (`--python sys.executable`: a bare `uv pip
+    install` fails with "No virtual environment found" because the
+    persistent venv lives in ~/.cache, not ./.venv, and VIRTUAL_ENV is
+    unset), falling back to the interpreter's pip. Returns the cmake
+    command (bare name if on PATH, else the absolute venv-bin path).
+    Raises RuntimeError with the manual install command if all fails.
+    """
+    found = shutil.which("cmake")
+    if found:
+        return found
+    log("cmake not on PATH — bootstrapping the cmake wheel")
+    candidates = []
+    if shutil.which("uv"):
+        candidates.append(["uv", "pip", "install", "--quiet", "--python", sys.executable, "cmake"])
+    candidates.append([sys.executable, "-m", "pip", "install", "--quiet", "cmake"])
+    installed = False
+    for cmd in candidates:
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300, check=False)
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode == 0:
+            installed = True
+            break
+    if not installed:
+        raise RuntimeError(
+            "cmake not found and bootstrap failed; install cmake "
+            "(apt-get install -y cmake, or `uv pip install cmake`) and retry"
+        )
+    found = shutil.which("cmake")
+    if found:
+        return found
+    for cand in (
+        os.path.join(os.path.dirname(sys.executable), "cmake"),
+        os.path.join(os.path.dirname(sys.executable), "cmake.exe"),
+    ):
+        if os.path.isfile(cand) and os.access(cand, os.X_OK):
+            return cand
+    raise RuntimeError(
+        "cmake installed but its binary is not on PATH; "
+        "install cmake (apt-get install -y cmake) and retry"
+    )
+
+
 def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
     """Return path to verified native C17 engine. Fail hard if unavailable."""
     # Windows binaries carry the .exe suffix; the build output name differs.
@@ -214,6 +265,16 @@ def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
         if selftest_ok(candidate):
             return candidate
         log("persistent native binary failed selftest — rebuilding")
+
+    # Toolchain preflight: cmake bootstraps itself (see _ensure_cmake);
+    # a C compiler cannot be pip-installed, so fail fast with the exact
+    # install command instead of a confusing cmake-configure error.
+    if not (shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")):
+        raise RuntimeError(
+            "no C compiler found (cc/gcc/clang); install build-essential "
+            "(apt-get install -y build-essential) on the runner and retry"
+        )
+    cmake_cmd = _ensure_cmake()
 
     native_dir = os.path.join(repo_root, "scripts", "ci", "native")
     build_dir = os.path.join(native_dir, "build")
@@ -226,11 +287,11 @@ def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
         # bug hid locally because the persisted binary verified and the
         # build branch never ran.
         cfg = sh(
-            ["cmake", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"], cwd=native_dir, timeout=180
+            [cmake_cmd, "-B", "build", "-DCMAKE_BUILD_TYPE=Release"], cwd=native_dir, timeout=180
         )[0]
         if cfg.returncode != 0:
             raise RuntimeError(f"cmake configure failed: {cfg.stderr[-200:]}")
-        bld = sh(["cmake", "--build", "build", "-j", str(jobs)], cwd=native_dir, timeout=600)[0]
+        bld = sh([cmake_cmd, "--build", "build", "-j", str(jobs)], cwd=native_dir, timeout=600)[0]
         if bld.returncode != 0:
             raise RuntimeError(f"cmake build failed: {bld.stderr[-200:]}")
     except (OSError, subprocess.TimeoutExpired) as exc:

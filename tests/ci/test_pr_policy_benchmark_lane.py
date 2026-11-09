@@ -167,10 +167,13 @@ def test_os_full_runs_have_uninstrumented_blocking_budget_step() -> None:
 def test_os_skew_runs_do_not_deselect_the_nodes() -> None:
     """tests-os.yml: SKEW runs keep the nodes — they carry no --cov.
 
-    The SKEW planner run is uninstrumented, so the budget assertions already
-    run where their measurements mean something; deselecting them there would
-    leave the dedicated FULL-only step as their only home and the assertions
-    would silently not run on PRs at all.
+    The SKEW planner run is uninstrumented, so the budget assertions run
+    where their measurements mean something. SKEW is dispatch-only now
+    (2026-11-09: Quality owns test execution on PRs, one execution per
+    PR); the nodes' PR home is the Quality budget step in ci.yml. The
+    assertion still holds for dispatch SKEW runs: deselecting the nodes
+    there would leave the dedicated FULL-only step as their only home
+    outside PRs.
     """
     os_wf = _load("tests-os.yml")
     for leg in ("tests-linux-self-hosted", "tests-linux-hosted"):
@@ -180,5 +183,5 @@ def test_os_skew_runs_do_not_deselect_the_nodes() -> None:
         assert "--cov" not in run, f"{leg} SKEW run must stay uninstrumented"
         for node in WALL_CLOCK_NODES:
             assert node not in run, (
-                f"{leg} SKEW run must NOT deselect the node {node} (it is the PR home)"
+                f"{leg} SKEW run must NOT deselect the node {node} (dispatch home)"
             )

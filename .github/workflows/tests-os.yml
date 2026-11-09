@@ -63,6 +63,13 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+  # PyPI as a FALLBACK index (2026-11-09): the self-hosted tiers' effective
+  # index lags PyPI for fresh releases (typer 0.29.0 missing -> `uv pip
+  # install` unresolvable on a fresh machine, tier-1). uv queries the
+  # primary first and the extra for any version it lacks, so installs stay
+  # fast AND correct. (ci.yml sets the same for its lanes via the
+  # setup-python-env action; this lane installs inline, so it needs it here.)
+  PIP_EXTRA_INDEX_URL: "https://pypi.org/simple/"
   # Centralized runner configuration (scripts/ci/runner_config.py is the
   # single source of truth; these values mirror it at workflow level).
   NSE_RUNNER_LINUX_SELF_HOSTED_LABELS: "self-hosted,Linux,X64"
@@ -188,6 +195,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Automatic runner hygiene (2026-11-09): prune stale state
+          # (venvs/caches >30d, /tmp artifacts >24h). Age-gated and
+          # failure-proof — a prune must never fail a lane.
+          bash scripts/ci/prune_runner_state.bash || true
           # Deterministic environment: uv provisions the EXACT Python and
           # installs into a project venv. `--system` is deliberately NOT used:
           # a self-hosted runner's system Python is PEP-668 externally
@@ -251,18 +262,18 @@ jobs:
               if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
             done
           fi
-          # Shallow checkouts cannot compute the PR merge-base; fetch base
-          # + head explicitly, bloblessly (commits+trees only, ~5 MiB).
-          # A bare `git fetch origin` only brings the default branch, and
-          # the engine's three-dot diff needs both SHAs as objects.
-          # HEAD is the REAL PR head, not github.sha: on pull_request
-          # github.sha is the ephemeral merge commit, which the depth-1
-          # checkout leaves shallow-grafted, so the diff finds no merge
-          # base and the planner fails rc=3 (2026-11-09).
+          # Shallow checkouts cannot compute the PR merge-base; the shared
+          # script fetches base+head bloblessly, verifies merge-base, and
+          # escalates to unshallow on a virgin clone (see
+          # scripts/ci/fetch_planner_history.bash). HEAD is the REAL PR
+          # head, not github.sha: on pull_request github.sha is the
+          # ephemeral merge commit, which the depth-1 checkout leaves
+          # shallow-grafted, so the diff finds no merge base and the
+          # planner fails rc=3 (2026-11-09). An empty base (dispatch)
+          # falls back to HEAD~1 inside the script.
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
           HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
-          git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
+          bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
           XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
           python scripts/ci/run_test_plan.py \
@@ -324,7 +335,7 @@ jobs:
         run: |
           MODE="${{ steps.lane.outputs.mode }}"
           if [ "$MODE" = "SKIP-REPORT" ]; then
-            echo "## Py Tests (linux, self-hosted): GREEN — lane classifier decided no execution required (this leg executes the FULL suite on main push, Monday schedule, and dispatch)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "## Py Tests (linux, self-hosted): GREEN — Quality owns test execution on PR/push/schedule (one execution per PR); this leg runs the FULL suite on explicit dispatch only" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ -z "${CRIT_RC+set}" ]; then
@@ -407,6 +418,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Automatic runner hygiene (2026-11-09): prune stale state
+          # (venvs/caches >30d, /tmp artifacts >24h). Age-gated and
+          # failure-proof — a prune must never fail a lane.
+          bash scripts/ci/prune_runner_state.bash || true
           # Deterministic environment: uv provisions the EXACT Python and
           # installs into a project venv. `--system` is deliberately NOT used:
           # a self-hosted runner's system Python is PEP-668 externally
@@ -470,18 +485,18 @@ jobs:
               if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
             done
           fi
-          # Shallow checkouts cannot compute the PR merge-base; fetch base
-          # + head explicitly, bloblessly (commits+trees only, ~5 MiB).
-          # A bare `git fetch origin` only brings the default branch, and
-          # the engine's three-dot diff needs both SHAs as objects.
-          # HEAD is the REAL PR head, not github.sha: on pull_request
-          # github.sha is the ephemeral merge commit, which the depth-1
-          # checkout leaves shallow-grafted, so the diff finds no merge
-          # base and the planner fails rc=3 (2026-11-09).
+          # Shallow checkouts cannot compute the PR merge-base; the shared
+          # script fetches base+head bloblessly, verifies merge-base, and
+          # escalates to unshallow on a virgin clone (see
+          # scripts/ci/fetch_planner_history.bash). HEAD is the REAL PR
+          # head, not github.sha: on pull_request github.sha is the
+          # ephemeral merge commit, which the depth-1 checkout leaves
+          # shallow-grafted, so the diff finds no merge base and the
+          # planner fails rc=3 (2026-11-09). An empty base (dispatch)
+          # falls back to HEAD~1 inside the script.
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
           HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
-          git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
+          bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
           XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
           python scripts/ci/run_test_plan.py \
@@ -543,7 +558,7 @@ jobs:
         run: |
           MODE="${{ steps.lane.outputs.mode }}"
           if [ "$MODE" = "SKIP-REPORT" ]; then
-            echo "## Py Tests (linux, github-hosted): GREEN — lane classifier decided no execution required (this leg executes the FULL suite on main push, Monday schedule, and dispatch)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "## Py Tests (linux, github-hosted): GREEN — Quality owns test execution on PR/push/schedule (one execution per PR); this leg runs the FULL suite on explicit dispatch only" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ -z "${CRIT_RC+set}" ]; then

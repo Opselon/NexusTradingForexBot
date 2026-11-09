@@ -51,8 +51,19 @@ runs:
     - name: Install via lock (hash-verified requirements.lock)
       id: install
       shell: bash
+      env:
+        # PyPI as a FALLBACK index (2026-11-09): the Aliyun mirror lags
+        # PyPI for fresh releases (typer 0.29.0 missing -> `uv pip
+        # install` unresolvable on a fresh machine, tier-1). uv queries
+        # the primary (mirror, fast) first and the extra (PyPI) for any
+        # version the mirror lacks, so installs stay fast AND correct.
+        PIP_EXTRA_INDEX_URL: "https://pypi.org/simple/"
       run: |
         set -euo pipefail
+        # Automatic runner hygiene (2026-11-09): prune stale hash-bound
+        # venvs / caches (>30d) and /tmp test leftovers (>24h). Age-gated
+        # and failure-proof — a prune must never fail a lane.
+        bash scripts/ci/prune_runner_state.bash || true
         VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
         # Self-hosted runners persist $HOME across jobs, but
         # actions/checkout wipes the workspace (clean: true) on every job —
@@ -67,7 +78,9 @@ runs:
         # ~/.cache/nse-venvs (never auto-deleted: another job may be
         # using one). A runner executes one job at a time, so no lock is
         # needed around creation. Hosted runners are ephemeral, so the
-        # workspace venv is unchanged there.
+        # workspace venv is unchanged there. Automatic pruning of venvs
+        # older than 30 days runs at the top of this step
+        # (scripts/ci/prune_runner_state.bash).
         if [ "${{ inputs.runner-class }}" = "self-hosted" ]; then
           REPO_SLUG="$(echo "${GITHUB_REPOSITORY:-local}" | tr '/' '-')"
           VENV_DIR="$HOME/.cache/nse-venvs/${REPO_SLUG}-.venv-ci-${VENV_KEY}"
