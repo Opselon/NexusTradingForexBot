@@ -45,8 +45,19 @@ def _cli_version_payload() -> dict[str, Any]:
     return payload
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def cli_payload() -> dict[str, Any]:
+    """Fresh-subprocess ``nexus version --json`` (CLI surface of truth).
+
+    Function-scoped DELIBERATELY (not module): the conftest autouse
+    fixture redirects HOME per test, and the CLI subprocess inherits
+    os.environ — so a module-scoped payload would read the RUNNER's real
+    HOME (nexus.yaml -> PAPER) while the in-process matrix resolver reads
+    the redirected empty HOME (UNKNOWN), and the mode-parity tests fail
+    with PAPER != UNKNOWN. Function scope runs the subprocess after the
+    redirect, so both surfaces read the same (empty) HOME. Costs one
+    subprocess spawn per test that requests it; correctness over speed.
+    """
     return _cli_version_payload()
 
 

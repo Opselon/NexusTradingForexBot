@@ -758,10 +758,12 @@ jobs:
       # against a 500 ms floor). Under coverage + parallelism the
       # assertions measure the scheduler, not the code (same tracer
       # pattern as the MT5 CPU budget). This step fails the job directly
-      # on a tripped budget: its check name sits outside the
-      # ci_final_gate.py CHECKS vocabulary, so the final gate cannot
-      # verdict it — the step's own exit code is the enforcement, and the
-      # perf_budget record below feeds the step summary + review-status.
+      # on a tripped budget (its own exit code), AND the perf_budget
+      # record below is verdict by the quality-tests final gate
+      # (ci_final_gate.py CHECKS, --checks list) — two independent
+      # enforcements, so a tripped budget can neither pass silently nor
+      # be dropped by a workflow edit without the gate test failing.
+      # The record also feeds the step summary + review-status.
       # It has deliberately NO if: and NO continue-on-error (pinned by
       # tests/ci/test_pr_policy_benchmark_lane.py).
       - name: Performance budget — wall-clock budgets (uninstrumented)
@@ -1032,7 +1034,7 @@ jobs:
       # -------- Final gate: fail-closed over THIS lane's checks -------
       - name: Fail job if any check failed (fail-closed)
         if: always()
-        run: python scripts/ci/ci_final_gate.py --checks pytest,smoke,coverage,critical_coverage,runtime_gate,layered_smoke
+        run: python scripts/ci/ci_final_gate.py --checks pytest,smoke,coverage,critical_coverage,runtime_gate,layered_smoke,perf_budget
 
   quality:
     name: Code Quality & Tests

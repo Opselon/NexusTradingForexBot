@@ -425,6 +425,14 @@ def test_run_test_plan_end_to_end_metadata(tmp_path, engine_binary, capsys, monk
     repo = _scratch_repo(
         tmp_path,
         {
+            # NOTE: the __init__.py is load-bearing, not decoration. Without
+            # it nexus_scalp is a namespace package in the scratch repo, and
+            # the CI venv installs the REAL repo editable — its regular
+            # nexus_scalp package (no leaf module) shadows the scratch one
+            # and the inner pytest fails with ModuleNotFoundError. With the
+            # __init__.py the scratch package is regular too and wins via
+            # the scratch pyproject's pythonpath = ["src"].
+            "src/nexus_scalp/__init__.py": "",
             "src/nexus_scalp/leaf.py": "def value():\n    return True\n",
             "tests/unit/conftest.py": (
                 "import pytest\nfrom nexus_scalp.leaf import value\n\n\n"

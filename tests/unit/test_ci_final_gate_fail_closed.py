@@ -45,6 +45,7 @@ CHECKS = (
     "runtime_gate",
     "runtime_deps",
     "layered_smoke",
+    "perf_budget",
 )
 
 

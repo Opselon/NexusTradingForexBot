@@ -17,6 +17,7 @@ Covers:
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -48,12 +49,22 @@ def sample_bars() -> pl.DataFrame:
 
 
 @pytest.fixture
-def trained_model_and_scaler(tmp_path: Path) -> tuple[Path, Path]:
-    """Creates a temporary checkpoint and companion scaler for exact loading tests."""
-    model_dir = tmp_path / "model_bundle"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    model_path = model_dir / "scalp_test.pt"
-    scaler_path = model_dir / "scalp_test.scaler.npz"
+def trained_model_and_scaler() -> tuple[Path, Path]:
+    """Creates a temporary checkpoint and companion scaler for exact loading tests.
+
+    NOTE (runner isolation, 2026-11-09): the bundle is created under the
+    CURRENT tempfile dir (tempfile.mkdtemp), NOT under pytest's tmp_path.
+    The checkpoint loader's containment check trusts
+    ``tempfile.gettempdir()`` — and the conftest autouse fixture redirects
+    that to a per-test dir, while pytest's tmp_path is a SIBLING dir under
+    basetemp. A tmp_path bundle therefore fails the containment check
+    ("model_path must stay inside the artifact root"); a mkdtemp bundle
+    lands under the trusted tempdir and under pytest's numbered-run
+    retention, so it never leaks to the runner's real /tmp.
+    """
+    bundle_dir = Path(tempfile.mkdtemp(prefix="position_replay_bundle_"))
+    model_path = bundle_dir / "scalp_test.pt"
+    scaler_path = bundle_dir / "scalp_test.scaler.npz"
 
     model = ScalpNet(num_features=50, num_classes=3)
     torch.save(model.state_dict(), model_path)
