@@ -12,7 +12,7 @@ this file is the CI-specific companion.
 
 | Workflow | Trigger | Purpose | Lanes touched |
 | :--- | :--- | :--- | :--- |
-| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gates (lint/types ∥ tests, split 2026-11 under one required verdict) + runtime provider matrix + DB fabric + **CI self-integrity** + review-status | python, web, ci |
+| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gates (lint/types ∥ tests, split 2026-11 under one required verdict) + wall-clock perf-budget step + runtime provider matrix + DB fabric + **CI self-integrity** + review-status | python, web, ci |
 | `mt5-native-windows.yml` | `workflow_call` (from ci.yml); dispatch | **Native Windows MT5 certification** (primary runtime platform): Authenticode-verified installer + real `mt5.initialize()` IPC + `DirectMT5Adapter` connect; demo (Level 2/3) legs are dispatch-only | python/runtime |
 | `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
@@ -25,6 +25,19 @@ this file is the CI-specific companion.
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
 | `docker.yml` | push `docker` branch; dispatch | Build + publish GHCR image | docker |
 | `release.yml` | `v*` tags; dispatch | validate → quality gates → windows build/installer → publish | release/python |
+| `perf-benchmark.yml` | PR (web/models/experience/bench paths); push main (same paths); semi-monthly cron; dispatch | Bench units, exit non-zero on >15% regression vs baseline; PR comment | perf |
+| `qa-deep-assurance.yml` | semi-monthly cron; dispatch | Deep QA (mutation proof optional via input) | qa |
+| `nightly-qa.yml` | semi-monthly cron; dispatch | Nightly deep-QA sweep | qa |
+| `nightly-ml-benchmark.yml` | semi-monthly cron; dispatch | Nightly ML benchmark sweep | ml/perf |
+| `nightly-e2e.yml` | dispatch ONLY | Full Docker E2E soak (manual evidence pass) | e2e |
+| `mt5-wine-compat.yml` | semi-monthly cron; dispatch ONLY | Wine compatibility soak (advisory, never gates) | python/compat |
+| `dependency-lock.yml` | push/PR main·develop; dispatch | Lockfile drift + migration safety | deps |
+| `dependency-autoregen.yml` | push/PR on manifest paths; daily cron; dispatch | Lock self-heal (regenerates compiled artifacts) | deps |
+| `docs.yml` | push main/tags; PR main; release; semi-monthly cron; dispatch | Docs validation + Pages deploy | docs |
+| `go-api.yml` | push/PR on go-api/frontend/web paths; dispatch | Go API build + contract probe | go/web |
+| `pr-evidence.yml` | `workflow_run` (completed) on the PR workflows | Merge verdict + security-detail aggregation, PR comment | ci |
+| `drift-debug.yml` | dispatch ONLY | Manual drift diagnosis | ci |
+| `official-model.yml` | dispatch ONLY | Promote a candidate model to official | ml/release |
 
 ## Lane architecture (canonical)
 
@@ -123,6 +136,99 @@ branch on is validated on every run.
 > end state is to remove both names from protection and rely on the manual
 > lane evidence in `scripts/release/release_auth_gate.py`, which already
 > refuses a release whose SHA carries no green Windows lane.
+
+## PR policy classification — what runs where (2026-11 audit)
+
+Policy decided 2026-11-09 (area 4 of the PR #731 forensic audit): every PR
+runs the cheap, fast, safety-relevant checks; expensive or timing-sensitive
+work runs where it still blocks, but not on the PR lane. Nothing below
+silently drops a required check: a check that leaves the PR lane names
+exactly where it runs instead and stays blocking there. The table is the
+classification — a workflow change that moves a row must update this table
+in the same commit, with its risk note.
+
+Legend: ✓ = runs and blocks on that event; — = does not run; ◐ = runs in a
+reduced / advisory form.
+
+| Check | PR | Main push | Schedule | Manual / dispatch | Risk note (only rows that moved off PRs) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| CI integrity + change classification (`ci-integrity`) | ✓ | ✓ | ✓ | ✓ | — |
+| Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
+| C17 planner validation + targeted tests (`quality-tests`, OS SKEW) | ✓ | ✓ | ✓ | ✓ | — |
+| Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
+| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans the gate records N/A explicitly, never a silent skip. |
+| Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
+| JS tests (`js-tests.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
+| Go API (`go-api.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
+| Security: CodeQL + Trivy (`security.yml`, path-filtered) | ✓ | ✓ | ✓ | ✓ | — |
+| OSV dependency scan (advisory SARIF) | ✓ | ✓ | ✓ | ✓ | — |
+| Dependency lock + migration safety | ✓ | ✓ | — | ✓ | — |
+| Docs validation (`docs.yml`) | ✓ | ✓ | ✓ | ✓ | — |
+| PR evidence aggregator (`pr-evidence.yml`) | ✓ | ✓ | — | — | — |
+| Perf benchmarks (`perf-benchmark.yml`, path-filtered) | ✓ | ✓ | ✓ | ✓ | — |
+| Full critical suite on GLOBAL-IMPACT changes | ✓ | ✓ | ✓ | ✓ | See the global-impact rule below: the expanded plan IS the full-suite gate on PRs. |
+| Extended validation, tier 2 (`extended`) | — | ✓ | — | ✓ | A regression in these slow production-truth tests (bug276 ~1252 s, perf_deadletter ~730 s) is caught post-merge, not pre-merge. Mitigation: runs on every main push, blocking there; main-branch status shows it before the next release. |
+| Heavy CI: integration / e2e / research-backtest / model-validation (`heavy-ci`) | — | — | — | ✓ (`ci-tests` branch or `full=true`) | Integration regressions can merge. Mitigation: the PR lanes cover the critical suite + smoke chain + layered smoke; run heavy-ci via full dispatch before a release. |
+| Full runtime soak, SQLite + PostgreSQL (`full-runtime-provider`) | — | — | ✓ | ✓ (`full=true`) | Provider-specific runtime regressions (e.g. a PostgreSQL-only query failure) can merge. Mitigation: the soak runs on the semi-monthly schedule and on full dispatch, blocking there; PR lanes pin sqlite isolation and fail closed on the DB assert step. The PostgreSQL arms never ran on PRs — they need a migrated server, not a throwaway container. |
+| DB fabric certification, SQLite ↔ PostgreSQL (`db-fabric-certification`) | — | — | ✓ | ✓ (`full=true`) | Same as the runtime soak it follows: migration/facility regressions surface on the schedule or full dispatch, not on the PR. |
+| MT5 native Windows IPC (`mt5-native`) | — | — | ✓ | ✓ | Windows MT5 regressions can merge. Mitigation: the release gate refuses a release SHA with no green Windows lane; Windows is manual-only by design (the primary runtime is the Windows EXE). |
+| Windows / macOS test suites (`tests-windows.yml`, `tests-macos.yml`) | — | — | — | ✓ | Platform-specific regressions (paths / CRLF / encoding) can merge. Mitigation: manual lane before a release; the release gate requires Windows lane evidence for the release SHA. macOS has no release-gate requirement — that gap is explicit, not hidden. |
+| QA deep assurance (`qa-deep-assurance.yml`, `nightly-qa.yml`) | — | — | ✓ | ✓ | Deep-QA / mutation findings land after merge by design; advisory, never a PR gate. |
+| Nightly ML benchmark (`nightly-ml-benchmark.yml`) | — | — | ✓ | ✓ | Perf drift is watched on the schedule, not per PR (the PR perf-benchmark workflow covers path-triggered regressions). |
+| Wine compatibility soak (`mt5-wine-compat.yml`) | — | — | ✓ | ✓ | Advisory only; a Wine failure can never block a PR, the runtime verdict, or a release. |
+| Nightly E2E (`nightly-e2e.yml`) | — | — | — | ✓ | Full E2E evidence waits for an explicit dispatch. Mitigation: the PR smoke chain + layered smoke cover the fast E2E heartbeat on every PR. |
+| Docker build / publish | — | — | — | ✓ (`docker` branch, tags) | Not a PR gate by design. |
+| Release / official model | — | — | — | ✓ (tags) | Tag/dispatch only; the release gate reads the main CI checks + Windows lane evidence. |
+
+### Global-impact rule
+
+A change that touches `pyproject.toml`, `requirements.lock`,
+`requirements.txt`, `uv.lock`, `tests/conftest.py`, `pytest.ini`,
+`setup.cfg`, `tox.ini`, or anything under `configs/` triggers **global
+invalidation**: the C17 planner runs the expanded plan as the blocking PR
+gate (on PR #731: 351 of 866 test files, 5607 tests — the expanded plan is
+the full critical set plus the tests the changed files pull in), and the
+critical-file coverage gate enforces its per-file floors on that plan.
+The full critical suite therefore still gates global-impact PRs; the
+targeted fast shape applies only to leaf changes. A leaf change (e.g. one
+line in `src/nexus_scalp/research/worker.py`) selects 7 test files.
+
+### Wall-clock budget rule (timing assertions vs coverage)
+
+A test that asserts a **wall-clock** budget (`time.perf_counter_ns`,
+`time.time`) must never run under coverage instrumentation in parallel
+with other tests. Measured 2026-11-09 (leaf-change benchmark, local VM):
+
+| measurement | gate cost |
+| :--- | ---: |
+| isolated, no coverage | ~23–29 us/call |
+| isolated, with `--cov=src` | ~23 us/call |
+| with `--cov=src`, parallel suite running alongside | ~72 us/call |
+| without coverage, parallel suite running alongside | ~22 us/call |
+| CI Quality lane, 2-core tier-2, `--cov` + xdist `-n 2` | **158 us/call — FAIL vs the 100 us floor** |
+
+The gate itself costs ~23 us in every configuration; only the
+coverage + parallelism combination inflates the measurement. The
+assertion under coverage measures the scheduler, not the gate — the same
+tracer pattern as the MT5 CPU budget. So the payload value-gate budget
+test (`test_gate_cost_is_far_cheaper_than_the_write_it_prevents`) is
+deselected from every coverage-instrumented pytest invocation and runs
+in a dedicated step in the same lane — uninstrumented, single-process,
+blocking on every PR. The other four tests in that file are pure
+correctness assertions (byte reduction, production projection,
+losslessness) and stay in the coverage run. CPU-time budgets (e.g. the
+`budget_cpu_ms` / `process_time` seam used by the ML QA 018 suite) are
+not affected by this rule: CPU time removes scheduler noise, so those
+assertions stay in the coverage run.
+
+Enforcement is structural, not conventional: the deselect + dedicated
+step are pinned by `tests/ci/test_pr_policy_benchmark_lane.py`. If the
+dedicated step were ever removed, the deselect would silently drop the
+assertion — the test fails the run if either half goes missing. The
+step fails the job directly on a tripped budget; its `perf_budget`
+record feeds the step summary and `review-status.json` but is outside
+the `ci_final_gate.py` CHECKS vocabulary, so the final gate cannot
+verdict it (that tuple is frozen by contract).
 
 ## Runner routing architecture (2026-11)
 
@@ -321,6 +427,10 @@ untrusted flag). The reusable workflow emits a `::notice::` annotation so
 the decision is visible in the PR Checks UI without opening the log.
 
 ## Optional / advisory checks
+
+The authoritative per-check placement is the [PR policy classification
+table](#pr-policy-classification--what-runs-where-2026-11-audit) above;
+this list is only the short version.
 
 * `osv-scanner` — dependency visibility, never blocking.
 * `security.yml` scheduled run — weekly drift.

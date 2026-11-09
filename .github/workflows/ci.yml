@@ -711,6 +711,15 @@ jobs:
           # the depth-1 checkout leaves shallow-grafted, so the engine's
           # three-dot diff finds no merge base and fails rc=3 (2026-11-09).
           # The fetch step already fetches this exact SHA.
+          #
+          # --deselect keeps the payload-gate WALL-CLOCK budget test out of
+          # this coverage-instrumented run (it runs in the dedicated
+          # "Performance budget" step right after this one): coverage +
+          # xdist on a loaded 2-core runner inflates its perf_counter_ns
+          # measurement past the 100 us floor (158 us in CI vs 23 us
+          # isolated, measured 2026-11-09), so under coverage it measures
+          # the scheduler, not the gate. The other four tests in that file
+          # are pure correctness assertions and stay in this run.
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "${{ github.event.pull_request.base.sha || github.event.before }}" \
@@ -719,7 +728,7 @@ jobs:
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
             --xdist "$XDIST" \
-            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
+            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
             --attempt "${{ github.run_attempt }}" \
@@ -733,6 +742,40 @@ jobs:
             --results "$CI_RESULTS_DIR" \
             --plan "$CI_RESULTS_DIR/test-plan/plan.json" || true
           exit $rc
+
+      # -------- Wall-clock performance budget (uninstrumented, single-process)
+      # The payload value-gate cost test asserts a WALL-CLOCK budget
+      # (perf_counter_ns < 100 us/call). It is deselected from the
+      # coverage-instrumented planner run above and runs HERE instead:
+      # uninstrumented and single-process, on EVERY PR/push, blocking.
+      # Measured 2026-11-09 (leaf-change benchmark): the gate itself costs
+      # ~23 us/call isolated with or without coverage, but coverage + xdist
+      # on a loaded runner inflates the same measurement to 72 us (4-CPU VM
+      # under load) and 158 us in CI on the 2-core tier-2 box — past the
+      # 100 us floor. Under coverage + parallelism the assertion measures
+      # the scheduler, not the gate (same tracer pattern as the MT5 CPU
+      # budget). The other four tests in the file are pure correctness
+      # assertions and stay in the coverage run. This step fails the job
+      # directly on a tripped budget: its check name sits outside the
+      # ci_final_gate.py CHECKS vocabulary, so the final gate cannot
+      # verdict it — the step's own exit code is the enforcement, and the
+      # perf_budget record below feeds the step summary + review-status.
+      - name: Performance budget — wall-clock gate (uninstrumented)
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/perf-budget"
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents \
+            -q --tb=short -p no:cacheprovider \
+            --junitxml="$CI_RESULTS_DIR/perf-budget/junit.xml" \
+            2>&1 | tee "$CI_RESULTS_DIR/perf-budget/pytest.txt"
+          rc=${PIPESTATUS[0]}
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" perf_budget "$rc" "wall-clock gate cost < 100us/call, uninstrumented single-process (see perf-budget/)" || true
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::payload value-gate wall-clock budget tripped while UNINSTRUMENTED — the gate itself got slower (see perf-budget/junit.xml)"
+            exit "$rc"
+          fi
+          grep -h "gate cost" "$CI_RESULTS_DIR/perf-budget/pytest.txt" || true
+          echo "perf-budget: PASS (gate cost under 100us/call, uninstrumented)"
 
       # -------- Whole-application SMOKE CHAIN (one-file E2E heartbeat) --------
       - name: End-to-end smoke chain
@@ -897,6 +940,7 @@ jobs:
               "Critical coverage": load("critical_coverage.json").get("status", "skipped"),
               "Runtime gate": load("runtime_gate.json").get("status", "skipped"),
               "Layered Smoke": load("layered_smoke.json").get("status", "skipped"),
+              "Perf budget": load("perf_budget.json").get("status", "skipped"),
           }
           meta = load("metadata.json")
           extra = load("pytest-extra.json")
@@ -957,7 +1001,7 @@ jobs:
                       return json.load(fh)
               except Exception:
                   return {}
-          checks = ["pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke"]
+          checks = ["pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke", "perf_budget"]
           details = []
           status = "passed"
           for c in checks:
