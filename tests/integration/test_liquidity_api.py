@@ -21,6 +21,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers.authenticated_client import authenticated_test_client
+
 from nexus_scalp.features.liquidity_engine import LIQUIDITY_FEATURE_NAMES
 from nexus_scalp.features.liquidity_runtime import (
     DIMENSION_70D,
@@ -122,7 +124,7 @@ def api_env(tmp_path):
     gov.bind_engine(engine)
     app = create_app()
     app.state.engine = engine
-    return app, TestClient(app), gov
+    return app, authenticated_test_client(app), gov
 
 
 # ---------------------------------------------------------------------------
@@ -278,7 +280,7 @@ def test_70d_12_incompatible_engine_blocked_flag(api_env) -> None:
     gov.bind_engine(engine)
     app = create_app()
     app.state.engine = engine
-    client = TestClient(app)
+    client = authenticated_test_client(app)
     resp = client.get("/api/liquidity/state")
     body = resp.json()
     assert body["model_compatibility"]["result"] == "BLOCK"
