@@ -696,6 +696,10 @@ jobs:
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
+          # No HTML coverage report on this lane: it costs a full
+          # render pass over 784 files and nobody reads htmlcov in CI.
+          # term-missing feeds the coverage step; xml feeds the
+          # critical-file gate on expanded plans.
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "${{ github.event.pull_request.base.sha || github.event.before }}" \
@@ -704,10 +708,6 @@ jobs:
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
             --xdist "$XDIST" \
-            # No HTML coverage report on this lane: it costs a full
-            # render pass over 784 files and nobody reads htmlcov in CI.
-            # term-missing feeds the coverage step; xml feeds the
-            # critical-file gate on expanded plans.
             --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
