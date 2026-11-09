@@ -88,6 +88,9 @@ jobs:
         run: |
           python scripts/ci/check_workflows.py --format text --strict
 
+      - name: Runner routing consistency (canonical tier order)
+        run: python scripts/ci/check_runner_routing.py
+
       - name: Decision-ID uniqueness (P3 — one DEC id, one canonical record)
         run: |
           python scripts/ci/check_decision_ids.py
@@ -180,8 +183,8 @@ jobs:
           NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
         with:
           platform: linux
-          labels: "self-hosted,Linux,X64,nexus-2core"
-          fallback_labels: "self-hosted,Linux,X64,opselon-vm"
+          labels: "self-hosted,Linux,X64,opselon-vm"
+          fallback_labels: "self-hosted,Linux,X64,nexus-2core"
           # A fork PR (head repo != this repo) is untrusted: never
           # self-hosted, never exposed to runner credentials.
           untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
