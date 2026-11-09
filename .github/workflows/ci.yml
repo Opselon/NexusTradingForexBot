@@ -193,6 +193,7 @@ jobs:
           platform: linux
           labels: "self-hosted,Linux,X64,opselon-vm"
           fallback_labels: "self-hosted,Linux,X64,nexus-2core"
+
           # A fork PR (head repo != this repo) is untrusted: never
           # self-hosted, never exposed to runner credentials.
           untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
@@ -504,7 +505,37 @@ jobs:
           # which needs the merge base. The default depth-1 checkout has no
           # base commit, so the engine exited rc=3 ("git diff failed") and the
           # planner never produced a plan. 0 = full history for this job.
-          fetch-depth: 0
+          #
+          # NOTE: fetch-depth 0 ships 88.6 MiB of pack (every blob in the
+          # repo) over the self-hosted runner's tethered uplink and measured
+          # 2m37s of pure network on 2026-11-09. The step below instead
+          # pulls full COMMIT+TREE history blobless (measured 4.9 MiB,
+          # 18x smaller): `git diff --name-only` resolves paths from TREE
+          # objects only, so the planner contract is preserved at a fraction
+          # of the transfer; blobs for the working tree come with checkout.
+          fetch-depth: 1
+
+      - name: Fetch planner history (blobless = commit+tree only)
+        # Gives the C planner the merge base without shipping 88 MiB of
+        # file contents. Falls back to a full fetch when the blobless path
+        # is unsupported, and verifies the merge base is reachable so the
+        # planner never hits rc=3 silently.
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ github.event.pull_request.base.sha || github.event.before }}"
+          head="${{ github.event.sha }}"
+          if git fetch --filter=blob:none --no-tags origin "$base" "$head" 2>/dev/null; then
+            echo "blobless history fetched"
+          else
+            echo "::warning::blobless fetch unsupported; falling back to full fetch"
+            git fetch --no-tags origin "$base" "$head"
+          fi
+          if ! git merge-base "$base" "$head" >/dev/null 2>&1; then
+            echo "::error::merge base unreachable after fetch; planner would rc=3"
+            exit 1
+          fi
+          echo "planner history ready (base=$(git rev-parse --short "$base") head=$(git rev-parse --short "$head"))"
 
       # One canonical environment (setup-python + pinned uv + lock venv):
       # ./.github/actions/setup-python-env — same block quality-lint uses.
