@@ -149,6 +149,10 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = false
+# Untyped function bodies are not checked by policy (see check_untyped_defs
+# above), so the annotation-unchecked notes mypy emits for annotated locals
+# inside them are pure noise in the CI gate report — silence the code.
+disable_error_code = "annotation-unchecked"
 disallow_untyped_decorators = false
 no_implicit_optional = true
 strict_optional = false
