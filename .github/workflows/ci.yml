@@ -621,7 +621,7 @@ jobs:
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: scripts/ci/native/artifacts/nse-ci-engine
-          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.2.0-${{ hashFiles('scripts/ci/native/**') }}
           fail-on-cache-miss: false
 
       - name: Build & verify native C17 engine
@@ -631,7 +631,7 @@ jobs:
           set -euo pipefail
           # A restored binary wins only if it passes version + selftest.
           if [ -f scripts/ci/native/artifacts/nse-ci-engine ]; then
-            if scripts/ci/native/artifacts/nse-ci-engine version | grep -qx "0.1.0" \
+            if scripts/ci/native/artifacts/nse-ci-engine version | grep -qx "0.2.0" \
                && scripts/ci/native/artifacts/nse-ci-engine selftest >/dev/null; then
               echo "binary=scripts/ci/native/artifacts/nse-ci-engine" >> "$GITHUB_OUTPUT"
               echo "source=restored-trusted-cache" >> "$GITHUB_OUTPUT"
@@ -675,7 +675,7 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: scripts/ci/native/artifacts/nse-ci-engine
-          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.1.0-${{ hashFiles('scripts/ci/native/**') }}
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.2.0-${{ hashFiles('scripts/ci/native/**') }}
 
       - name: Planner-driven pytest (C17 only — sole planner)
         id: pytest
