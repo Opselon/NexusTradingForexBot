@@ -524,7 +524,7 @@ jobs:
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          head="${{ github.event.sha }}"
+          head="${{ github.sha }}"
           if git fetch --filter=blob:none --no-tags origin "$base" "$head" 2>/dev/null; then
             echo "blobless history fetched"
           else
