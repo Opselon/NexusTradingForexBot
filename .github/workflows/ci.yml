@@ -552,8 +552,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # On a pull_request event github.sha is the EPHEMERAL merge commit
+          # GitHub builds in-memory, not the branch head - fetching it would
+          # resolve nothing. Use the real head SHA; the push fallback keeps
+          # before.. (the prior head).
           base="${{ github.event.pull_request.base.sha || github.event.before }}"
-          head="${{ github.sha }}"
+          head="${{ github.event.pull_request.head.sha || github.sha }}"
           if git fetch --filter=blob:none --no-tags origin "$base" "$head" 2>/dev/null; then
             echo "blobless history fetched"
           else
