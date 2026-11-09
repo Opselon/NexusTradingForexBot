@@ -164,6 +164,45 @@ static int test_plan_fixture(void) {
     return 0;
 }
 
+static int test_graph_reachability_stack_bound(void) {
+    /* A dense acyclic cross-edge graph makes the old pop-time visitation
+     * enqueue the same pending nodes repeatedly, exceeding a V-sized stack. */
+    enum { HUB_COUNT = 48 };
+    Arena arena;
+    arena_init(&arena, 1u << 16);
+    Graph graph;
+    graph_init(&graph, &arena);
+
+    size_t root = graph_find_or_add(&graph, "src/changed_root.py", NULL, false);
+    size_t hubs[HUB_COUNT];
+    char name[64];
+    for (size_t i = 0; i < HUB_COUNT; i++) {
+        snprintf(name, sizeof(name), "src/hub_%02zu.py", i);
+        hubs[i] = graph_find_or_add(&graph, name, NULL, false);
+    }
+    size_t test_node = graph_find_or_add(
+        &graph, "tests/unit/test_reachability.py", NULL, true
+    );
+
+    /* The root pushes every hub. The last hub then points back to every
+     * earlier pending hub, creating a dense cross-edge workload. */
+    for (size_t i = 0; i < HUB_COUNT; i++) graph_add_edge(&graph, hubs[i], root);
+    for (size_t i = 0; i + 1 < HUB_COUNT; i++) {
+        graph_add_edge(&graph, hubs[i], hubs[HUB_COUNT - 1]);
+    }
+    graph_add_edge(&graph, test_node, hubs[0]);
+
+    size_t *selected = NULL, *covered = NULL;
+    size_t selected_len = 0, covered_len = 0;
+    graph_reachable_tests(
+        &graph, &root, 1, &selected, &selected_len, &covered, &covered_len
+    );
+
+    int rc = (selected_len == 1 && selected[0] == test_node) ? 0 : 26;
+    arena_free(&arena);
+    return rc;
+}
+
 int engine_selftest(void) {
     int rc;
     if ((rc = test_sha256_vectors()) != 0) {
@@ -176,6 +215,10 @@ int engine_selftest(void) {
     }
     if ((rc = test_plan_fixture()) != 0) {
         fprintf(stderr, "selftest: plan fixture FAILED (%d)\n", rc);
+        return 1;
+    }
+    if ((rc = test_graph_reachability_stack_bound()) != 0) {
+        fprintf(stderr, "selftest: graph reachability stack bound FAILED (%d)\n", rc);
         return 1;
     }
     printf("{\"selftest\":\"pass\"}\n");

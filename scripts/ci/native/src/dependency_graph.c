@@ -456,23 +456,34 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
     memset(covered, 0, g->mod_count * sizeof(bool));
     memset(sel_test, 0, g->mod_count * sizeof(bool));
 
+    /* Mark nodes when ENQUEUED, not when popped. A node may be reachable
+     * through several importers while an earlier copy is still pending. If
+     * it is marked only on pop, the DFS stack can grow with E (or worse on
+     * dense cross-edges) even though it was allocated for only V nodes. */
     size_t *stack = (size_t *)arena_alloc(g->arena, g->mod_count * sizeof(size_t));
     size_t top = 0;
-    for (size_t i = 0; i < changed_len; i++) stack[top++] = changed_idx[i];
+    for (size_t i = 0; i < changed_len; i++) {
+        size_t root = changed_idx[i];
+        if (root >= g->mod_count) continue;
+        if (!visited[root]) {
+            visited[root] = true;
+            stack[top++] = root;
+        }
+    }
 
     while (top > 0) {
         size_t idx = stack[--top];
-        if (visited[idx]) continue;
-        visited[idx] = true;
         if (g->is_test[idx]) covered[idx] = true; /* changed test covers itself */
         bool has_importer = false;
         for (size_t e = 0; e < g->importer_counts[idx]; e++) {
             size_t importer = g->importers[idx][e];
+            if (importer >= g->mod_count) continue; /* reject corrupt edge safely */
             has_importer = true;
             if (g->is_test[importer]) {
                 sel_test[importer] = true;
                 covered[idx] = true;
             } else if (!visited[importer]) {
+                visited[importer] = true;
                 stack[top++] = importer;
             }
         }
