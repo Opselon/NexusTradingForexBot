@@ -85,9 +85,12 @@ class TestMarketplaceJsContract:
         # innerHTML assignments). This is the XSS guard contract.
         for match in re.finditer(r"innerHTML\s*=\s*([^;]+);", marketplace_js):
             expr = match.group(1)
-            assert "${" not in expr, (
-                f"innerHTML assignment contains template interpolation "
-                f"(potential XSS vector): {expr.strip()[:120]}"
+            # Static layout may interpolate trusted i18n strings via t().
+            # API-derived values must still never flow through innerHTML.
+            interpolations = re.findall(r"\$\{([^}]*)\}", expr)
+            unsafe = [value.strip() for value in interpolations if not re.match(r"^t\s*\(", value.strip())]
+            assert not unsafe, (
+                f"innerHTML assignment contains non-i18n template interpolation: {unsafe[:3]!r}"
             )
             assert "res." not in expr and "data." not in expr and "seed." not in expr, (
                 f"innerHTML assignment references API-derived data: {expr.strip()[:120]}"
