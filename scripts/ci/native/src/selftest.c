@@ -123,6 +123,17 @@ static int test_json_parser(void) {
     for (int i = 0; i < 100; i++) sb_append_ch(&deep, '[');
     for (int i = 0; i < 100; i++) sb_append_ch(&deep, ']');
     if (json_parse(&p, deep.data, deep.len)) { sb_free(&deep); arena_free(&a); return 16; }
+    /* writer: non-ASCII escapes match Python json.dumps(ensure_ascii=True)
+     * exactly, or the C digest and Python's re-dump diverge. */
+    StrBuf w;
+    sb_init(&w);
+    json_write_escaped(&w, "a\xe2\x80\x94" "b"); /* em-dash, U+2014 */
+    if (!w.data || strcmp(w.data, "\"a\\u2014b\"") != 0) {
+        sb_free(&w);
+        arena_free(&a);
+        return 17;
+    }
+    sb_free(&w);
     sb_free(&deep);
     arena_free(&a);
     return 0;
@@ -175,6 +186,22 @@ static int test_plan_fixture(void) {
     fputs("def test_other():\n    assert True\n", f);
     fclose(f);
 
+    /* Fixture-only dependency: test_fixture_only uses the `risky` fixture
+     * defined in tests/unit/conftest.py, which imports risk_engine — the
+     * test file itself never imports it. The line scanner cannot see
+     * fixture usage, so only the metadata path selects this test. */
+    snprintf(path, sizeof(path), "%s/tests/unit/conftest.py", ROOT);
+    f = fopen(path, "w");
+    fputs("import pytest\nfrom nexus_scalp.risk.risk_engine import assess\n\n\n"
+          "@pytest.fixture\ndef risky():\n    return assess()\n",
+          f);
+    fclose(f);
+
+    snprintf(path, sizeof(path), "%s/tests/unit/test_fixture_only.py", ROOT);
+    f = fopen(path, "w");
+    fputs("def test_via_fixture(risky):\n    assert risky()\n", f);
+    fclose(f);
+
     snprintf(path, sizeof(path), "%s/tests/critical_suite.txt", ROOT);
     f = fopen(path, "w");
     fputs("tests/unit/test_risk_engine.py\ntests/unit/test_trade_manager.py\n", f);
@@ -219,6 +246,51 @@ static int test_plan_fixture(void) {
     if (!strstr(plan3.data ? plan3.data : "", "mandatory_safety")) {
         sb_free(&plan); sb_free(&plan2); sb_free(&plan3);
         return 25;
+    }
+    /* AST-metadata path: the fixture-only test is selected ONLY via
+     * metadata (fixture edge test -> conftest -> risk_engine). The
+     * line-scan plan above must NOT contain it. */
+    StrBuf plan_meta;
+    sb_init(&plan_meta);
+    char digest_meta[65];
+    const char *meta_json =
+        "{\"schema\":\"nse-ast-meta-v1\",\"files\":{"
+        "\"src/nexus_scalp/risk/risk_engine.py\":"
+        "{\"module\":\"nexus_scalp.risk.risk_engine\",\"imports\":[]},"
+        "\"src/nexus_scalp/execution/trade_manager.py\":"
+        "{\"module\":\"nexus_scalp.execution.trade_manager\",\"imports\":["
+        "{\"m\":\"nexus_scalp.risk.risk_engine\",\"rel\":0,\"symbols\":[\"assess\"]}]},"
+        "\"tests/unit/conftest.py\":"
+        "{\"module\":\"tests.unit.conftest\",\"imports\":["
+        "{\"m\":\"nexus_scalp.risk.risk_engine\",\"rel\":0,\"symbols\":[\"assess\"]}],"
+        "\"fixtures\":[{\"name\":\"risky\",\"autouse\":false,\"params\":[]}]},"
+        "\"tests/unit/test_risk_engine.py\":"
+        "{\"module\":\"tests.unit.test_risk_engine\",\"imports\":["
+        "{\"m\":\"nexus_scalp.risk.risk_engine\",\"rel\":0,\"symbols\":[\"assess\"]}]},"
+        "\"tests/unit/test_trade_manager.py\":"
+        "{\"module\":\"tests.unit.test_trade_manager\",\"imports\":["
+        "{\"m\":\"nexus_scalp.execution.trade_manager\",\"rel\":0,\"symbols\":[\"trade\"]}]},"
+        "\"tests/unit/test_fixture_only.py\":"
+        "{\"module\":\"tests.unit.test_fixture_only\",\"imports\":[],"
+        "\"test_args\":{\"test_via_fixture\":[\"risky\"]}},"
+        "\"tests/unit/test_unrelated.py\":"
+        "{\"module\":\"tests.unit.test_unrelated\",\"imports\":[]}"
+        "}}";
+    if (engine_build_plan_ex(ROOT, "src/nexus_scalp/risk/risk_engine.py\0", &opt,
+                             &plan_meta, digest_meta, meta_json) != 0) {
+        sb_free(&plan); sb_free(&plan2); sb_free(&plan3); sb_free(&plan_meta);
+        return 26;
+    }
+    if (!strstr(plan_meta.data ? plan_meta.data : "", "tests/unit/test_fixture_only.py") ||
+        !strstr(plan_meta.data ? plan_meta.data : "", "\"metadata_used\":true") ||
+        strstr(plan_meta.data ? plan_meta.data : "", "test_unrelated")) {
+        sb_free(&plan); sb_free(&plan2); sb_free(&plan3); sb_free(&plan_meta);
+        return 27;
+    }
+    sb_free(&plan_meta);
+    if (strstr(plan.data ? plan.data : "", "test_fixture_only")) {
+        sb_free(&plan); sb_free(&plan2); sb_free(&plan3);
+        return 28;
     }
     sb_free(&plan);
     sb_free(&plan2);
@@ -269,6 +341,83 @@ static int test_graph_reachability_stack_bound(void) {
     return rc;
 }
 
+static int test_hub_one_hop_expansion(void) {
+    /* The audit's hub scenario, in miniature: a changed leaf M, one test
+     * importing M directly, a hub H (26 importers) importing M, and
+     * integration tests importing H. The bounded one-hop expansion must
+     * include H's direct test importers (<= 25 of them); a test reaching
+     * H only via a non-test intermediate (distance 2 past the hub) must
+     * stay unselected. A second, oversized hub (40 direct tests) must
+     * stay a hard boundary — uncapped one-hop measured 219 files for a
+     * one-line worker.py change on the real repo, versus 7 bounded. */
+    Arena arena;
+    arena_init(&arena, 1u << 16);
+    Graph graph;
+    graph_init(&graph, &arena);
+
+    size_t leaf = graph_find_or_add(&graph, "src/leaf.py", NULL, false);
+    size_t direct = graph_find_or_add(&graph, "tests/unit/test_direct.py", NULL, true);
+    graph_add_edge(&graph, direct, leaf);
+
+    size_t hub = graph_find_or_add(&graph, "src/hub.py", NULL, false);
+    graph_add_edge(&graph, hub, leaf);
+    size_t hub_tests[25];
+    char name[64];
+    for (size_t i = 0; i < 25; i++) {
+        snprintf(name, sizeof(name), "tests/integration/test_hub_%02zu.py", i);
+        hub_tests[i] = graph_find_or_add(&graph, name, NULL, true);
+        graph_add_edge(&graph, hub_tests[i], hub);
+    }
+    size_t mid = graph_find_or_add(&graph, "src/mid.py", NULL, false);
+    graph_add_edge(&graph, mid, hub);
+    size_t via_mid = graph_find_or_add(&graph, "tests/unit/test_via_mid.py", NULL, true);
+    graph_add_edge(&graph, via_mid, mid);
+
+    size_t big = graph_find_or_add(&graph, "src/big.py", NULL, false);
+    graph_add_edge(&graph, big, leaf);
+    size_t big_tests[40];
+    for (size_t i = 0; i < 40; i++) {
+        snprintf(name, sizeof(name), "tests/unit/test_big_%02zu.py", i);
+        big_tests[i] = graph_find_or_add(&graph, name, NULL, true);
+        graph_add_edge(&graph, big_tests[i], big);
+    }
+
+    size_t *selected = NULL, *covered = NULL;
+    size_t selected_len = 0, covered_len = 0;
+    bool hub_bounded = false;
+    graph_reachable_tests(&graph, &leaf, 1, &selected, &selected_len,
+                          &covered, &covered_len, &hub_bounded);
+
+    int rc = 0;
+    if (!hub_bounded) rc = 30;
+    /* direct test + 25 hub tests = 26; via_mid and all big tests excluded */
+    if (selected_len != 26) rc = 31;
+    bool has_direct = false, has_via_mid = false, has_big = false;
+    bool has_hub_tests = true;
+    for (size_t i = 0; i < selected_len; i++) {
+        if (selected[i] == direct) has_direct = true;
+        if (selected[i] == via_mid) has_via_mid = true;
+        for (size_t b = 0; b < 40; b++) {
+            if (selected[i] == big_tests[b]) has_big = true;
+        }
+    }
+    for (size_t i = 0; i < 25; i++) {
+        bool found = false;
+        for (size_t s = 0; s < selected_len; s++) {
+            if (selected[s] == hub_tests[i]) found = true;
+        }
+        if (!found) has_hub_tests = false;
+    }
+    if (!has_direct || !has_hub_tests || has_via_mid || has_big) rc = 32;
+    bool leaf_covered = false;
+    for (size_t i = 0; i < covered_len; i++) {
+        if (covered[i] == leaf) leaf_covered = true;
+    }
+    if (!leaf_covered) rc = 33;
+    arena_free(&arena);
+    return rc;
+}
+
 int engine_selftest(void) {
     int rc;
     if ((rc = test_sha256_vectors()) != 0) {
@@ -285,6 +434,10 @@ int engine_selftest(void) {
     }
     if ((rc = test_graph_reachability_stack_bound()) != 0) {
         fprintf(stderr, "selftest: graph reachability stack bound FAILED (%d)\n", rc);
+        return 1;
+    }
+    if ((rc = test_hub_one_hop_expansion()) != 0) {
+        fprintf(stderr, "selftest: hub one-hop expansion FAILED (%d)\n", rc);
         return 1;
     }
     printf("{\"selftest\":\"pass\"}\n");

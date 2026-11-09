@@ -34,8 +34,49 @@ void json_write_escaped(StrBuf *sb, const char *s) {
                     char buf[8];
                     snprintf(buf, sizeof(buf), "\\u%04x", *p);
                     sb_append(sb, buf);
-                } else {
+                } else if (*p < 0x80) {
                     sb_append_ch(sb, (char)*p);
+                } else {
+                    /* Non-ASCII: match Python json.dumps(ensure_ascii=True)
+                     * exactly — emit \uXXXX (surrogate pair above the BMP).
+                     * Raw UTF-8 here made the C digest differ from
+                     * Python's re-dump, so any plan with a non-ASCII
+                     * string (an em-dash in a fallback reason or note)
+                     * failed validate_plan with "plan digest mismatch". */
+                    uint32_t cp = 0;
+                    size_t adv = 1;
+                    if ((*p & 0xE0) == 0xC0 && (p[1] & 0xC0) == 0x80) {
+                        cp = ((uint32_t)(*p & 0x1F) << 6) | (uint32_t)(p[1] & 0x3F);
+                        adv = 2;
+                    } else if ((*p & 0xF0) == 0xE0 && (p[1] & 0xC0) == 0x80 &&
+                               (p[2] & 0xC0) == 0x80) {
+                        cp = ((uint32_t)(*p & 0x0F) << 12) |
+                             ((uint32_t)(p[1] & 0x3F) << 6) | (uint32_t)(p[2] & 0x3F);
+                        adv = 3;
+                    } else if ((*p & 0xF8) == 0xF0 && (p[1] & 0xC0) == 0x80 &&
+                               (p[2] & 0xC0) == 0x80 && (p[3] & 0xC0) == 0x80) {
+                        cp = ((uint32_t)(*p & 0x07) << 18) |
+                             ((uint32_t)(p[1] & 0x3F) << 12) |
+                             ((uint32_t)(p[2] & 0x3F) << 6) | (uint32_t)(p[3] & 0x3F);
+                        adv = 4;
+                    }
+                    if (cp == 0) {
+                        /* Invalid UTF-8 lead byte: escape the byte itself. */
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "\\u%04x", *p);
+                        sb_append(sb, buf);
+                    } else if (cp < 0x10000) {
+                        char buf[8];
+                        snprintf(buf, sizeof(buf), "\\u%04x", cp);
+                        sb_append(sb, buf);
+                    } else {
+                        uint32_t v = cp - 0x10000;
+                        char buf[16];
+                        snprintf(buf, sizeof(buf), "\\u%04x\\u%04x",
+                                 0xD800 + (v >> 10), 0xDC00 + (v & 0x3FF));
+                        sb_append(sb, buf);
+                    }
+                    p += adv - 1;
                 }
         }
     }
