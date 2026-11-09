@@ -18,6 +18,8 @@ from datetime import UTC
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers.authenticated_client import authenticated_test_client
+
 
 @pytest.fixture()
 def client_with_engine():
@@ -123,7 +125,7 @@ def client_with_engine():
     engine = LiveEngine(config=config, adapter=MockPort(), force_fresh_model=True)
     app = create_app(engine_ref=engine)
     engine.server_state = app.state.server_state
-    client = TestClient(app)
+    client = authenticated_test_client(app)
 
     # Point live.yaml at a temp path so tests never touch the repo file
     import nexus_scalp.web.server as server_module

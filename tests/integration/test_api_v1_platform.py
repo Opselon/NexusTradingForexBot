@@ -17,6 +17,8 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers.authenticated_client import authenticated_test_client
+
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.web.api_v1_wiring import (
     _iter_effective_routes,
@@ -422,7 +424,7 @@ def test_register_api_v1_on_legacy_app_additive(seeded_repo: AuditRepository) ->
     # legacy surface intact
     assert "/api/status" in effective
     assert "/health" in effective
-    client = TestClient(app)
+    client = authenticated_test_client(app)
     r = client.get("/api/v1/system/version")
     assert r.status_code == 200
     # legacy route unaffected by v1 handlers
