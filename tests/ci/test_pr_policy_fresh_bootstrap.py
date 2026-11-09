@@ -177,34 +177,65 @@ def test_fetch_script_actually_unshallows() -> None:
 # --- dependency index fallback ---------------------------------------
 
 
-def test_setup_action_has_pypi_fallback_index() -> None:
-    """setup-python-env must add PyPI as an extra index (mirror lag).
+def test_setup_action_has_mirror_fallback_index() -> None:
+    """The install indexes must be mirrors that can SERVE wheels to tier-1.
 
+    Primary is the TUNA mirror, extra is Aliyun (2026-11-09, proven by
+    the proof/leaf-timing diagnostic on tier-1): files.pythonhosted.org
+    is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
+    PyPI can resolve a version but can never deliver its wheel — it must
+    NOT be an index for the self-hosted lanes. And the Aliyun node
+    serving tier-1 lags fresh releases (filelock 4.2.10 missing while
+    the node this VM hits has it), so Aliyun cannot be the primary;
+    TUNA's node serving tier-1 IS synced (lists 4.2.10, uv resolves it
+    in 4.36s; USTC/BFSU/Aliyun all lack it).
     UV_INDEX_STRATEGY is load-bearing: uv's default first-index
     strategy uses the FIRST index that has a package and never consults
     the others for it — the extra index alone was proven a no-op by the
     proof/leaf-timing run (PIP_EXTRA_INDEX_URL set, filelock 4.2.10
     still unresolvable). unsafe-best-match considers all indexes.
     """
-    text = (REPO / ".github" / "actions" / "setup-python-env" / "action.yml").read_text(
+    action = (REPO / ".github" / "actions" / "setup-python-env" / "action.yml").read_text(
         encoding="utf-8"
     )
-    assert "PIP_EXTRA_INDEX_URL" in text, "setup action must set PIP_EXTRA_INDEX_URL"
-    assert "https://pypi.org/simple/" in text, "fallback index must be PyPI"
-    assert "UV_INDEX_STRATEGY" in text, "setup action must set UV_INDEX_STRATEGY"
-    assert "unsafe-best-match" in text, "index strategy must be unsafe-best-match"
-    assert "--refresh" in text, (
+    assert "PIP_EXTRA_INDEX_URL" in action, "setup action must set PIP_EXTRA_INDEX_URL"
+    assert "mirrors.aliyun.com/pypi/simple" in action, "extra index must be Aliyun"
+    assert "pypi.org/simple" not in action, (
+        "PyPI must not be an install index (files.pythonhosted.org is unreachable from tier-1)"
+    )
+    assert "UV_INDEX_STRATEGY" in action, "setup action must set UV_INDEX_STRATEGY"
+    assert "unsafe-best-match" in action, "index strategy must be unsafe-best-match"
+    assert "--refresh" in action, (
         "setup action must retry the lock install with a cache refresh "
         "on resolution failure (stale index cache / mirror lag)"
     )
+    for wf in ("ci.yml", "tests-os.yml"):
+        text = (REPO / ".github" / "workflows" / wf).read_text(encoding="utf-8")
+        assert "pypi.tuna.tsinghua.edu.cn/simple" in text, (
+            f"{wf} must use the TUNA mirror as the primary index"
+        )
+        assert "pypi.org/simple" not in text, (
+            f"{wf} must not use PyPI as an install index (files.pythonhosted.org "
+            "is unreachable from tier-1)"
+        )
 
 
-def test_os_workflow_has_pypi_fallback_index() -> None:
-    """tests-os.yml must set the PyPI fallback index (its venv installs inline)."""
+def test_os_workflow_has_mirror_indexes() -> None:
+    """tests-os.yml must set TUNA as primary and Aliyun as extra (inline venv).
+
+    PyPI is NOT an index for the self-hosted lanes: files.pythonhosted.org
+    is unreachable from tier-1, so PyPI can resolve but never deliver a
+    wheel. The OS lane sets no primary otherwise, so it would fall back
+    to the runner machine's config (Aliyun, which lags fresh releases
+    from tier-1's node) — hence the explicit TUNA primary here.
+    """
     wf = _load("tests-os.yml")
     env = wf.get("env", {})
-    assert env.get("PIP_EXTRA_INDEX_URL") == "https://pypi.org/simple/", (
-        "tests-os.yml top-level env must set PIP_EXTRA_INDEX_URL to PyPI"
+    assert env.get("PIP_INDEX_URL") == "https://pypi.tuna.tsinghua.edu.cn/simple/", (
+        "tests-os.yml top-level env must set PIP_INDEX_URL to the TUNA mirror"
+    )
+    assert env.get("PIP_EXTRA_INDEX_URL") == "https://mirrors.aliyun.com/pypi/simple/", (
+        "tests-os.yml top-level env must set PIP_EXTRA_INDEX_URL to Aliyun"
     )
     assert env.get("UV_INDEX_STRATEGY") == "unsafe-best-match", (
         "tests-os.yml top-level env must set UV_INDEX_STRATEGY to unsafe-best-match"

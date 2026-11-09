@@ -67,14 +67,20 @@ env:
   # index lags PyPI for fresh releases (typer 0.29.0, then filelock 4.2.10
   # missing -> `uv pip install` unresolvable on a fresh machine, tier-1).
   # uv queries the primary first and the extra for any version it lacks,
-  # so installs stay fast AND correct. UV_INDEX_STRATEGY is load-bearing:
-  # uv's default first-index strategy uses the FIRST index that has a
-  # package and never consults the others for it — without
-  # unsafe-best-match the extra index is a no-op for packages the mirror
-  # already carries (proven by the proof/leaf-timing run). (ci.yml sets
-  # the same for its lanes via the setup-python-env action; this lane
-  # installs inline, so it needs it here.)
-  PIP_EXTRA_INDEX_URL: "https://pypi.org/simple/"
+  # Primary index is the TUNA mirror and the extra is Aliyun
+  # (2026-11-09): files.pythonhosted.org is unreachable from tier-1, so
+  # PyPI can resolve but never deliver a wheel, and the Aliyun node
+  # serving tier-1 lags fresh releases (filelock 4.2.10 missing). TUNA's
+  # node serving tier-1 IS synced (proven by the proof/leaf-timing
+  # diagnostic). This lane installs inline (no setup action) and sets no
+  # primary otherwise, so it would fall back to the runner machine's
+  # config (Aliyun) — hence the explicit primary here. UV_INDEX_STRATEGY
+  # is load-bearing: uv's default first-index strategy uses the FIRST
+  # index that has a package and never consults the others for it —
+  # without unsafe-best-match the extra index is a no-op for packages the
+  # primary already carries (proven by the proof/leaf-timing run).
+  PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+  PIP_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
   UV_INDEX_STRATEGY: "unsafe-best-match"
   # Centralized runner configuration (scripts/ci/runner_config.py is the
   # single source of truth; these values mirror it at workflow level).

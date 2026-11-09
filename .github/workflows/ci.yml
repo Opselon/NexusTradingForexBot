@@ -213,9 +213,15 @@ jobs:
     env:
       CI_RESULTS_DIR: ci-results-lint
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
-      # Tier-1 runs from a network where pypi.org is unreachable - every pip
-      # bootstrap (incl. setup-python bundled tools) must use the mirror.
-      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      # Primary index is the TUNA mirror (2026-11-09): files.pythonhosted.org
+      # is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
+      # PyPI can resolve a version but can never deliver its wheel — and the
+      # Aliyun node serving tier-1 still lacks filelock 4.2.10 (while the
+      # node this VM hits has it). TUNA's node serving tier-1 IS synced
+      # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
+      # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
+      # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
       PIP_DEFAULT_TIMEOUT: "30"
 
     steps:
@@ -517,9 +523,15 @@ jobs:
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
-      # Tier-1 runs from a network where pypi.org is unreachable - every pip
-      # bootstrap (incl. setup-python bundled tools) must use the mirror.
-      PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
+      # Primary index is the TUNA mirror (2026-11-09): files.pythonhosted.org
+      # is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
+      # PyPI can resolve a version but can never deliver its wheel — and the
+      # Aliyun node serving tier-1 still lacks filelock 4.2.10 (while the
+      # node this VM hits has it). TUNA's node serving tier-1 IS synced
+      # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
+      # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
+      # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
       PIP_DEFAULT_TIMEOUT: "30"
       # Test-database isolation (fail-closed): this lane NEVER talks to a
       # real/shared database. The self-hosted runners are persistent
