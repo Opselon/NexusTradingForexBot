@@ -87,7 +87,7 @@ def _seed(
     import random
 
     rng = random.Random(20260928)
-    base = datetime(2026, 9, 28, 14, 0, tzinfo=UTC)
+    base = datetime.now(UTC).replace(second=0, microsecond=0)
     counts = {"NO_TRADE": 0, "TRADE": 0}
     for i in range(1, n_rows + 1):
         ts = base - timedelta(minutes=(n_rows - i) / rows_per_minute)
@@ -189,16 +189,13 @@ class TestVacuousLimitBoundEliminated:
                 statements.append(sql)
                 return super().execute(sql, *args, **kwargs)
 
-        orig = operator_routes._connect_ro
-
-        def spy() -> sqlite3.Connection | None:
+        def spy(self) -> sqlite3.Connection | None:
             path = operator_routes._audit_db_path()
             con = SpyCon(f"file:{path}?mode=ro", uri=True, timeout=5.0)
             con.row_factory = sqlite3.Row
             return con
 
-        monkeypatch.setattr(operator_routes, "_connect_ro", spy)
-        _ = orig  # keep the original reference honest
+        monkeypatch.setattr(operator_routes.LedgerReader, "_sqlite_con", spy)
         # exercise via a minimal app shell
         from fastapi import FastAPI
 
@@ -547,4 +544,5 @@ class TestNoHotQueryIsUnbounded:
         code_only = re.sub(r"#.*", "", code_only)
         assert "WHERE id IN" not in code_only, "the vacuous id-IN semi-join must not come back"
         # and the bounded tail shape is present in its place
-        assert "ORDER BY id DESC LIMIT ?" in code_only
+        assert "ORDER BY {order_by} LIMIT ?" in code_only
+        assert 'order_by: str = "id DESC"' in code_only
