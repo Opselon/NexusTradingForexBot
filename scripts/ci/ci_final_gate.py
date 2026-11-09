@@ -902,7 +902,7 @@ def main(argv: list[str] | None = None) -> int:
     blocked_without_root: list[str] = []
     for name in blocked:
         detail = str(payloads.get(name, {}).get("detail", ""))
-        match = re.match(r"^BLOCKED_BY_([A-Z0-9_]+)\\b", detail)
+        match = re.match(r"^BLOCKED_BY_([A-Z0-9_]+)\b", detail)
         root_name = match.group(1).lower() if match else ""
         if not root_name or root_name not in root_failures:
             blocked_without_root.append(name)
@@ -918,12 +918,17 @@ def main(argv: list[str] | None = None) -> int:
     if blocked:
         print(f"BLOCKED (never ran - upstream root failure): {', '.join(blocked)}")
     if blocked_without_root:
-        print("BLOCKED WITHOUT A FAILED ROOT (not an acceptable non-run): " + ", ".join(blocked_without_root))
+        print(
+            "BLOCKED WITHOUT A FAILED ROOT (not an acceptable non-run): "
+            + ", ".join(blocked_without_root)
+        )
     if failed:
         print(f"FAILING CHECKS: {', '.join(failed)}")
     if unaccepted:
-        print("UNACCEPTED CHECK STATES (skipped/cancelled/not-executed/unknown): " +
-              ", ".join(f"{k}={statuses[k]}" for k in unaccepted))
+        print(
+            "UNACCEPTED CHECK STATES (skipped/cancelled/not-executed/unknown): "
+            + ", ".join(f"{k}={statuses[k]}" for k in unaccepted)
+        )
     if missing:
         print("MISSING RESULTS (never ran, never classified blocked): " + ", ".join(missing))
 

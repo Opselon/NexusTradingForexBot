@@ -5,6 +5,7 @@ The selector is dynamic, but workflow input drift can silently reverse tier
 priority. This check verifies that both automatic Linux workflows consume the
 same tier order defined by runner_config.py and preserve the hosted fallback.
 """
+
 from __future__ import annotations
 
 import sys
