@@ -30,6 +30,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.helpers.authenticated_client import authenticated_test_client
+
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
@@ -132,7 +134,7 @@ class TestIntelligenceAPI:
         repo, engine = wired_engine
         seed_lifecycle(repo, engine.intelligence_lifecycle)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/positions/501/timeline")
         assert resp.status_code == 200
         body = resp.json()
@@ -183,7 +185,7 @@ class TestIntelligenceAPI:
         engine.intelligence_autopsy.persist(autopsy)
         _flush(repo)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/autopsies")
         assert resp.status_code == 200
         body = resp.json()
@@ -196,7 +198,7 @@ class TestIntelligenceAPI:
     def test_summary_and_worker_status(self, wired_engine):
         _repo, engine = wired_engine
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/summary")
         assert resp.status_code == 200
         body = resp.json()
@@ -240,7 +242,7 @@ class TestIntelligenceAPI:
         assert _persist_anomaly(repo, anomaly, ANOMALY_ALGORITHM_VERSION) is True
         _flush(repo)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/anomalies")
         assert resp.status_code == 200
         body = resp.json()
