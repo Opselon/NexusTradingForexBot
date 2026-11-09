@@ -62,6 +62,7 @@ def extract(rel: str, path: Path) -> dict:
         "dynamic_imports": [],
         "mock_refs": [],
         "monkeypatch": False,
+        "pytest_plugins": [],
     }
     try:
         tree = ast.parse(path.read_text(encoding="utf-8", errors="replace"))
@@ -70,6 +71,19 @@ def extract(rel: str, path: Path) -> dict:
         return info
 
     for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            # pytest_plugins = [...] in a conftest registers a helper
+            # module as a plugin: its fixtures become visible to tests
+            # under that conftest's directory (see ast_metadata.c).
+            for tgt in node.targets:
+                if isinstance(tgt, ast.Name) and tgt.id == "pytest_plugins":
+                    val = node.value
+                    if isinstance(val, ast.Constant) and isinstance(val.value, str):
+                        info["pytest_plugins"].append(val.value)
+                    elif isinstance(val, (ast.List, ast.Tuple)):
+                        for elt in val.elts:
+                            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                                info["pytest_plugins"].append(elt.value)
         if isinstance(node, ast.Import):
             for a in node.names:
                 info["imports"].append({"m": a.name, "rel": 0, "symbols": []})

@@ -65,6 +65,38 @@ static void add_module_edge(Graph *g, size_t self_idx, const char *target,
     }
 }
 
+/* Does this file's metadata define a fixture with this name? (Local
+ * definitions shadow conftest/plugin fixtures of the same name.) */
+static bool file_defines_fixture(const JsonValue *info, const char *name) {
+    const JsonValue *fx = json_obj_get(info, "fixtures");
+    if (!fx || fx->type != JSON_ARRAY) return false;
+    for (size_t k = 0; k < fx->count; k++) {
+        const JsonValue *nv = json_obj_get(fx->items[k], "name");
+        if (nv && nv->type == JSON_STRING && strcmp(nv->str, name) == 0) return true;
+    }
+    return false;
+}
+
+/* Directory of a file path ("tests/unit/conftest.py" -> "tests/unit"). */
+static void file_dir_of(const char *path, char *dir, size_t dir_len) {
+    snprintf(dir, dir_len, "%s", path);
+    char *slash = strrchr(dir, '/');
+    if (slash) *slash = '\0';
+    else dir[0] = '\0';
+}
+
+/* True when repo-relative path `p` is under directory `dir`. */
+static bool path_in_dir(const char *p, const char *dir) {
+    size_t dlen = strlen(dir);
+    if (dlen == 0) return true;
+    return nse_starts_with(p, dir) && p[dlen] == '/';
+}
+
+static bool is_conftest_path(const char *rel) {
+    size_t rlen = strlen(rel);
+    return rlen >= 12 && strcmp(rel + rlen - 12, "/conftest.py") == 0;
+}
+
 /* Try to resolve `target` as a module; on success add the edge (+ parent
  * chain) and return true. Also resolves the target as a file path
  * (tests tree targets, where the dotted name and the path agree). */
@@ -296,8 +328,57 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
         if (has_unresolved_dynamic) g->dynamic_unresolved_files++;
     }
 
-    /* fixture registry */
-    typedef struct { char name[128]; size_t node; bool autouse; } FixtureDef;
+    /* pytest_plugins: a conftest registers a helper module as a plugin,
+     * which makes that module's fixtures visible to tests under the
+     * conftest's directory (tests/conftest.py registers
+     * tests.helpers.shadow70_fixtures, so its `contract` / `tmp_artifacts`
+     * fixtures are effectively global). plugin_scope[j] is the scope dir
+     * for the file at metadata index j ("" when not a plugin); the
+     * shortest (widest) scope wins when several conftests register it. */
+    char **plugin_scope = (char **)arena_alloc(&a, (n ? n : 1) * sizeof(char *));
+    for (size_t i = 0; i < n; i++) plugin_scope[i] = arena_strdup(&a, "");
+    for (size_t i = 0; i < n; i++) {
+        if (!is_conftest_path(paths[i])) continue;
+        const JsonValue *pp = json_obj_get(files->items[i], "pytest_plugins");
+        if (!pp || pp->type != JSON_ARRAY) continue;
+        char dir[1024];
+        file_dir_of(paths[i], dir, sizeof(dir));
+        for (size_t k = 0; k < pp->count; k++) {
+            if (pp->items[k]->type != JSON_STRING) continue;
+            size_t j = find_module_node(modules, node_idx, n, pp->items[k]->str);
+            if (j == SIZE_MAX) continue;
+            /* node_idx[] maps file index -> graph node; find the file index */
+            size_t fidx = SIZE_MAX;
+            for (size_t m2 = 0; m2 < n; m2++) {
+                if (node_idx[m2] == j) { fidx = m2; break; }
+            }
+            if (fidx == SIZE_MAX) continue;
+            if (!plugin_scope[fidx][0] || strlen(dir) < strlen(plugin_scope[fidx])) {
+                plugin_scope[fidx] = arena_strdup(&a, dir);
+            }
+        }
+    }
+
+    /* fixture registry.
+     * Scope-aware (pytest semantics) — the old global name match linked
+     * every user of e.g. `temp_audit_repo` (defined separately in 13
+     * test files) to every definer: 13x13 spurious edges, which the
+     * test-node traversal then followed. Now a fixture creates
+     * cross-file edges only when it is visible cross-file:
+     *   - defined in a conftest.py: visible to tests under that
+     *     conftest's directory (unless the test file defines a fixture
+     *     of the same name — local shadowing);
+     *   - defined in a pytest_plugins module: visible to tests under
+     *     the registering conftest's directory (same shadowing rule);
+     *   - defined anywhere else (a test module, a helper): visible ONLY
+     *     in its own file, where the plain import edges already cover
+     *     the dependency — no cross-file fixture edge is added. */
+    typedef struct {
+        char name[128];
+        size_t node;
+        bool autouse;
+        char scope[1024]; /* "" = no cross-file visibility */
+    } FixtureDef;
     FixtureDef *fixtures = (FixtureDef *)arena_alloc(&a, 1024 * sizeof(FixtureDef));
     size_t fixture_count = 0;
     for (size_t i = 0; i < n && fixture_count < 1024; i++) {
@@ -312,6 +393,14 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
                      sizeof(fixtures[fixture_count].name), "%s", nv->str);
             fixtures[fixture_count].node = node_idx[i];
             fixtures[fixture_count].autouse = av && av->type == JSON_BOOL && av->b;
+            fixtures[fixture_count].scope[0] = '\0';
+            if (is_conftest_path(paths[i])) {
+                file_dir_of(paths[i], fixtures[fixture_count].scope,
+                            sizeof(fixtures[fixture_count].scope));
+            } else if (plugin_scope[i][0]) {
+                snprintf(fixtures[fixture_count].scope,
+                         sizeof(fixtures[fixture_count].scope), "%s", plugin_scope[i]);
+            }
             fixture_count++;
         }
     }
@@ -325,32 +414,30 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
             if (!argl || argl->type != JSON_ARRAY) continue;
             for (size_t a2 = 0; a2 < argl->count; a2++) {
                 if (argl->items[a2]->type != JSON_STRING) continue;
+                const char *arg = argl->items[a2]->str;
+                if (file_defines_fixture(files->items[i], arg)) continue;
                 for (size_t fi = 0; fi < fixture_count; fi++) {
-                    if (strcmp(fixtures[fi].name, argl->items[a2]->str) == 0 &&
-                        fixtures[fi].node != node_idx[i]) {
-                        graph_add_edge(g, node_idx[i], fixtures[fi].node);
-                    }
+                    if (strcmp(fixtures[fi].name, arg) != 0) continue;
+                    if (!fixtures[fi].scope[0]) continue;
+                    if (fixtures[fi].node == node_idx[i]) continue;
+                    if (!path_in_dir(paths[i], fixtures[fi].scope)) continue;
+                    graph_add_edge(g, node_idx[i], fixtures[fi].node);
                 }
             }
         }
     }
 
-    /* autouse conftest fixtures apply to tests in their directory scope */
+    /* autouse fixtures apply to tests in their scope directory.
+     * Only conftest/plugin definers: an autouse fixture in a test module
+     * applies to that module alone (no cross-file edge). */
     for (size_t fi = 0; fi < fixture_count; fi++) {
-        if (!fixtures[fi].autouse) continue;
-        const char *def_path = g->mod_paths[fixtures[fi].node];
-        if (!def_path) continue;
-        char dir[1024];
-        snprintf(dir, sizeof(dir), "%s", def_path);
-        char *slash = strrchr(dir, '/');
-        if (slash) *slash = '\0';
-        size_t dir_len = strlen(dir);
-        for (size_t nn = 0; nn < g->mod_count; nn++) {
-            if (!g->is_test[nn] || nn == fixtures[fi].node) continue;
-            if (nse_starts_with(g->mod_names[nn], dir) &&
-                (g->mod_names[nn][dir_len] == '/' || dir_len == 0)) {
-                graph_add_edge(g, nn, fixtures[fi].node);
-            }
+        if (!fixtures[fi].autouse || !fixtures[fi].scope[0]) continue;
+        for (size_t i = 0; i < n; i++) {
+            if (!nse_starts_with(paths[i], "tests/")) continue;
+            if (node_idx[i] == fixtures[fi].node) continue;
+            if (!path_in_dir(paths[i], fixtures[fi].scope)) continue;
+            if (file_defines_fixture(files->items[i], fixtures[fi].name)) continue;
+            graph_add_edge(g, node_idx[i], fixtures[fi].node);
         }
     }
 

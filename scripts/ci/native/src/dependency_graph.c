@@ -450,8 +450,9 @@ void graph_scan_repo(Graph *g, const char *repo_root) {
  * (hub-bounding threshold: 25 importers): the
  * traversal never expands through it, so one leaf change cannot select
  * most of the suite via a composition root (measured: 779/860 tests for
- * a single research leaf via live_engine). A hub that is itself changed
- * still selects its direct test importers. */
+ * a single research leaf via live_engine). Test nodes count as hubs too:
+ * an autouse conftest has hundreds of importers. A hub that is itself
+ * changed still selects its direct test importers. */
 #define HUB_IMPORTER_THRESHOLD 25
 
 /* One-hop expansion cap: a reached hub's direct test importers are
@@ -508,7 +509,12 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
         if (changed_idx[i] < g->mod_count) is_changed[changed_idx[i]] = true;
     }
     for (size_t i = 0; i < g->mod_count; i++) {
-        is_hub[i] = !g->is_test[i] && g->importer_counts[i] > HUB_IMPORTER_THRESHOLD;
+        /* A hub is ANY node with more than the threshold importers —
+         * including test nodes. An autouse conftest has hundreds of
+         * importers (every test in its scope uses its fixtures) and is a
+         * hub like any other composition root; without this, traversing
+         * through it would select the whole suite. */
+        is_hub[i] = g->importer_counts[i] > HUB_IMPORTER_THRESHOLD;
     }
     bool hub_bounded = false;
 
@@ -551,19 +557,37 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
         for (size_t e = 0; e < g->importer_counts[idx]; e++) {
             size_t importer = g->importers[idx][e];
             if (importer >= g->mod_count) die("dependency graph contains an invalid edge");
-            if (g->is_test[importer]) {
+            if (is_hub[importer]) {
+                /* Hub boundary — never traverse through it, test nodes
+                 * included (an autouse conftest is a hub like any other).
+                 * Its direct test importers are included only via the
+                 * capped one-hop; a hub TEST node is itself selected
+                 * (it is a test file). */
+                hub_bounded = true;
+                if (g->is_test[importer]) {
+                    has_importer = true;
+                    sel_test[importer] = true;
+                    covered[idx] = true;
+                    hub_direct_tests(g, importer, sel_test);
+                } else if (hub_direct_tests(g, importer, sel_test) > 0) {
+                    has_importer = true;
+                }
+            } else if (g->is_test[importer]) {
+                /* Test nodes are NOT leaves: traverse through them. A test
+                 * that imports the changed module may itself be imported
+                 * by other tests (shared helpers) or may be a conftest
+                 * whose fixture users depend on it — those dependents are
+                 * real dependents of the change, and the fixture edges
+                 * the metadata path adds only work because the traversal
+                 * crosses the conftest node. The hub rule above keeps a
+                 * high-fan-out test node from exploding the plan. */
                 has_importer = true;
                 sel_test[importer] = true;
                 covered[idx] = true;
-            } else if (is_hub[importer]) {
-                /* Do not cross a hub: its dependents are not selected
-                 * through this path — except its DIRECT test importers,
-                 * which the bounded one-hop expansion includes (see
-                 * above). If the hub has at least one, the module counts
-                 * as covered by those tests. */
-                hub_bounded = true;
-                if (hub_direct_tests(g, importer, sel_test) > 0) {
-                    has_importer = true;
+                if (!visited[importer]) {
+                    if (top >= g->mod_count) die("DFS stack capacity invariant violated");
+                    visited[importer] = true;
+                    stack[top++] = importer;
                 }
             } else {
                 has_importer = true;
