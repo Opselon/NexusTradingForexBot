@@ -699,7 +699,7 @@ jobs:
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "${{ github.event.pull_request.base.sha || github.event.before }}" \
-            --head "${{ github.sha }}" \
+            --head "${{ github.event.pull_request.head.sha || github.sha }}" \
             --event "${{ github.event_name }}" \
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
