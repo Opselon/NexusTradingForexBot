@@ -225,6 +225,21 @@ jobs:
           python-version: "3.11"
           runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
+      # mypy/ruff keep their caches in the workspace by default, and
+      # actions/checkout wipes the workspace on every job — so both tools
+      # ran COLD on every run (a full-repo type-check pass on 2 cores is
+      # minutes, every time).
+      # On self-hosted tiers, point them at a runner-persistent cache dir
+      # (content-keyed, so a stale entry cannot survive a source change);
+      # hosted lanes keep the workspace default (ephemeral runners).
+      - name: Point type/lint caches at persistent storage (self-hosted)
+        run: |
+          if [ "${{ env.NSE_RUNNER_CLASS }}" = "self-hosted" ]; then
+            mkdir -p "$HOME/.cache/nse-ci/mypy" "$HOME/.cache/nse-ci/ruff"
+            echo "MYPY_CACHE_DIR=$HOME/.cache/nse-ci/mypy" >> "$GITHUB_ENV"
+            echo "RUFF_CACHE_DIR=$HOME/.cache/nse-ci/ruff" >> "$GITHUB_ENV"
+          fi
+
       - name: Cache dependency intelligence graph
         if: env.NSE_RUNNER_CLASS != 'self-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -495,6 +510,20 @@ jobs:
       # bootstrap (incl. setup-python bundled tools) must use the mirror.
       PIP_INDEX_URL: https://mirrors.aliyun.com/pypi/simple/
       PIP_DEFAULT_TIMEOUT: "30"
+      # Test-database isolation (fail-closed): this lane NEVER talks to a
+      # real/shared database. The self-hosted runners are persistent
+      # machines, so a previous run may have left a persisted
+      # app_settings.db pointing at PostgreSQL — and the audit
+      # test-isolation seam plus the persisted provider would otherwise
+      # resolve the test DB from that machine state. Pinning sqlite +
+      # per-run temp paths at JOB level covers every step, including the
+      # layered-smoke CLI and runtime gate, which run outside pytest and
+      # never see conftest's fixtures. Proven by the assert step below.
+      NSE_DATABASE__PROVIDER: sqlite
+      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
+      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
+      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
+      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
 
     steps:
       - name: Checkout repository
@@ -544,6 +573,12 @@ jobs:
         with:
           python-version: "3.11"
           runner-class: ${{ env.NSE_RUNNER_CLASS }}
+
+      # Prove the DB pinning above through the repo's own resolver, before
+      # any test or smoke step can open a database. Fails the lane instead
+      # of letting it touch a shared database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
 
       - name: Initialize results tree
         run: |
@@ -597,7 +632,7 @@ jobs:
           fi
           if ! command -v cmake >/dev/null 2>&1; then
             # uv installs the wheel as a console script in the venv bin dir.
-            for d in "$PWD/${VENV_DIR}/bin" "$HOME/.local/bin"; do
+            for d in "${VENV_DIR}/bin" "$PWD/${VENV_DIR}/bin" "$HOME/.local/bin"; do
               [ -x "$d/cmake" ] && export PATH="$d:$PATH" && break
             done
           fi
@@ -649,7 +684,11 @@ jobs:
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
             --xdist "$XDIST" \
-            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --cov-report=html:$CI_RESULTS_DIR/pytest/htmlcov --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
+            # No HTML coverage report on this lane: it costs a full
+            # render pass over 784 files and nobody reads htmlcov in CI.
+            # term-missing feeds the coverage step; xml feeds the
+            # critical-file gate on expanded plans.
+            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
             --attempt "${{ github.run_attempt }}" \

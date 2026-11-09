@@ -48,6 +48,22 @@ not trigger the heavy Python gate. Unknown/missing file types are **fail-safe**:
 they do NOT map to nothing that would let a gate think "docs_only", so the
 workflow default (run Python) still fires.
 
+### Test selection — hub-bounded reachability
+
+The planner (`scripts/ci/test_planner.py`, mirrored byte-identically in the
+C17 engine) selects tests by reverse reachability over the static import
+graph. A module imported by more than **25** nodes is a selection **hub**
+(composition root / god module: `live_engine`, `web.server`, …) and the
+traversal never expands through it — otherwise one leaf change selected
+most of the suite (measured 2026-11-09: changing `research/worker.py`,
+8 direct importers, selected 779/860 tests via `live_engine`). With the
+boundary the same change selects 7 tests. A hub that is itself changed
+still selects its direct test importers; a changed module whose only
+importers are hubs is reported uncovered and falls back to the critical
+suite (fail-safe). Unchanged: global invalidation (`tests/conftest.py`,
+dependency manifests, `configs/`), mandatory safety expansion, and
+schedule/full runs, which still execute everything.
+
 ## CI self-integrity (new)
 
 `scripts/ci/check_workflows.py` statically analyzes every workflow in
@@ -252,6 +268,33 @@ identical lock):
 ≈**106× faster** dependency provisioning, ~849s saved per run, zero network
 on warm runs. Each run emits its venv key, Python version and `UV_CACHE_DIR`
 to the step summary as cache-reuse evidence.
+
+The canonical environment action (`.github/actions/setup-python-env`, used
+by the `ci.yml` quality lanes) goes one step further on self-hosted tiers:
+the venv itself lives in `~/.cache/nse-venvs/<repo>-<lockhash>-<python>`
+instead of the workspace, so the second lane reuses the first lane's warm
+venv instead of rebuilding it after checkout wipes the workspace (a lock
+change still mints a new directory, so a stale environment is impossible;
+old hash-bound venvs are pruned by hand, never auto-deleted). The same
+section pins the type/lint caches (`MYPY_CACHE_DIR` /
+`RUFF_CACHE_DIR` under `~/.cache/nse-ci/`) so mypy no longer runs cold on
+every job. `tests-os.yml` keeps its workspace venv deliberately (its lane
+documents a self-hosted `setup-python` trap the canonical action does not
+cover) — the duplication there is a documented exception, not an oversight.
+
+### Test-database isolation
+
+The PR test lanes never talk to a real/shared database. The self-hosted
+runners are persistent machines, so a previous run may have left a
+persisted `app_settings.db` pointing at PostgreSQL — and the audit
+test-isolation seam plus the persisted provider would otherwise resolve
+the test DB from that machine state. The jobs therefore pin
+`NSE_DATABASE__PROVIDER=sqlite` with per-run temp paths
+(`NEXUS_AUDIT_DB`, `NEXUS_SETTINGS_DB`, `NEXUS_DATA_ROOT` under
+`RUNNER_TEMP`) at job level, and a fail-closed step
+(`scripts/ci/assert_test_db_isolation.py`) proves the pinning through the
+repo's own resolver before any test or smoke step runs. PostgreSQL arms
+do not run on the runner at all; they run in the local gate.
 
 ## Caching
 

@@ -131,6 +131,14 @@ jobs:
       NSE_RUNNER_CLASS: "self-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
       NSE_RUNNER_TIER_LABELS: ${{ needs.runner-select.outputs.self_hosted_labels }}
+      # Test-database isolation (fail-closed): same pinning as ci.yml
+      # quality-tests — this lane never talks to a real/shared database.
+      # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      NSE_DATABASE__PROVIDER: sqlite
+      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
+      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
+      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
+      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -201,6 +209,11 @@ jobs:
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
+      # Prove the DB pinning above through the repo's own resolver,
+      # before any test step can open a database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
+
       - name: Decide lane (classifier + event policy)
         id: lane
         shell: bash
@@ -268,6 +281,14 @@ jobs:
     env:
       NSE_RUNNER_CLASS: "github-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
+      # Test-database isolation (fail-closed): same pinning as ci.yml
+      # quality-tests — this lane never talks to a real/shared database.
+      # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      NSE_DATABASE__PROVIDER: sqlite
+      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
+      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
+      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
+      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -330,6 +351,11 @@ jobs:
           echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prove the DB pinning above through the repo's own resolver,
+      # before any test step can open a database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
 
       - name: Decide lane (classifier + event policy)
         id: lane

@@ -54,10 +54,36 @@ runs:
       run: |
         set -euo pipefail
         VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
-        VENV_DIR=".venv-ci-${VENV_KEY}"
-        uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
-        VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install -r requirements.lock
-        VIRTUAL_ENV="$PWD/${VENV_DIR}" uv pip install --no-deps -e .
-        echo "$PWD/${VENV_DIR}/bin" >> "$GITHUB_PATH"
+        # Self-hosted runners persist $HOME across jobs, but
+        # actions/checkout wipes the workspace (clean: true) on every job —
+        # so a workspace venv was rebuilt from the lock on EVERY lane
+        # (a full torch reinstall per lane, twice per run, over a tethered
+        # uplink). On self-hosted tiers the venv lives in a
+        # runner-persistent location keyed by repo + lock hash + python, so
+        # the second lane reuses the first lane's warm venv and `uv pip
+        # install` only reconciles drift. A lock change still mints a new
+        # directory, so a stale environment is impossible by construction.
+        # Old hash-bound venvs can be pruned by hand from
+        # ~/.cache/nse-venvs (never auto-deleted: another job may be
+        # using one). A runner executes one job at a time, so no lock is
+        # needed around creation. Hosted runners are ephemeral, so the
+        # workspace venv is unchanged there.
+        if [ "${{ inputs.runner-class }}" = "self-hosted" ]; then
+          REPO_SLUG="$(echo "${GITHUB_REPOSITORY:-local}" | tr '/' '-')"
+          VENV_DIR="$HOME/.cache/nse-venvs/${REPO_SLUG}-.venv-ci-${VENV_KEY}"
+          mkdir -p "$HOME/.cache/nse-venvs"
+          if [ ! -x "${VENV_DIR}/bin/python" ]; then
+            uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
+          fi
+        else
+          VENV_DIR=".venv-ci-${VENV_KEY}"
+          uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
+          VENV_DIR="$PWD/${VENV_DIR}"
+        fi
+        VIRTUAL_ENV="${VENV_DIR}" uv pip install -r requirements.lock
+        # Always re-install the editable root: the .pth records the
+        # workspace path, which must track the current checkout.
+        VIRTUAL_ENV="${VENV_DIR}" uv pip install --no-deps -e .
+        echo "${VENV_DIR}/bin" >> "$GITHUB_PATH"
         echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
         echo "venv_dir=${VENV_DIR}" >> "$GITHUB_OUTPUT"
