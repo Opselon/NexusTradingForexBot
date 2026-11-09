@@ -165,8 +165,10 @@ def _gate_duplicate_payload(summary: str, body: str) -> str:
       information the summary does not. Downstream readers fall back to the
       summary, so no decision/risk/audit/model/replay capability is lost.
 
-    Cost: two string normalizations — never a database query, never a remote
-    call. The gate must stay cheaper than the persistence it prevents.
+    Cost: an exact string compare on the common path (body is the summary
+    verbatim), two string normalizations otherwise -- never a database
+    query, never a remote call. The gate must stay cheaper than the
+    persistence it prevents.
     """
     b = (body or "").strip()
     s = (summary or "").strip()
@@ -178,7 +180,13 @@ def _gate_duplicate_payload(summary: str, body: str) -> str:
         # A body with no summary: the body IS the text. Keep it (the
         # summary-first consumers would otherwise see nothing).
         return b
-    if _payload_eq(b, s):
+    # Fast path: the dominant production shape is body == summary verbatim
+    # (the ingest layer copies summary into body), so the exact compare --
+    # a C-level memcmp -- settles the common case without the two regex
+    # normalizations below. Exact equality implies normalized equality, so
+    # this cannot change the verdict; non-identical bodies still fall
+    # through to the whitespace/case-insensitive comparison.
+    if b == s or _payload_eq(b, s):
         # The duplicate case: body is the summary re-stored. Drop the copy.
         return _BODY_DUPLICATE_OF_SUMMARY
     return b
