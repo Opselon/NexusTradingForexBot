@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
 import uvicorn
@@ -13,7 +14,10 @@ PORT = 9091
 
 @pytest.fixture(scope="module", autouse=True)
 def run_dev_server():
-    """Starts the FastAPI Web Server in a background thread."""
+    """Starts the FastAPI Web Server when its external browser is installed."""
+    with sync_playwright() as p:
+        if not Path(p.chromium.executable_path).is_file():
+            pytest.skip("Playwright Chromium browser is not installed on this runner")
     app = create_app(engine_ref=None)
     config = uvicorn.Config(app=app, host="127.0.0.1", port=PORT, log_level="warning")
     server = uvicorn.Server(config)
