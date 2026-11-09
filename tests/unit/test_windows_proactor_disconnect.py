@@ -216,7 +216,12 @@ def test_loop_handler_downgrades_expected_disconnect():
         records = _capture_transport_logger()
         install_transport_disconnect_handler(loop)
         handler = loop.get_exception_handler()
-        exc = ConnectionResetError(10054, "forcibly closed")
+        # NOTE: build the error with _windows_disconnect_error, like every
+        # other test in this file. A raw ConnectionResetError(10054, ...)
+        # carries errno=10054 with NO winerror on POSIX, so the classifier
+        # sees an unknown errno and keeps the failure visible (no DEBUG
+        # record) — the exact Linux-only failure this test pinned.
+        exc = _windows_disconnect_error(10054, "forcibly closed")
         handler(loop, _proactor_context(exc, "_ProactorSocketTransport._call_connection_lost"))
         debug = [r for r in records if r.levelno == logging.DEBUG]
         error = [r for r in records if r.levelno >= logging.ERROR]

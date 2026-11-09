@@ -457,47 +457,22 @@ class TestModelsIntegrityRegression:
 
     def test_integrity_endpoint_valid_champion(self, wired_engine):
         _repo, engine = wired_engine
-        # Write a REAL ScalpNet artifact for the engine's DECLARED CHAMPION
-        # schema so the champion loads and the payload reports tensor truth.
-        import hashlib
-        import json
-        from pathlib import Path
-
-        import torch
-
-        from nexus_scalp.models.scalp_net import ScalpNet
-
-        # The wired fixture (verified_test_model_bundle) provisions a 70D
-        # scalp_v3 champion. The legacy class-level LiveEngine.FEATURE_DIM
-        # still bootstraps 50 (scalp_v1), so building the artifact from THAT
-        # constant overwrote a VALID 70D champion with a 50D tensor that the
-        # champion manager rejects as a dimension mismatch (NO_CHAMPION) —
-        # and the endpoint then omits the compatibility key entirely. Read
-        # the dimension the Champion contract actually declares from the
-        # bundle manifest instead.
-        artifact = engine.config.model.model_artifact_path
-        manifest_path = Path(artifact).parent / "manifest.json"
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        dim = int(manifest["feature_schema_dimension"])
-        net = ScalpNet(num_features=dim, num_classes=4)
-        torch.save({k: v.clone() for k, v in net.state_dict().items()}, artifact)
-        manifest.update(
-            model_sha256=hashlib.sha256(Path(artifact).read_bytes()).hexdigest(),
-            num_classes=4,
-        )
-        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        metadata_path = Path(artifact).parent / "model.meta.json"
-        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
-        metadata.update(num_classes=4, model_head_classes=4)
-        metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+        # The wired fixture (verified_test_model_bundle) provisions a REAL
+        # verified 70D scalp_v3 champion (3-class contract). Assert the
+        # endpoint reports tensor truth for THAT champion. Do NOT rewrite
+        # the artifact here: the champion binding is hash-pinned to the
+        # fixture bundle, so overwriting model.pt invalidates the registry
+        # row and the endpoint answers NO_CHAMPION (no 'compatibility'
+        # key at all). The class count is part of the contract too
+        # (EXPECTED_NUM_CLASSES=3) — a 4-class head can never be VALID.
         app = create_app(engine)
         client = authenticated_test_client(app)
         resp = client.get("/api/models/integrity")
         assert resp.status_code == 200, resp.text
         body = resp.json()
         assert body["available"] is True
-        assert body["compatibility"] in ("VALID", "INVALID"), body
+        assert body["compatibility"] == "VALID", body
         assert body["model_id"] == engine.champion_manager.model_id
-        assert body["actual_input_dimension"] == dim
-        assert body["actual_output_classes"] == 4
+        assert body["actual_input_dimension"] == 70
+        assert body["actual_output_classes"] == 3
         assert "reason" in body
