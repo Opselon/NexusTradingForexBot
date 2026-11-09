@@ -193,6 +193,10 @@ def test_setup_action_has_pypi_fallback_index() -> None:
     assert "https://pypi.org/simple/" in text, "fallback index must be PyPI"
     assert "UV_INDEX_STRATEGY" in text, "setup action must set UV_INDEX_STRATEGY"
     assert "unsafe-best-match" in text, "index strategy must be unsafe-best-match"
+    assert "--refresh" in text, (
+        "setup action must retry the lock install with a cache refresh "
+        "on resolution failure (stale index cache / mirror lag)"
+    )
 
 
 def test_os_workflow_has_pypi_fallback_index() -> None:

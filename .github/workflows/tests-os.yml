@@ -219,7 +219,13 @@ jobs:
           VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
           VENV_DIR=".venv-$VENV_KEY"
           uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
+          # Retry with a cache refresh if the first resolution fails (see
+          # the setup-python-env action: stale index cache / lagging
+          # mirror can hide a freshly published pin; tier-1, 2026-11-09).
+          if ! VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock; then
+            echo "::warning::lock install failed; retrying with a cache refresh"
+            VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --refresh -r requirements.lock
+          fi
           VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
           # Put the venv first on PATH so every later `python`/`pytest` call
           # resolves into it, and record it for the report below.
@@ -442,7 +448,13 @@ jobs:
           VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
           VENV_DIR=".venv-$VENV_KEY"
           uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
+          # Retry with a cache refresh if the first resolution fails (see
+          # the setup-python-env action: stale index cache / lagging
+          # mirror can hide a freshly published pin; tier-1, 2026-11-09).
+          if ! VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock; then
+            echo "::warning::lock install failed; retrying with a cache refresh"
+            VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --refresh -r requirements.lock
+          fi
           VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
           # Put the venv first on PATH so every later `python`/`pytest` call
           # resolves into it, and record it for the report below.

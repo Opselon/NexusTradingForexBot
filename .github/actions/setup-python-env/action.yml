@@ -103,7 +103,17 @@ runs:
           uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
           VENV_DIR="$PWD/${VENV_DIR}"
         fi
-        VIRTUAL_ENV="${VENV_DIR}" uv pip install -r requirements.lock
+        # Retry with a cache refresh if the first resolution fails: a
+        # stale uv index cache (or a lagging mirror) can hold a version
+        # list without a freshly published pin, and the retry re-fetches
+        # the indexes (mirror + PyPI fallback) instead of failing the
+        # lane. (tier-1, 2026-11-09: the install failed on filelock
+        # 4.2.10 even with the PyPI fallback + best-match set.) The
+        # retry only runs on failure, so warm runs pay nothing.
+        if ! VIRTUAL_ENV="${VENV_DIR}" uv pip install -r requirements.lock; then
+          echo "::warning::lock install failed; retrying with a cache refresh"
+          VIRTUAL_ENV="${VENV_DIR}" uv pip install --refresh -r requirements.lock
+        fi
         # Always re-install the editable root: the .pth records the
         # workspace path, which must track the current checkout.
         VIRTUAL_ENV="${VENV_DIR}" uv pip install --no-deps -e .
