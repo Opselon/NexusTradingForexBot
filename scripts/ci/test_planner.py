@@ -76,6 +76,24 @@ _FALLBACK_SUITE_FILES = ("tests/critical_suite.txt", "tests/fast_suite.txt")
 #: Only repo-internal modules participate in the graph (these top-level names).
 _SOURCE_ROOTS = ("src/nexus_scalp", "tests")
 
+#: A repo module imported by more than this many nodes is a selection HUB
+#: (composition root / god module: live_engine, web.server, ...). Reverse
+#: reachability through a hub fans out to most of the suite — measured on
+#: 2026-11-09: changing one research leaf (research/worker.py, 8 direct
+#: importers) selected 779/860 tests via live_engine, so the planner could
+#: never produce a small plan and every PR paid the full critical suite.
+#: A hub is therefore a BOUNDARY: the traversal never expands through it.
+#: A hub that is itself changed still selects its direct test importers
+#: (its own behaviour is under test), just not its dependents. The safety
+#: net stays: safety-critical changes still force the fallback suite, a
+#: changed module whose only importers are hubs is reported uncovered
+#: (fallback), and schedule / full runs still execute everything.
+#: Mirrored byte-identically in scripts/ci/native/src/dependency_graph.c.
+_HUB_IMPORTER_THRESHOLD = 25
+
+#: Plan note appended when hub-bounding actually truncated an expansion.
+_HUB_BOUNDED_NOTE = "hub-bounded reachability: modules with >25 importers are selection boundaries"
+
 
 def _norm(path: str) -> str:
     """Normalise a repo-relative path to forward slashes, no leading "./".
@@ -266,23 +284,44 @@ def build_graph(
     return imports, test_files, uncertain
 
 
+def _hub_modules(imports: dict[str, set[str]]) -> set[str]:
+    """Repo modules with more than _HUB_IMPORTER_THRESHOLD importers.
+
+    Importer counts are distinct importer nodes; parent-package chain
+    registration means a package counts every importer of its children,
+    which is exactly the fan-out the boundary is meant to stop.
+    """
+    counts: dict[str, int] = {}
+    for targets in imports.values():
+        for t in targets:
+            if t.startswith("nexus_scalp"):
+                counts[t] = counts.get(t, 0) + 1
+    return {m for m, c in counts.items() if c > _HUB_IMPORTER_THRESHOLD}
+
+
 def _reachable_tests(
     changed_modules: set[str], imports: dict[str, set[str]], test_files: set[str]
-) -> tuple[set[str], set[str]]:
+) -> tuple[set[str], set[str], bool]:
     """Reverse reachability: tests whose import chain reaches a changed module.
 
-    Returns (selected_tests, covered_changed_modules). A module is "covered"
-    when at least one selected test's import chain reaches it — direct import
-    OR transitive through other repo modules.
+    Returns (selected_tests, covered_changed_modules, hub_bounded). A module
+    is "covered" when at least one selected test's import chain reaches it
+    — direct import OR transitive through other repo modules, never through
+    a hub: a hub reached as an intermediate is a boundary (its importers
+    are not traversed, so it cannot cover the module behind it), and a hub
+    reached as an importer is not enqueued. A hub that is itself changed
+    still selects its direct test importers.
     """
     # Build module -> importers index (reverse edges), including test edges.
     importers: dict[str, set[str]] = {}
     for node, targets in imports.items():
         for t in targets:
             importers.setdefault(t, set()).add(node)
+    hubs = _hub_modules(imports)
 
     selected: set[str] = set()
     covered: set[str] = set()
+    hub_bounded = False
     frontier = set(changed_modules)
     visited: set[str] = set()
     while frontier:
@@ -290,6 +329,10 @@ def _reachable_tests(
         if mod in visited:
             continue
         visited.add(mod)
+        if mod in hubs and mod not in changed_modules:
+            # Intermediate hub: boundary — never expand through it.
+            hub_bounded = True
+            continue
         if mod.startswith("tests/"):
             # A changed test file covers itself (it always runs).
             covered.add(mod)
@@ -297,11 +340,16 @@ def _reachable_tests(
             if importer.startswith("tests/"):
                 selected.add(importer)
                 covered.add(mod)
+            elif importer in hubs:
+                # Do not cross a hub: its dependents are not selected
+                # through this path (a changed hub still selects its own
+                # direct test importers via the branch above).
+                hub_bounded = True
             else:
                 covered.add(mod)
                 if importer not in visited:
                     frontier.add(importer)
-    return selected, covered
+    return selected, covered, hub_bounded
 
 
 def _fallback_tests(repo_root: Path) -> set[str]:
@@ -343,6 +391,7 @@ def plan(
     )
 
     fallback_reason: str | None = None
+    hub_bounded = False
     if full_suite_required or event in ("schedule",):
         fallback_reason = "full validation requested by event/policy"
     elif global_invalidation:
@@ -365,7 +414,7 @@ def plan(
             if t in imports:
                 changed_modules.add(t)
         if changed_modules:
-            reach, covered = _reachable_tests(changed_modules, imports, _test_files)
+            reach, covered, hub_bounded = _reachable_tests(changed_modules, imports, _test_files)
             for t in reach:
                 selected.setdefault(t, set()).add("static_dependency")
             uncovered = sorted(changed_modules - covered)
@@ -391,6 +440,9 @@ def plan(
         for t in _fallback_tests(repo_root):
             selected.setdefault(t, set()).add("mandatory_safety")
         notes.append("safety-critical modules changed: " + ", ".join(safety_changed[:6]))
+
+    if hub_bounded:
+        notes.append(_HUB_BOUNDED_NOTE)
 
     # CI tooling (mirrored byte-identically in the C engine): scripts/ci/*.py
     # map to their tests/ci/test_<name>.py; workflow changes select the whole

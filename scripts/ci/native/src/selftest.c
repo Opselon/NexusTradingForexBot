@@ -194,8 +194,10 @@ static int test_graph_reachability_stack_bound(void) {
 
     size_t *selected = NULL, *covered = NULL;
     size_t selected_len = 0, covered_len = 0;
+    bool hub_bounded = false;
     graph_reachable_tests(
-        &graph, &root, 1, &selected, &selected_len, &covered, &covered_len
+        &graph, &root, 1, &selected, &selected_len, &covered, &covered_len,
+        &hub_bounded
     );
 
     int rc = (selected_len == 1 && selected[0] == test_node) ? 0 : 26;

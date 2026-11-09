@@ -151,6 +151,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
     char *fallback_reason = NULL;
     char note_buf[2048];
     note_buf[0] = '\0';
+    bool hub_bounded = false;
 
     /* classify changed sets */
     bool has_python_src = false, has_test_py = false, has_global = false;
@@ -292,7 +293,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
         size_t *tests, *covered;
         size_t tests_len, covered_len;
         graph_reachable_tests(&g, changed_idx, changed_idx_len, &tests, &tests_len,
-                              &covered, &covered_len);
+                              &covered, &covered_len, &hub_bounded);
         if (dbg) {
             fprintf(stderr, "[dbg] covered_len=%zu tests_len=%zu rel_unresolved=%d\n",
                     covered_len, tests_len, g.relative_unresolved);
@@ -418,6 +419,17 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             strncat(note_buf, safety_note, sizeof(note_buf) - strlen(note_buf) - 1);
             break; /* one note line is enough for the evidence trail */
         }
+
+    /* Hub-bounded reachability (mirrors test_planner.py): recorded in the
+     * plan notes so the evidence trail shows the selection was truncated. */
+    if (hub_bounded) {
+        const char *hub_note =
+            "hub-bounded reachability: modules with >25 importers are selection boundaries";
+        if (note_buf[0]) {
+            strncat(note_buf, "; ", sizeof(note_buf) - strlen(note_buf) - 1);
+        }
+        strncat(note_buf, hub_note, sizeof(note_buf) - strlen(note_buf) - 1);
+    }
     }
 
     /* CI tooling (mirrored byte-identically in test_planner.py):

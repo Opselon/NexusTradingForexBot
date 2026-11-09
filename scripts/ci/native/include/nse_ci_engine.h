@@ -154,11 +154,14 @@ int graph_build_from_metadata(Graph *g, const char *repo_root,
 
 void graph_init(Graph *g, Arena *a);
 void graph_add_file(Graph *g, const char *rel_path, const char *abs_path);
-/* BFS reverse reachability from changed module indices. */
+/* BFS reverse reachability from changed module indices. Also reports
+ * (via out_hub_bounded, may be NULL) whether hub-bounding truncated the
+ * expansion: a module with more than _HUB_IMPORTER_THRESHOLD importers is
+ * a selection boundary (mirrors test_planner.py). */
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
                            size_t *out_tests_len, size_t **out_covered,
-                           size_t *out_covered_len);
+                           size_t *out_covered_len, bool *out_hub_bounded);
 /* Safety-critical source prefixes (mirrors test_planner.py). */
 bool graph_path_is_safety(const char *rel_path);
 

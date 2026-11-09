@@ -180,3 +180,75 @@ def test_relative_import_in_tests_resolves_to_helper(mini_repo: Path):
     p = test_planner.plan(["tests/unit/helpers_local.py"], mini_repo)
     assert "tests/unit/test_uses_helper.py" in _ids(p)
     assert p["full_suite_required"] is False
+
+
+def _hub_repo(mini_repo: Path) -> Path:
+    """Add a hub (26 direct test importers) + a leaf it imports.
+
+    hub.py imports leaf.py; 26 tests import hub.py, 2 tests import leaf.py
+    directly. Without hub-bounding, changing leaf.py selects all 28 tests
+    (leaf -> hub -> every hub test); with it, only the 2 direct tests.
+    """
+    (mini_repo / "src" / "nexus_scalp" / "leaf.py").write_text("def leaf_fn():\n    return 1\n")
+    (mini_repo / "src" / "nexus_scalp" / "hub.py").write_text(
+        "from nexus_scalp.leaf import leaf_fn\n\n\ndef hub_fn():\n    return leaf_fn()\n"
+    )
+    for i in range(26):
+        (mini_repo / "tests" / "unit" / f"test_hub_user_{i:02d}.py").write_text(
+            "from nexus_scalp.hub import hub_fn\n\n\ndef test_hub():\n    assert hub_fn()\n"
+        )
+    for i in range(2):
+        (mini_repo / "tests" / "unit" / f"test_leaf_user_{i}.py").write_text(
+            "from nexus_scalp.leaf import leaf_fn\n\n\ndef test_leaf():\n    assert leaf_fn()\n"
+        )
+    return mini_repo
+
+
+def test_hub_is_boundary_for_leaf_change(mini_repo: Path):
+    root = _hub_repo(mini_repo)
+    p = test_planner.plan(["src/nexus_scalp/leaf.py"], root)
+    ids = _ids(p)
+    # only the leaf's direct test importers run — the hub's 26 dependents stay out
+    assert "tests/unit/test_leaf_user_0.py" in ids
+    assert "tests/unit/test_leaf_user_1.py" in ids
+    assert "tests/unit/test_hub_user_00.py" not in ids
+    assert "tests/unit/test_hub_user_25.py" not in ids
+    assert p["selection_mode"] == "targeted"
+    assert p["full_suite_required"] is False
+    assert test_planner._HUB_BOUNDED_NOTE in p["notes"]
+
+
+def test_changed_hub_selects_its_direct_tests(mini_repo: Path):
+    root = _hub_repo(mini_repo)
+    p = test_planner.plan(["src/nexus_scalp/hub.py"], root)
+    ids = _ids(p)
+    assert "tests/unit/test_hub_user_00.py" in ids
+    assert "tests/unit/test_hub_user_25.py" in ids
+    # the leaf's own tests do not import the hub — they stay out
+    assert "tests/unit/test_leaf_user_0.py" not in ids
+    assert p["selection_mode"] == "targeted"
+
+
+def test_module_only_reachable_via_hub_is_uncovered(mini_repo: Path):
+    root = _hub_repo(mini_repo)
+    (root / "src" / "nexus_scalp" / "orphan.py").write_text("def orphan_fn():\n    return 1\n")
+    (root / "src" / "nexus_scalp" / "hub.py").write_text(
+        "from nexus_scalp.leaf import leaf_fn\n"
+        "from nexus_scalp.orphan import orphan_fn\n\n\ndef hub_fn():\n    return leaf_fn() + orphan_fn()\n"
+    )
+    p = test_planner.plan(["src/nexus_scalp/orphan.py"], root)
+    assert "src/nexus_scalp/orphan.py" in p["missing_mappings"]
+    assert p["full_suite_required"] is True  # fail-safe: no provable coverage
+
+
+def test_hub_threshold_boundary():
+    imports = {
+        "t1": {"nexus_scalp.exact25"},
+        "t2": {"nexus_scalp.exact25"},
+    }
+    for i in range(23):
+        imports[f"u{i}"] = {"nexus_scalp.exact25"}
+    # exactly 25 importers -> NOT a hub
+    assert "nexus_scalp.exact25" not in test_planner._hub_modules(imports)
+    imports["u23"] = {"nexus_scalp.exact25"}  # 26th importer
+    assert "nexus_scalp.exact25" in test_planner._hub_modules(imports)

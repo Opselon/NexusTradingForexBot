@@ -445,16 +445,35 @@ void graph_scan_repo(Graph *g, const char *repo_root) {
     walk_dir(g, tests_root, "tests", repo_root);
 }
 
+/* A module imported by more than this many nodes is a selection HUB
+ * (mirrors _HUB_IMPORTER_THRESHOLD in scripts/ci/test_planner.py): the
+ * traversal never expands through it, so one leaf change cannot select
+ * most of the suite via a composition root (measured: 779/860 tests for
+ * a single research leaf via live_engine). A hub that is itself changed
+ * still selects its direct test importers. */
+#define HUB_IMPORTER_THRESHOLD 25
+
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
                            size_t *out_tests_len, size_t **out_covered,
-                           size_t *out_covered_len) {
+                           size_t *out_covered_len, bool *out_hub_bounded) {
     bool *visited = (bool *)arena_alloc(g->arena, g->mod_count * sizeof(bool));
     bool *covered = (bool *)arena_alloc(g->arena, g->mod_count * sizeof(bool));
     bool *sel_test = (bool *)arena_alloc(g->arena, g->mod_count * sizeof(bool));
+    bool *is_changed = (bool *)arena_alloc(g->arena, g->mod_count * sizeof(bool));
+    bool *is_hub = (bool *)arena_alloc(g->arena, g->mod_count * sizeof(bool));
     memset(visited, 0, g->mod_count * sizeof(bool));
     memset(covered, 0, g->mod_count * sizeof(bool));
     memset(sel_test, 0, g->mod_count * sizeof(bool));
+    memset(is_changed, 0, g->mod_count * sizeof(bool));
+    memset(is_hub, 0, g->mod_count * sizeof(bool));
+    for (size_t i = 0; i < changed_len; i++) {
+        if (changed_idx[i] < g->mod_count) is_changed[changed_idx[i]] = true;
+    }
+    for (size_t i = 0; i < g->mod_count; i++) {
+        is_hub[i] = !g->is_test[i] && g->importer_counts[i] > HUB_IMPORTER_THRESHOLD;
+    }
+    bool hub_bounded = false;
 
     /* Mark nodes when ENQUEUED, not when popped. A node may be reachable
      * through several importers while an earlier copy is still pending. If
@@ -474,23 +493,36 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
 
     while (top > 0) {
         size_t idx = stack[--top];
+        if (is_hub[idx] && !is_changed[idx]) {
+            /* Intermediate hub: boundary — never expand through it. */
+            hub_bounded = true;
+            continue;
+        }
         if (g->is_test[idx]) covered[idx] = true; /* changed test covers itself */
         bool has_importer = false;
         for (size_t e = 0; e < g->importer_counts[idx]; e++) {
             size_t importer = g->importers[idx][e];
             if (importer >= g->mod_count) die("dependency graph contains an invalid edge");
-            has_importer = true;
             if (g->is_test[importer]) {
+                has_importer = true;
                 sel_test[importer] = true;
                 covered[idx] = true;
-            } else if (!visited[importer]) {
-                if (top >= g->mod_count) die("DFS stack capacity invariant violated");
-                visited[importer] = true;
-                stack[top++] = importer;
+            } else if (is_hub[importer]) {
+                /* Do not cross a hub: its dependents are not selected
+                 * through this path, and it does not cover the module. */
+                hub_bounded = true;
+            } else {
+                has_importer = true;
+                if (!visited[importer]) {
+                    if (top >= g->mod_count) die("DFS stack capacity invariant violated");
+                    visited[importer] = true;
+                    stack[top++] = importer;
+                }
             }
         }
         if (has_importer) covered[idx] = true;
     }
+    if (out_hub_bounded) *out_hub_bounded = hub_bounded;
 
     size_t n_tests = 0, n_cov = 0;
     for (size_t i = 0; i < g->mod_count; i++) {
