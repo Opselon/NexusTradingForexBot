@@ -100,9 +100,24 @@ def _isolate_implicit_audit_db(
     so unit tests constructing OrderLifecycleManager without audit_repo
     appended test_req rows to the live trading ledger (957 rows found
     2026-08-31..09-02). Point the implicit default at a per-run temp file;
-    explicit db_url/config callers are unaffected by construction."""
+    explicit db_url/config callers are unaffected by construction.
+
+    BUG-296/cross-test champion leakage (2026-11-09): the CI lane also pins
+    NSE_DATABASE__SQLITE_PATH (assert_test_db_isolation.py), and that key
+    sits ABOVE the NEXUS_AUDIT_DB seam in load_database_config's precedence
+    (NSE_DATABASE__SQLITE_PATH > NEXUS_AUDIT_DB > persisted provider). Every
+    champion-registry-writing test in the run therefore shared one job-level
+    audit DB even though this fixture redirected NEXUS_AUDIT_DB per run:
+    model_bootstrap._champion_binding resolved the job DB, found a CHAMPION
+    row another test had just written, and bug296's repair-mint came back
+    CHAMPION_GOVERNED (or, in test_market_radar_integration, the trust anchor
+    reported HASH_MISMATCH against a Champion fingerprint from a different
+    test's artifact). Monkeypatch the path key too so the whole audit seam
+    resolves to THIS run's temp file and no cross-test state can leak in.
+    """
     run_dir = tmp_path_factory.mktemp("audit_db")
     monkeypatch.setenv("NEXUS_AUDIT_DB", str(run_dir / "audit.db"))
+    monkeypatch.setenv("NSE_DATABASE__SQLITE_PATH", str(run_dir / "audit.db"))
     yield
 
 
