@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
 """Planning-to-execution pipeline: C17 engine plans, pytest executes.
 
-Architecture contract (95% C / 5% Python):
-  * scripts/ci/native/nse-ci-engine  — changed files, planning, validation (C17).
-  * scripts/ci/test_planner.py       — trusted Python reference (parity ONLY).
-  * THIS FILE                        — subprocess glue: build/verify C engine,
-    run the C planner, parity-check against the reference, execute selected
-    tests with real pytest, write evidence, fail closed.
+Architecture contract (C plans, Python executes — no Python planner):
+  * scripts/ci/native/nse-ci-engine  — the SOLE test planner (C17):
+    changed files, selection, validation. There is no Python planner
+    and no parity twin; a missing or failed engine fails the lane.
+  * THIS FILE                        — subprocess glue: build/verify the C
+    engine, run its plan (digest-checked), execute the selected tests
+    with real pytest, write evidence, fail closed. Python never selects
+    tests; it only runs the files the C engine found.
 
 Gate semantics:
   * Native C engine MUST build & pass selftest. Any failure -> exit non-zero.
-    No silent fallback to Python planning.
-  * Python reference is used ONLY for differential parity verification.
+    No fallback of any kind.
+  * The plan JSON is digest-checked (validate_plan) before execution.
   * Empty selected set never becomes green (conservative expansion).
   * pytest exit code propagates unchanged.
   * Evidence manifest binds: SHAs, plan digest, planner impl+version,
@@ -35,7 +37,6 @@ import sys
 import time
 
 ENGINE_VERSION = "0.1.0"
-EXIT_PLANNER_INTEGRITY = 90
 
 
 def log(msg: str) -> None:
@@ -72,7 +73,9 @@ def selftest_ok(binary: str) -> bool:
 
 def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
     """Return path to verified native C17 engine. Fail hard if unavailable."""
-    candidate = os.path.join(persist_dir, "nse-ci-engine")
+    # Windows binaries carry the .exe suffix; the build output name differs.
+    exe = ".exe" if sys.platform == "win32" else ""
+    candidate = os.path.join(persist_dir, "nse-ci-engine" + exe)
     if os.path.isfile(candidate) and engine_version(candidate) == ENGINE_VERSION:
         if selftest_ok(candidate):
             return candidate
@@ -93,7 +96,7 @@ def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise RuntimeError(f"native build error: {exc}") from exc
 
-    fresh = os.path.join(build_dir, "nse-ci-engine")
+    fresh = os.path.join(build_dir, "nse-ci-engine" + exe)
     if (
         not os.path.isfile(fresh)
         or engine_version(fresh) != ENGINE_VERSION
@@ -150,34 +153,6 @@ def validate_plan(plan_obj: dict) -> str | None:
     return None
 
 
-def parity_check(native_obj: dict, python_obj: dict) -> tuple[str, str | None]:
-    """Return (mode, failure). mode: exact | superset | mismatch."""
-    if body_without_digest(native_obj) == body_without_digest(python_obj):
-        return "exact", None
-    if (
-        native_obj.get("fallback_reason") == python_obj.get("fallback_reason")
-        and native_obj.get("full_suite_required") == python_obj.get("full_suite_required")
-        and native_obj.get("selection_mode") == python_obj.get("selection_mode")
-    ):
-        c_entries = {t["id"]: t for t in native_obj["selected_tests"]}
-        p_entries = {t["id"]: t for t in python_obj["selected_tests"]}
-        if set(p_entries) <= set(c_entries):
-            for tid, p_entry in p_entries.items():
-                c_entry = c_entries[tid]
-                if set(p_entry["reason"]) - set(c_entry["reason"]):
-                    return "mismatch", (
-                        f"shared test {tid} lost reasons in native plan: "
-                        f"{sorted(set(p_entry['reason']) - set(c_entry['reason']))}"
-                    )
-            if set(c_entries) - set(p_entries):
-                return "superset", None
-            return "exact", None
-    return "mismatch", (
-        f"parity mismatch: native digest {native_obj['plan_digest'][:16]}... "
-        f"vs python {python_obj['plan_digest'][:16]}..."
-    )
-
-
 def c_plan(
     binary: str, repo_root: str, files: list[str], head: str, event: str, full: bool
 ) -> dict:
@@ -202,31 +177,6 @@ def c_plan(
     err = validate_plan(obj)
     if err:
         raise RuntimeError(f"native plan invalid: {err}")
-    return obj
-
-
-def py_plan(repo_root: str, files: list[str], head: str, event: str, full: bool) -> dict:
-    argv = [
-        sys.executable,
-        os.path.join(repo_root, "scripts", "ci", "test_planner.py"),
-        "--files",
-        " ".join(files),
-        "--repo-root",
-        repo_root,
-        "--commit-sha",
-        head,
-        "--event",
-        event,
-    ]
-    if full:
-        argv.append("--full-suite")
-    proc, _ = sh(argv, cwd=repo_root, timeout=120)
-    if proc.returncode != 0:
-        raise RuntimeError(f"python reference planner exit {proc.returncode}: {proc.stderr[-200:]}")
-    obj = json.loads(proc.stdout)
-    err = validate_plan(obj)
-    if err:
-        raise RuntimeError(f"python plan invalid: {err}")
     return obj
 
 
@@ -288,26 +238,15 @@ def main() -> int:
                 full = True
                 break
 
-    # 2. plan: C native PRIMARY; Python reference for parity ONLY
+    # 2. plan: C native ONLY — the sole planner. No Python fallback.
     planner_impl = f"native-c17-{ENGINE_VERSION}"
     try:
         native_obj = c_plan(native_binary, repo_root, changed, args.head, args.event, full)
     except (RuntimeError, json.JSONDecodeError, OSError) as exc:
         log(f"NATIVE PLANNER FAILED: {exc}")
-        return 90  # planner integrity failure — never fall back to Python planning
+        return 90  # planner integrity failure — no fallback, fail closed
 
-    try:
-        python_obj = py_plan(repo_root, changed, args.head, args.event, full)
-    except (RuntimeError, json.JSONDecodeError, OSError) as exc:
-        log(f"PYTHON REFERENCE FAILURE: {exc}")
-        return 90
-
-    parity_mode, failure = parity_check(native_obj, python_obj)
-    if failure is not None:
-        log(f"PLANNER-INTEGRITY FAILURE: {failure}")
-        return EXIT_PLANNER_INTEGRITY
-
-    plan_obj = native_obj  # C engine is primary
+    plan_obj = native_obj  # C engine is the sole planner
     # --- C17 impact summary (visible in the job log) -------------------
     _sel = plan_obj["selected_tests"]
     _reasons = {}
@@ -324,8 +263,7 @@ def main() -> int:
         log(f"C17 FALLBACK: {plan_obj['fallback_reason']}")
     log("C17 REASONS: " + ", ".join(f"{k}={v}" for k, v in sorted(_reasons.items())))
     log(f"C17 CHANGED: {len(changed)} file(s) -> {len(_sel)} test file(s)")
-
-    log(f"parity OK ({parity_mode}) — digest {plan_obj['plan_digest'][:16]}...")
+    log(f"C17 DIGEST: {plan_obj['plan_digest'][:16]}...")
 
     # 3. selected tests
     selected_ids = [t["id"] for t in plan_obj["selected_tests"]]
@@ -368,8 +306,6 @@ def main() -> int:
             "primary_impl": planner_impl,
             "engine_version": ENGINE_VERSION,
             "degraded": False,
-            "parity_checked": True,
-            "parity_mode": parity_mode,
             "native_reason": args.native_binary,
         },
         "selected_tests": selected_ids,
@@ -396,7 +332,6 @@ def main() -> int:
             fh.write("degraded=False\n")
             fh.write("integrity_failed=False\n")
             fh.write(f"selected_count={len(selected_ids)}\n")
-            fh.write(f"parity_mode={parity_mode}\n")
 
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
@@ -406,7 +341,6 @@ def main() -> int:
             fh.write(f"| planner | `{planner_impl}` |\n")
             fh.write(f"| plan digest | `{manifest['plan_digest']}` |\n")
             fh.write(f"| selection mode | {manifest['plan_selection_mode']} |\n")
-            fh.write(f"| parity mode | `{parity_mode}` |\n")
             fh.write(f"| selected tests | {len(selected_ids)} |\n")
             fh.write(f"| changed files | {len(changed)} |\n")
             fh.write(f"| pytest exit | {pytest_rc} |\n")

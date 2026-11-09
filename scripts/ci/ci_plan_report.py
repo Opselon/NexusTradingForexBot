@@ -105,7 +105,6 @@ def main(argv: list[str] | None = None) -> int:
         f"    planner        : {_c(manifest.get('planner', {}).get('impl', 'nse-native-c17'), C_GREEN)}"
     )
     emit(f"    engine version : {manifest.get('planner', {}).get('engine_version', '0.1.0')}")
-    emit(f"    parity         : {_c(str(manifest.get('parity_mode', 'n/a')), C_GREEN)}")
     emit(f"    plan digest    : {_c(plan.get('plan_digest', '')[:16] + '...', C_DIM)}")
 
     # ---- change set -----------------------------------------------------
@@ -187,7 +186,6 @@ def main(argv: list[str] | None = None) -> int:
                 fh.write(f"| tests selected | **{n_sel}** |\n")
                 if total:
                     fh.write(f"| of total | {total} ({100.0 * n_sel / total:.1f}%) |\n")
-                fh.write(f"| parity | `{manifest.get('parity_mode', 'n/a')}` |\n")
                 if fallback:
                     fh.write(f"| fallback | {fallback} |\n")
                 if reasons:

@@ -1,5 +1,5 @@
 /* dependency_graph.c — module table, import scanning (absolute + RELATIVE),
- * reverse edges. Semantics MUST byte-match scripts/ci/test_planner.py:
+ * reverse edges. Selection semantics (this engine is the sole planner):
  *   - only `nexus_scalp*` absolute targets participate;
  *   - RELATIVE imports are resolved against the file's own package;
  *     `from .mod import sym` resolves ONLY .mod (symbols are not modules);
@@ -12,8 +12,8 @@
  *   - changed test-tree files participate as reachability roots (handled by
  *     the selector via graph_find). */
 #include "nse_ci_engine.h"
+#include "nse_dirent.h"
 
-#include <dirent.h>
 #include <stdio.h>
 #include <string.h>
 #if defined(_WIN32)
@@ -168,7 +168,7 @@ static void own_package_for(const char *rel_path, bool is_test, char *pkg,
     /* package = module parts minus the last one.
      *
      * For a package's __init__.py the module IS the package, so the package
-     * keeps every part. Python reference:
+     * keeps every part. Example:
      *   src/nexus_scalp/release/__init__.py -> ('nexus_scalp.release',
      *                                          'nexus_scalp.release')
      * Dropping the last segment here made `from .paths import ...` inside
@@ -388,7 +388,7 @@ static void walk_dir(Graph *g, const char *root, const char *rel_base,
 
 /* Pre-register every .py under `root` as a node, WITHOUT scanning imports.
  *
- * The Python reference does this in two passes: it collects all test-tree
+ * Two passes: collect all test-tree
  * paths first, then resolves imports. A single-pass walk cannot resolve a
  * relative import to a file it has not reached yet — `tests/unit/
  * test_bug542_*.py` sorts before `test_live_state_contract.py`, so
@@ -446,7 +446,7 @@ void graph_scan_repo(Graph *g, const char *repo_root) {
 }
 
 /* A module imported by more than this many nodes is a selection HUB
- * (mirrors _HUB_IMPORTER_THRESHOLD in scripts/ci/test_planner.py): the
+ * (hub-bounding threshold: 25 importers): the
  * traversal never expands through it, so one leaf change cannot select
  * most of the suite via a composition root (measured: 779/860 tests for
  * a single research leaf via live_engine). A hub that is itself changed

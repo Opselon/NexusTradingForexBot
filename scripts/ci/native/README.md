@@ -1,9 +1,11 @@
 # NSE Native CI Engine (`scripts/ci/native/`)
 
 Portable **C17** optimization engine for the CI test-planning pipeline.
-Python (`scripts/ci/test_planner.py`) remains the **trusted reference
-implementation**; this engine must produce byte-identical plans (verified by
-SHA-256 digest equality — enforced in `src/selftest.c` + CI equivalence runs).
+This engine is the **sole test planner**: there is no Python planner and
+no parity twin. `scripts/ci/run_test_plan.py` only builds/verifies this
+binary, runs its plan (SHA-256 digest-checked), and executes the selected
+tests with pytest. Verification of the engine itself lives in
+`src/selftest.c` (`selftest` + `selftest-fuzz`) and `engine-tests`.
 
 ## Components
 | File | Responsibility |
@@ -34,10 +36,9 @@ nse-ci-engine selftest | selftest-fuzz --iterations N | version
 ```
 
 ## Safety & trust rules
-- Python fallback is MANDATORY behaviour: if the native binary is missing,
-  incompatible, or exits non-zero, callers fall back to
-  `scripts/ci/test_planner.py` and report the degradation — never silently
-  treat a Python run as a native success.
+- There is NO Python fallback: if the native binary is missing,
+  incompatible, or exits non-zero, the lane fails closed. Python only
+  executes the tests this engine selects — it never selects tests.
 - Binaries are never restored from untrusted PR caches; deployment requires
   an exact `version` + `os/arch/python` match (`cache_metadata` record).
 - Every exit != 0 is treated as failure by callers.
@@ -46,11 +47,10 @@ nse-ci-engine selftest | selftest-fuzz --iterations N | version
 | engine | wall time |
 |---|---|
 | native (C17, -O2) | **13 ms** |
-| python reference | **159 ms** |
 
-Selection sets identical (300/300 equal). Re-run with
-`tests/bench_compare.sh` (requires the fixture generator) — never quote
-numbers without re-measuring.
+The Python reference planner was removed 2026-11-09 (the C engine is the
+sole planner), so there is no current A/B number — never quote one without
+re-measuring.
 
 ## Roadmap (honest status)
 - Algorithm 2 (pytest-testmon dynamic coverage) — evaluated; NOT wired.

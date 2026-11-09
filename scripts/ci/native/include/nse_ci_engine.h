@@ -1,9 +1,9 @@
 /* nse_ci_engine.h — NSE native CI engine (portable C17).
  *
  * Optimization engine only: Python/pytest remains the test execution
- * framework and the trusted reference implementation. The native engine must
- * produce byte-identical plans to scripts/ci/test_planner.py (verified by
- * digest equality in the equivalence tests).
+ * framework. This engine is the SOLE test planner (no Python planner,
+ * no parity twin); its plans are verified by digest self-checks and
+ * the selftest suite.
  *
  * Ownership model: every allocation belongs to an Arena; freeing the arena
  * releases everything. No global mutable state exists anywhere in the engine.
@@ -157,17 +157,17 @@ void graph_add_file(Graph *g, const char *rel_path, const char *abs_path);
 /* BFS reverse reachability from changed module indices. Also reports
  * (via out_hub_bounded, may be NULL) whether hub-bounding truncated the
  * expansion: a module with more than _HUB_IMPORTER_THRESHOLD importers is
- * a selection boundary (mirrors test_planner.py). */
+ * a selection boundary (hub-bounded reachability). */
 void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
                            size_t changed_len, size_t **out_tests,
                            size_t *out_tests_len, size_t **out_covered,
                            size_t *out_covered_len, bool *out_hub_bounded);
-/* Safety-critical source prefixes (mirrors test_planner.py). */
+/* Safety-critical source prefixes. */
 bool graph_path_is_safety(const char *rel_path);
 
 /* ------------------------------------------------------------------ */
-/* Plan building — emits byte-identical JSON to the Python planner     */
-/* (same schema, same canonical key order, same digest).               */
+/* Plan building — emits canonical plan JSON (same schema, same canonical */
+/* key order, same digest).                                            */
 /* ------------------------------------------------------------------ */
 typedef struct PlanOptions {
     const char *commit_sha;

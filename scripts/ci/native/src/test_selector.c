@@ -1,7 +1,6 @@
-/* test_selector.c — plan assembly with byte-identical JSON to
- * scripts/ci/test_planner.py (canonical form, same digest basis).
+/* test_selector.c — plan assembly (canonical JSON form, same digest basis).
  *
- * Semantics mirrored from the Python planner (the trusted reference):
+ * Selection semantics:
  *   - global invalidation files/prefixes -> conservative fallback expansion
  *   - unparseable python -> conservative expansion
  *   - missing test mapping (changed source module with no reachable test)
@@ -19,7 +18,7 @@
 #else
 #include <unistd.h>
 #endif
-#include <dirent.h>
+#include "nse_dirent.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -217,7 +216,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
                 &arena, "unparseable python file encountered \xe2\x80\x94 conservative expansion");
         }
         if (g.relative_unresolved) {
-            /* Byte-identical to the Python planner's uncertainty reason. */
+            /* Uncertainty reason (stable string, part of the plan evidence). */
             fallback_reason = fallback_reason
                                   ? fallback_reason
                                   : arena_strdup(
@@ -420,7 +419,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
             break; /* one note line is enough for the evidence trail */
         }
 
-    /* Hub-bounded reachability (mirrors test_planner.py): recorded in the
+    /* Hub-bounded reachability: recorded in the
      * plan notes so the evidence trail shows the selection was truncated. */
     if (hub_bounded) {
         const char *hub_note =
@@ -432,7 +431,7 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
     }
     }
 
-    /* CI tooling (mirrored byte-identically in test_planner.py):
+    /* CI tooling:
      * scripts/ci/<name>.py -> tests/ci/test_<name>.py when present;
      * workflow changes select the whole tests/ci integrity suite. */
     int workflows_changed = 0;
