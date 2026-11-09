@@ -189,8 +189,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -339,8 +339,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 

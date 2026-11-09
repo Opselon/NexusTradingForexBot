@@ -700,6 +700,17 @@ jobs:
           # render pass over 784 files and nobody reads htmlcov in CI.
           # term-missing feeds the coverage step; xml feeds the
           # critical-file gate on expanded plans.
+          #
+          # NOTE: these comments must stay ABOVE the command, never inside
+          # its backslash continuation — a '#' line inside a continuation
+          # swallows the rest of the logical line, so --pytest-extra became
+          # a stray command and the step died with exit 127 (2026-11-09).
+          #
+          # --head MUST be the real PR head, not github.sha: on
+          # pull_request github.sha is the ephemeral merge commit, which
+          # the depth-1 checkout leaves shallow-grafted, so the engine's
+          # three-dot diff finds no merge base and fails rc=3 (2026-11-09).
+          # The fetch step already fetches this exact SHA.
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "${{ github.event.pull_request.base.sha || github.event.before }}" \

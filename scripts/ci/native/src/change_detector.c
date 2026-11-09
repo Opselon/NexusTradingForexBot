@@ -91,7 +91,12 @@ int change_detector_git_files(const char *base, const char *head, StrBuf *out) {
     /* cmd.exe has no /dev/null; NUL is the null device. */
     snprintf(cmd, sizeof(cmd), "git diff --name-only -z %s...%s 2>NUL", base, head);
 #else
-    snprintf(cmd, sizeof(cmd), "git diff --name-only -z %s...%s 2>/dev/null", base, head);
+    /* No 2>/dev/null: git's stderr must reach the caller. The rc=3
+       failure on 2026-11-09 was invisible for exactly this reason — the
+       engine swallowed git's "fatal: no merge base found" (the head was
+       the shallow-grafted merge commit) and all CI saw was "git diff
+       failed". stderr never pollutes stdout, which is the -z file list. */
+    snprintf(cmd, sizeof(cmd), "git diff --name-only -z %s...%s", base, head);
 #endif
     FILE *f = popen(cmd, "r");
     if (!f) return -1;

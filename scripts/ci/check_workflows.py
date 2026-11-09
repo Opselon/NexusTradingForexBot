@@ -43,6 +43,14 @@ Checks (each is a finding with a severity; CI fails on any ERROR):
      fa10eed) while every other check stayed green, so nothing looked
      wrong. The fix pattern is a step that exports the paths via the
      $RUNNER_TEMP shell variable into $GITHUB_ENV (see "Pin test DB" steps).
+ 10. Comment lines inside a backslash-continued shell command (ERROR, raw
+     text scan): a `#` line following a line that ends with `\` gets joined
+     into the command, and the `#` swallows the rest of the logical line —
+     the following arguments become stray commands (exit 127). Regression:
+     ci.yml quality-tests put the --pytest-extra rationale comments inside
+     the `python run_test_plan.py \` continuation and the step died with
+     "--pytest-extra: command not found" (2026-11-09). Comments belong
+     ABOVE the command, never inside its continuation.
 
 Lane vocabulary is DERIVED FROM THE ACTUAL REPO, not hard-coded to a foreign
 reference. The classifier (classify_changes.py) is the canonical lane list;
@@ -587,6 +595,47 @@ def check_job_env_contexts(wf: WorkflowModel) -> None:
             )
 
 
+def check_continuation_comments(wf: WorkflowModel) -> None:
+    """A `#` comment line inside a backslash-continued shell command.
+
+    Raw-text scan (YAML parsing drops comments): inside a `run: |` block,
+    a line ending in `\\` joins the NEXT line into the same logical shell
+    line — and if that next line starts with `#`, the comment swallows the
+    rest of the logical line, so the following arguments execute as stray
+    commands (exit 127). Comments belong ABOVE the command.
+    """
+    if wf.path is None or not wf.path.is_file():
+        return
+    try:
+        lines = wf.path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    in_run = False
+    prev_cont = False
+    for lineno, line in enumerate(lines, start=1):
+        if re.match(r"\s*(?:-\s*)?run:\s*\|", line):
+            in_run = True
+            prev_cont = False
+            continue
+        if not in_run:
+            continue
+        if line.strip().startswith("#") and prev_cont:
+            wf.error(
+                "",
+                "continuation-comment",
+                f"line {lineno}: a `#` comment sits inside a "
+                f"backslash-continued shell command — the `\\` joins it "
+                f"into the command and the `#` swallows the rest of the "
+                f"logical line, so the following arguments run as stray "
+                f"commands (exit 127). Move the comment above the command.",
+            )
+        if line and not line[0].isspace():
+            in_run = False
+            prev_cont = False
+            continue
+        prev_cont = line.rstrip().endswith("\\")
+
+
 def analyze_workflow(wf: WorkflowModel) -> None:
     check_undefined_outputs(wf)
     check_local_action_checkout(wf)
@@ -595,6 +644,7 @@ def analyze_workflow(wf: WorkflowModel) -> None:
     check_self_watch(wf)
     check_action_pins(wf)
     check_job_env_contexts(wf)
+    check_continuation_comments(wf)
 
 
 def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel], int]:

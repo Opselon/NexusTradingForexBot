@@ -86,9 +86,15 @@ def ensure_native_engine(repo_root: str, persist_dir: str) -> str:
     build_dir = os.path.join(native_dir, "build")
     jobs = max(1, min(os.cpu_count() or 2, 4))
     try:
+        # sh() returns (proc, elapsed_seconds) — the build step below
+        # already indexes [0]; this line did not, so the first build from
+        # a cold persist dir died with AttributeError ('tuple' object has
+        # no attribute 'returncode') on the OS lane (2026-11-09). The
+        # bug hid locally because the persisted binary verified and the
+        # build branch never ran.
         cfg = sh(
             ["cmake", "-B", "build", "-DCMAKE_BUILD_TYPE=Release"], cwd=native_dir, timeout=180
-        )
+        )[0]
         if cfg.returncode != 0:
             raise RuntimeError(f"cmake configure failed: {cfg.stderr[-200:]}")
         bld = sh(["cmake", "--build", "build", "-j", str(jobs)], cwd=native_dir, timeout=600)[0]
