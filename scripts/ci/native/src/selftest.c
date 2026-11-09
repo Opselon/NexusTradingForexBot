@@ -4,12 +4,74 @@
  * JSON and random binary into the strict parser and the import scanner;
  * with the ASan/UBSan build any memory error aborts non-zero. */
 #include "nse_ci_engine.h"
+#include "nse_dirent.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#include <direct.h>
+#include <process.h> /* _getpid */
+#define nse_getpid() _getpid()
+#define nse_mkdir1(p) _mkdir(p)
+#else
+#include <sys/stat.h>
 #include <unistd.h>
-#include <sys/types.h>
+#define nse_getpid() getpid()
+#define nse_mkdir1(p) mkdir(p, 0777)
+#endif
+
+/* mkdir -p: create every missing ancestor of path (existing dirs ignored).
+ * No shell involved: the fixture tree must build on Windows too, where
+ * `rm -rf` / `mkdir -p` do not exist. */
+static int nse_mkdir_p(const char *path) {
+    char buf[512];
+    size_t len = strlen(path);
+    if (len == 0 || len >= sizeof(buf)) return -1;
+    memcpy(buf, path, len + 1);
+    for (char *p = buf + 1; *p; p++) {
+        if (*p == '/' || *p == '\\') {
+            char save = *p;
+            *p = '\0';
+            nse_mkdir1(buf); /* ignore EEXIST */
+            *p = save;
+        }
+    }
+    nse_mkdir1(buf);
+    return 0;
+}
+
+/* Recursively delete a tree. remove() deletes files and empty directories
+ * on both POSIX and Windows, so no platform shell is needed. */
+static void nse_rmtree(const char *path) {
+    DIR *d = opendir(path);
+    if (!d) {
+        remove(path);
+        return;
+    }
+    struct dirent *ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") == 0 || strcmp(ent->d_name, "..") == 0) continue;
+        char child[1024];
+        snprintf(child, sizeof(child), "%s/%s", path, ent->d_name);
+        nse_rmtree(child);
+    }
+    closedir(d);
+    remove(path);
+}
+
+/* Private per-process fixture root: %TEMP% on Windows, /tmp elsewhere. */
+static void nse_selftest_root(char *out, size_t out_len) {
+#if defined(_WIN32)
+    const char *tmp = getenv("TEMP");
+    if (!tmp || !*tmp) tmp = getenv("TMP");
+    if (!tmp || !*tmp) tmp = "C:/Windows/Temp";
+    snprintf(out, out_len, "%s/nse-selftest-%d", tmp, (int)nse_getpid());
+#else
+    snprintf(out, out_len, "/tmp/nse-selftest-%d", (int)nse_getpid());
+#endif
+}
 
 /* link-time providers from test fixtures below */
 int engine_selftest(void);
@@ -68,18 +130,22 @@ static int test_json_parser(void) {
 
 static int test_plan_fixture(void) {
     /* Build a miniature NSE-shaped tree in a PRIVATE temp dir and verify the
-     * plan matches the Python planner byte-for-byte (digest equality). The
-     * directory is UNIQUE per process: a fixed path here once poisoned
-     * concurrent pipelines that reused the same fixture location. */
+     * plan is digest-stable (deterministic selection). The directory is
+     * UNIQUE per process: a fixed path here once poisoned concurrent
+     * pipelines that reused the same fixture location. */
     char root[256];
-    snprintf(root, sizeof(root), "/tmp/nse-selftest-%d", (int)getpid());
+    nse_selftest_root(root, sizeof(root));
     const char *ROOT = root;
-    char cmd[768];
-    snprintf(cmd, sizeof(cmd),
-             "rm -rf %s && mkdir -p %s/src/nexus_scalp/risk %s/src/nexus_scalp/execution "
-             "%s/tests/unit %s/configs",
-             ROOT, ROOT, ROOT, ROOT, ROOT);
-    if (system(cmd) != 0) return 20;
+    nse_rmtree(ROOT); /* a previous crashed run may have left it behind */
+    char sub[512];
+    snprintf(sub, sizeof(sub), "%s/src/nexus_scalp/risk", ROOT);
+    if (nse_mkdir_p(sub) != 0) return 20;
+    snprintf(sub, sizeof(sub), "%s/src/nexus_scalp/execution", ROOT);
+    if (nse_mkdir_p(sub) != 0) return 20;
+    snprintf(sub, sizeof(sub), "%s/tests/unit", ROOT);
+    if (nse_mkdir_p(sub) != 0) return 20;
+    snprintf(sub, sizeof(sub), "%s/configs", ROOT);
+    if (nse_mkdir_p(sub) != 0) return 20;
 
     FILE *f;
     char path[512];
@@ -158,9 +224,7 @@ static int test_plan_fixture(void) {
     sb_free(&plan2);
     sb_free(&plan3);
     /* remove the private fixture tree */
-    char cleanup[512];
-    snprintf(cleanup, sizeof(cleanup), "rm -rf %s", ROOT);
-    (void)system(cleanup);
+    nse_rmtree(ROOT);
     return 0;
 }
 

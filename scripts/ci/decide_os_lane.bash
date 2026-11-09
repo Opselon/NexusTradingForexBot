@@ -6,7 +6,8 @@
 # mode vocabulary the workflow has always used:
 #
 #   FULL         = full critical_suite.txt
-#   SKEW         = OS-skewed subset (PR fast lane)
+#   SKEW         = C-planned targeted subset (PR fast lane): the C17 engine
+#                  selects tests from the diff; no fixed list runs anymore.
 #   SKIP-REPORT  = classifier decided nothing to run (required-context
 #                  always-report green; installs nothing, runs no tests)
 #
@@ -19,7 +20,7 @@ MODE="FULL"
 
 case "${GITHUB_EVENT_NAME:-}" in
   pull_request)
-    # PR fast shape: every platform uses the skewed subset.
+    # PR fast shape: every platform uses the C-planned targeted subset.
     MODE="SKEW" ;;
   push)
     # CI quota diet (2026-11): the FULL suite is semi-monthly-schedule and
@@ -43,7 +44,13 @@ if [ "$MODE" != "SKIP-REPORT" ]; then
   BASE="${GITHUB_BASE_REF:-}"
   NAMES=""
   if [ -n "$BASE" ]; then
-    git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" || true
+    # Shallow checkouts (actions/checkout fetch-depth 1) cannot compute the
+    # PR merge-base, so the diff below would fail and the classifier would
+    # fail OPEN (run everything). Fetch the base branch bloblessly first
+    # (commits+trees only, ~5 MiB — the same trick ci.yml uses for the
+    # planner); the SKEW step's own fetch covers dispatch, which has no base.
+    git fetch -q --filter=blob:none --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2>/dev/null \
+      || git fetch -q --no-tags origin "+refs/heads/$BASE:refs/remotes/origin/$BASE" 2>/dev/null || true
     NAMES=$(git diff --name-only "origin/$BASE...HEAD" 2>/dev/null | tr '\n' ' ' || true)
   fi
   if [ -z "${NAMES// /}" ]; then

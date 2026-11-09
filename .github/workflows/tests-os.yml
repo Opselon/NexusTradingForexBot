@@ -219,12 +219,41 @@ jobs:
         shell: bash
         run: scripts/ci/decide_os_lane.bash linux
 
-      - name: Run OS-skewed Linux subset (PR fast lane)
+      - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; fetch the
+          # history bloblessly (commits+trees only, ~5 MiB). The decide
+          # step already fetched it for PR/push; this covers dispatch.
+          git fetch -q --filter=blob:none --no-tags origin 2>/dev/null || git fetch -q --no-tags origin 2>/dev/null || true
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
+          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "${{ github.sha }}" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc
@@ -362,12 +391,41 @@ jobs:
         shell: bash
         run: scripts/ci/decide_os_lane.bash linux
 
-      - name: Run OS-skewed Linux subset (PR fast lane)
+      - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; fetch the
+          # history bloblessly (commits+trees only, ~5 MiB). The decide
+          # step already fetched it for PR/push; this covers dispatch.
+          git fetch -q --filter=blob:none --no-tags origin 2>/dev/null || git fetch -q --no-tags origin 2>/dev/null || true
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
+          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "${{ github.sha }}" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc

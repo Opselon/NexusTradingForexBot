@@ -19,7 +19,7 @@ this file is the CI-specific companion.
 | `tests-os.yml` | push/PR main·develop·ci-tests; Monday cron; dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
 | `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + hash-bound lock venv (one definition, no per-job copy) | ci |
-| `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
+| `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + C-planned targeted lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
 | `tests-macos.yml` | `workflow_dispatch` ONLY | **Manual macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
@@ -50,9 +50,14 @@ workflow default (run Python) still fires.
 
 ### Test selection — hub-bounded reachability
 
-The planner (`scripts/ci/test_planner.py`, mirrored byte-identically in the
-C17 engine) selects tests by reverse reachability over the static import
-graph. A module imported by more than **25** nodes is a selection **hub**
+The planner is the native C17 engine (`scripts/ci/native/nse-ci-engine`)
+and it is the **sole** selection engine: there is no Python planner and no
+parity twin. `scripts/ci/run_test_plan.py` only builds/verifies the engine,
+runs its plan (SHA-256 digest-checked), and executes the selected tests with
+pytest. A missing or failed engine fails the lane — nothing falls back to
+Python selection. The engine selects tests by reverse reachability over the
+static import graph. A module imported by more than **25** nodes is a
+selection **hub**
 (composition root / god module: `live_engine`, `web.server`, …) and the
 traversal never expands through it — otherwise one leaf change selected
 most of the suite (measured 2026-11-09: changing `research/worker.py`,
@@ -186,7 +191,7 @@ GitHub event (push / PR / schedule / dispatch)
   schedule/dispatch; `go-api.yml :: go-api-windows` runs only on
   schedule/dispatch.
 * **Nothing was deleted.** The full Windows critical suite, the
-  Windows-skew fast lane, the MT5 native IPC certification and the Go
+  C-planned targeted fast lane, the MT5 native IPC certification and the Go
   Windows leg are all intact and executable on demand.
 * Manual entry: **Actions → `Tests (Windows, manual)` → Run workflow**
   (`tests-windows.yml`, `workflow_dispatch`). Inputs: `full_suite`

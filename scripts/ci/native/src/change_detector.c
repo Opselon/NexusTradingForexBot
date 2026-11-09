@@ -10,6 +10,12 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(_WIN32)
+/* MSVC spells the pipe open/close _popen/_pclose. */
+#define popen _popen
+#define pclose _pclose
+#endif
+
 static bool is_doc_file(const char *p) {
     if (nse_starts_with(p, "docs/") || nse_starts_with(p, "agents/")) {
         return nse_ends_with(p, ".md") || nse_ends_with(p, ".markdown") ||
@@ -81,7 +87,12 @@ static bool sha_like(const char *s) {
 int change_detector_git_files(const char *base, const char *head, StrBuf *out) {
     if (!sha_like(base) || !sha_like(head)) return -1;
     char cmd[512];
+#if defined(_WIN32)
+    /* cmd.exe has no /dev/null; NUL is the null device. */
+    snprintf(cmd, sizeof(cmd), "git diff --name-only -z %s...%s 2>NUL", base, head);
+#else
     snprintf(cmd, sizeof(cmd), "git diff --name-only -z %s...%s 2>/dev/null", base, head);
+#endif
     FILE *f = popen(cmd, "r");
     if (!f) return -1;
     char chunk[4096];
