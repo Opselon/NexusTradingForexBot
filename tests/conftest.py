@@ -34,6 +34,7 @@ from __future__ import annotations
 # same tree (also a no-op).
 # ---------------------------------------------------------------------------
 import os
+from pathlib import Path
 import sys
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -283,3 +284,12 @@ def _isolate_web_auth_secret_store(tmp_path_factory: pytest.TempPathFactory):
         yield
     finally:
         _secret_store_mod.app_data_root = _real_app_data_root
+
+
+@pytest.fixture(scope="session")
+def verified_test_model_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One trusted synthetic 70D model per pytest worker, never in artifacts/."""
+    from tests.helpers.synthetic_checkpoint import write_verified_trained_bundle
+
+    root = tmp_path_factory.mktemp("verified_model_bundle")
+    return write_verified_trained_bundle(root / "model.pt", num_features=70, steps=30)
