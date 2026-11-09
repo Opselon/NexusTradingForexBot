@@ -584,6 +584,29 @@ jobs:
           python-version: "3.11"
           runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
+      # TEMPORARY DIAGNOSTIC (proof/leaf-timing only, DELETE before merge):
+      # the lock install fails on filelock 4.2.10 even with the PyPI
+      # fallback + best-match + --refresh retry, so the version is
+      # genuinely invisible from tier-1's network. This step asks the
+      # runner itself what each index returns and whether a proxy is in
+      # play. Runs even when the install failed.
+      - name: Diagnose index reachability (TEMPORARY, proof branch only)
+        if: always()
+        run: |
+          echo "=== proxy env ==="; env | grep -i proxy || echo "(no proxy env)"
+          echo "=== pypi.org resolves to ==="; getent hosts pypi.org || echo "(no getent/nslookup)"
+          echo "=== mirror resolves to ==="; getent hosts mirrors.aliyun.com || echo "(no getent)"
+          echo "=== PyPI filelock index (tier-1 view) ==="
+          curl -s --max-time 25 https://pypi.org/simple/filelock/ -o /tmp/pypi-filelock.html \
+            && grep -o 'filelock-4\.2\.10[^"]*' /tmp/pypi-filelock.html | head -3 \
+            || echo "4.2.10 NOT listed by pypi.org (or curl failed)"
+          echo "=== Mirror filelock index (tier-1 view) ==="
+          curl -s --max-time 25 https://mirrors.aliyun.com/pypi/simple/filelock/ -o /tmp/mirror-filelock.html \
+            && grep -o 'filelock-4\.2\.10[^"]*' /tmp/mirror-filelock.html | head -3 \
+            || echo "4.2.10 NOT listed by the mirror (or curl failed)"
+          echo "=== uv dry-run, filelock only ==="
+          uv pip install --dry-run --no-cache filelock==4.2.10 2>&1 | tail -4 || true
+
       # Per-run temp paths for the test DBs (see the job-level env comment:
       # ${{ runner.temp }} is step-only, so this step exports them via
       # $RUNNER_TEMP into $GITHUB_ENV for every later step). Must run
