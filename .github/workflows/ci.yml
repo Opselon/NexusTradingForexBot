@@ -719,13 +719,15 @@ jobs:
           # -n 2 (context switching + per-worker import cost).
           CORES="$(nproc 2>/dev/null || echo 2)"
           XDIST="$CORES"
-          # tier-1 is an 8-thread shared docker container the user runs under
-          # load; -n 8 under the coverage tracer oversubscribes it (context
-          # switching + per-worker import cost) and the expanded PR suite then
-          # blows the 10-minute hard cap. Cap workers at 4: fewer concurrent
-          # coverage-traced processes, same 356 files and same assertions — no
-          # test removal or silent skipping (see nexus-2core note above).
-          if [ "$XDIST" -gt 4 ]; then XDIST=4; fi
+          # Size xdist to the runner: tier-1 is an 8-thread shared docker box
+          # under load, but under the coverage tracer -n 8 covered more ground
+          # (91% at ~9m40s) than -n 4 (57% at same elapsed time) — fewer workers
+          # under coverage means each worker's tracer-serialized imports take
+          # longer wall-clock, so the suite runs SLOWER overall. Keep -n 8
+          # (capped) and save time elsewhere instead of changing worker count,
+          # which is not the bottleneck here (mirrors the documented
+          # nexus-2core case where fixed worker counts misfired).
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
@@ -769,7 +771,7 @@ jobs:
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
             --xdist "$XDIST" \
-            --pytest-extra "--durations=25 --cov=src --cov-report=term-missing --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents --deselect tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark --deselect tests/e2e/test_smoke_chain.py" \
+            --pytest-extra "--durations=25 --cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents --deselect tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark --deselect tests/e2e/test_smoke_chain.py" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
             --attempt "${{ github.run_attempt }}" \
