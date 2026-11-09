@@ -134,14 +134,24 @@ jobs:
       # Test-database isolation (fail-closed): same pinning as ci.yml
       # quality-tests — this lane never talks to a real/shared database.
       # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      # The provider pin is a literal (job level is fine); the four temp
+      # paths live in the "Pin test DB" step below, because
+      # ${{ runner.temp }} is step-only — job-level env with it makes
+      # GitHub reject the whole workflow at parse time (zero jobs ran).
       NSE_DATABASE__PROVIDER: sqlite
-      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
-      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
-      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
-      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Per-run temp paths for the test DBs (see the job-level env comment).
+      # Must run before the assert step and before any pytest step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
+        run: |
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
 
       - name: Runner selection record
         shell: bash
@@ -209,8 +219,9 @@ jobs:
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
-      # Prove the DB pinning above through the repo's own resolver,
-      # before any test step can open a database.
+      # Prove the DB pinning (provider at job level, paths from the pin
+      # step above) through the repo's own resolver, before any test step
+      # can open a database.
       - name: Assert test-database isolation (fail-closed)
         run: python scripts/ci/assert_test_db_isolation.py
 
@@ -313,14 +324,24 @@ jobs:
       # Test-database isolation (fail-closed): same pinning as ci.yml
       # quality-tests — this lane never talks to a real/shared database.
       # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      # The provider pin is a literal (job level is fine); the four temp
+      # paths live in the "Pin test DB" step below, because
+      # ${{ runner.temp }} is step-only — job-level env with it makes
+      # GitHub reject the whole workflow at parse time (zero jobs ran).
       NSE_DATABASE__PROVIDER: sqlite
-      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
-      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
-      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
-      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Per-run temp paths for the test DBs (see the job-level env comment).
+      # Must run before the assert step and before any pytest step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
+        run: |
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
 
       - name: Runner selection record
         shell: bash
@@ -381,8 +402,9 @@ jobs:
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
-      # Prove the DB pinning above through the repo's own resolver,
-      # before any test step can open a database.
+      # Prove the DB pinning (provider at job level, paths from the pin
+      # step above) through the repo's own resolver, before any test step
+      # can open a database.
       - name: Assert test-database isolation (fail-closed)
         run: python scripts/ci/assert_test_db_isolation.py
 

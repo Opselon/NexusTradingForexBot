@@ -514,3 +514,66 @@ jobs:
         models, ec = c.run(d)
         assert ec == 0
         assert not any(f.check.startswith("action-pin") for m in models for f in m.findings)
+
+
+def test_runner_temp_in_job_env_fails():
+    """Regression (f488c48): `${{ runner.temp }}` in job-level env made
+    GitHub reject ci.yml + tests-os.yml at parse time — zero jobs ran on
+    three pushes while every other check stayed green. The analyzer must
+    flag it as an ERROR so this class can never ship again."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "bad.yml",
+            """
+name: bad
+on: [push]
+jobs:
+  quality-tests:
+    runs-on: ubuntu-latest
+    env:
+      NSE_DATABASE__PROVIDER: sqlite
+      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - run: echo hi
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 1
+        hits = [f for m in models for f in m.findings if f.check == "job-env-step-only-context"]
+        assert len(hits) == 1, [f.as_line() for m in models for f in m.findings]
+        assert "runner" in hits[0].message
+
+
+def test_runner_temp_in_step_env_passes():
+    """The same expressions are LEGAL inside steps (step env, run, with):
+    the check must not fire there, or every workflow using runner.temp
+    in a step would false-positive."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "good.yml",
+            """
+name: good
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NSE_DATABASE__PROVIDER: sqlite
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - id: pin
+        env:
+          TMP: ${{ runner.temp }}
+        run: echo "$TMP"
+      - run: echo "${{ steps.pin.outputs.v }}"
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 0, [f.as_line() for m in models for f in m.findings]
+        assert not any(f.check == "job-env-step-only-context" for m in models for f in m.findings)

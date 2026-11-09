@@ -516,14 +516,17 @@ jobs:
       # app_settings.db pointing at PostgreSQL — and the audit
       # test-isolation seam plus the persisted provider would otherwise
       # resolve the test DB from that machine state. Pinning sqlite +
-      # per-run temp paths at JOB level covers every step, including the
-      # layered-smoke CLI and runtime gate, which run outside pytest and
-      # never see conftest's fixtures. Proven by the assert step below.
+      # per-run temp paths covers every step, including the layered-smoke
+      # CLI and runtime gate, which run outside pytest and never see
+      # conftest's fixtures. Proven by the assert step below.
+      #
+      # The provider pin is a literal, so it CAN live at job level. The
+      # four temp paths CANNOT: ${{ runner.temp }} is a step-only context
+      # — GitHub rejects the WHOLE workflow at parse time if it appears
+      # in job-level env (f488c48 broke ci.yml + tests-os.yml exactly this
+      # way: zero jobs ran on three pushes). The "Pin test DB" step below
+      # exports the same paths via $RUNNER_TEMP + $GITHUB_ENV instead.
       NSE_DATABASE__PROVIDER: sqlite
-      NSE_DATABASE__SQLITE_PATH: ${{ runner.temp }}/nse-ci-audit.sqlite
-      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
-      NEXUS_SETTINGS_DB: ${{ runner.temp }}/nse-ci-settings.db
-      NEXUS_DATA_ROOT: ${{ runner.temp }}/nse-ci-data
 
     steps:
       - name: Checkout repository
@@ -578,9 +581,22 @@ jobs:
           python-version: "3.11"
           runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
-      # Prove the DB pinning above through the repo's own resolver, before
-      # any test or smoke step can open a database. Fails the lane instead
-      # of letting it touch a shared database.
+      # Per-run temp paths for the test DBs (see the job-level env comment:
+      # ${{ runner.temp }} is step-only, so this step exports them via
+      # $RUNNER_TEMP into $GITHUB_ENV for every later step). Must run
+      # before the assert step below and before any pytest/smoke step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
+        run: |
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
+
+      # Prove the DB pinning (provider at job level, paths from the pin step
+      # above) through the repo's own resolver, before any test or smoke
+      # step can open a database. Fails the lane instead of letting it
+      # touch a shared database.
       - name: Assert test-database isolation (fail-closed)
         run: python scripts/ci/assert_test_db_isolation.py
 

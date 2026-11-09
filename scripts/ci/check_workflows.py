@@ -34,6 +34,15 @@ Checks (each is a finding with a severity; CI fails on any ERROR):
      well-formed SHA is the *correct commit for its advertised tag*
      (via `git ls-remote ... refs/tags/<v>*` + peeling `^{}`) stays the
      mandatory manual audit step for any pin change.
+  9. Step-only contexts in workflow/job-level `env:` (ERROR): `${{ runner.* }}`
+     and `${{ steps.* }}` are NOT available outside steps — GitHub rejects
+     the whole workflow at parse time (zero jobs run) if they appear in
+     workflow- or job-level `env:`. Regression: f488c48 put
+     `${{ runner.temp }}` in job-level env of ci.yml + tests-os.yml and
+     killed both workflows on three consecutive pushes (f488c48, bcb5902,
+     fa10eed) while every other check stayed green, so nothing looked
+     wrong. The fix pattern is a step that exports the paths via the
+     $RUNNER_TEMP shell variable into $GITHUB_ENV (see "Pin test DB" steps).
 
 Lane vocabulary is DERIVED FROM THE ACTUAL REPO, not hard-coded to a foreign
 reference. The classifier (classify_changes.py) is the canonical lane list;
@@ -77,6 +86,12 @@ _LANE_REF_RE = re.compile(r"needs\.(?P<job>[A-Za-z0-9_\-]+)\.outputs\.(?P<lane>[
 # full ref string; the `@<commit-ish>` tail decides pin vs. tag.
 _USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>[^\s#]+)", re.MULTILINE)
 _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
+
+# 9. Step-only contexts in workflow/job-level `env:` — `${{ runner.* }}`
+# and `${{ steps.* }}` are unavailable outside steps (GitHub rejects the
+# whole workflow at parse time; zero jobs run). `github`/`needs`/`matrix`/
+# `vars`/`inputs`/`secrets` ARE available at job level and must NOT match.
+_JOB_ENV_FORBIDDEN_RE = re.compile(r"\$\{\{\s*(runner|steps)\s*[.\[]")
 
 # 8b. Phantom-pin ledger (regression pins). An annotated-tag *object* SHA is
 # 40-hex and passes the shape rule, yet GitHub Actions cannot resolve it to a
@@ -528,6 +543,50 @@ def check_action_pins(wf: WorkflowModel) -> None:
             )
 
 
+def check_job_env_contexts(wf: WorkflowModel) -> None:
+    """Step-only contexts in workflow/job-level `env:` are a parse-time kill.
+
+    `${{ runner.* }}` (and `${{ steps.* }}`) are only available inside
+    steps. In workflow- or job-level `env:` GitHub rejects the ENTIRE
+    workflow at parse time — zero jobs, zero logs — while every other
+    workflow stays green, so the breakage looks like "CI is fine, the
+    quality lanes just didn't run". The legitimate pattern is a step that
+    exports the value via a shell variable into $GITHUB_ENV.
+    """
+    raw = wf.raw
+    if not isinstance(raw, dict):
+        return
+    scopes: list[tuple[str, dict]] = []
+    top_env = raw.get("env")
+    if isinstance(top_env, dict):
+        scopes.append(("(workflow-level)", top_env))
+    jobs = raw.get("jobs") or {}
+    for jname, jbody in jobs.items():
+        if not isinstance(jbody, dict):
+            continue
+        job_env = jbody.get("env")
+        if isinstance(job_env, dict):
+            scopes.append((jname, job_env))
+    for scope, env in scopes:
+        for key, value in env.items():
+            if not isinstance(value, str):
+                continue
+            m = _JOB_ENV_FORBIDDEN_RE.search(value)
+            if m is None:
+                continue
+            ctx = m.group(1)
+            wf.error(
+                scope if scope != "(workflow-level)" else "",
+                "job-env-step-only-context",
+                f"`{key}` uses ${{{{ {ctx}.* }}}} in "
+                f"{'workflow-level' if scope == '(workflow-level)' else 'job-level'} "
+                f"`env:` — the `{ctx}` context is only available inside "
+                f"steps; GitHub rejects the whole workflow at parse time "
+                f"(zero jobs run). Move the value into a step that exports "
+                f"it via $GITHUB_ENV (e.g. $RUNNER_TEMP for temp paths).",
+            )
+
+
 def analyze_workflow(wf: WorkflowModel) -> None:
     check_undefined_outputs(wf)
     check_local_action_checkout(wf)
@@ -535,6 +594,7 @@ def analyze_workflow(wf: WorkflowModel) -> None:
     check_silent_skip(wf)
     check_self_watch(wf)
     check_action_pins(wf)
+    check_job_env_contexts(wf)
 
 
 def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel], int]:
