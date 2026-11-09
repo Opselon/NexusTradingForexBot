@@ -1,6 +1,7 @@
 """
 Background Research Worker
 ==========================
+# timing-probe: leaf-change CI proof (2026-11-09) — scratch branch only, never merge.
 PHASE 09B isolated, restart-safe, observable background worker for the
 Strategy Research / Validation pipeline (spec 31 / 32 / 42).
 
