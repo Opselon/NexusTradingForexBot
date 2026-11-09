@@ -464,8 +464,9 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
     size_t top = 0;
     for (size_t i = 0; i < changed_len; i++) {
         size_t root = changed_idx[i];
-        if (root >= g->mod_count) continue;
+        if (root >= g->mod_count) die("changed node index out of range");
         if (!visited[root]) {
+            if (top >= g->mod_count) die("DFS stack capacity invariant violated");
             visited[root] = true;
             stack[top++] = root;
         }
@@ -477,12 +478,13 @@ void graph_reachable_tests(const Graph *g, const size_t *changed_idx,
         bool has_importer = false;
         for (size_t e = 0; e < g->importer_counts[idx]; e++) {
             size_t importer = g->importers[idx][e];
-            if (importer >= g->mod_count) continue; /* reject corrupt edge safely */
+            if (importer >= g->mod_count) die("dependency graph contains an invalid edge");
             has_importer = true;
             if (g->is_test[importer]) {
                 sel_test[importer] = true;
                 covered[idx] = true;
             } else if (!visited[importer]) {
+                if (top >= g->mod_count) die("DFS stack capacity invariant violated");
                 visited[importer] = true;
                 stack[top++] = importer;
             }
