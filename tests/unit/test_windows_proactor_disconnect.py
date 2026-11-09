@@ -41,6 +41,20 @@ import sys
 
 import pytest
 
+def _windows_disconnect_error(code: int, message: str = "remote endpoint disconnected"):
+    """Build a Windows-shaped socket error on every host OS.
+
+    On POSIX, OSError does not populate the Windows-only winerror attribute;
+    attach the same numeric evidence explicitly so classifier policy is still
+    tested rather than accidentally treating it as a POSIX errno.
+    """
+    err = errno.EINVAL if code == 64 else errno.ECONNRESET
+    exc = ConnectionResetError(err, message, None, code, None)
+    if getattr(exc, "winerror", None) is None:
+        exc.winerror = code
+    return exc
+
+
 from nexus_scalp.web.transports import (
     classify_transport_disconnect,
     expected_disconnect_codes,
@@ -55,7 +69,7 @@ from nexus_scalp.web.transports import (
 @pytest.mark.parametrize(
     ("exc", "label"),
     [
-        (ConnectionResetError(10054, "forcibly closed"), "winerror-10054-as-errno"),
+        (_windows_disconnect_error(10054, "forcibly closed"), "winerror-10054"),
         (ConnectionResetError(errno.ECONNRESET, "x"), "ECONNRESET"),
         (BrokenPipeError(errno.EPIPE, "broken pipe"), "EPIPE"),
         (ConnectionAbortedError(errno.ECONNABORTED, "aborted"), "ECONNABORTED"),
@@ -69,7 +83,7 @@ def test_expected_disconnect_codes_are_classified(exc, label):
 
 def test_production_exception_is_classified():
     """The exact exception from the production log."""
-    exc = ConnectionResetError(10054, "An existing connection was forcibly closed")
+    exc = _windows_disconnect_error(10054, "An existing connection was forcibly closed")
     assert is_transport_disconnect_exception(exc)
     assert classify_transport_disconnect(exc, context=_proactor_context(exc))
 
@@ -83,8 +97,8 @@ def test_production_netname_deleted_exception_is_classified():
     ``errno`` as EINVAL(22); EINVAL alone must NOT be trusted (see the guard
     test below), so the Windows code is what carries the classification.
     """
-    exc = ConnectionResetError(
-        22, "The specified network name is no longer available", None, 64, None
+    exc = _windows_disconnect_error(
+        64, "The specified network name is no longer available"
     )
     assert exc.errno == errno.EINVAL and exc.winerror == 64
     assert is_transport_disconnect_exception(exc)
@@ -94,14 +108,14 @@ def test_production_netname_deleted_exception_is_classified():
 def test_einval_without_windows_code_stays_visible():
     """EINVAL(22) on its own is an application argument error, never a disconnect."""
     exc = OSError(errno.EINVAL, "Invalid argument")
-    assert exc.winerror is None
+    assert getattr(exc, "winerror", None) is None
     assert not is_transport_disconnect_exception(exc)
     assert not classify_transport_disconnect(exc, context=_proactor_context(exc))
 
 
 def test_proactor_transport_callback_context_is_classified():
     """The structural signature from the production traceback."""
-    exc = ConnectionResetError(10054, "forcibly closed")
+    exc = _windows_disconnect_error(10054, "forcibly closed")
     for qualname in (
         "_ProactorSocketTransport._call_connection_lost",
         "_ProactorBasePipeTransport._call_connection_lost",
@@ -272,6 +286,7 @@ def test_loop_handler_is_idempotent():
         loop.close()
 
 
+@pytest.mark.skipif(not hasattr(asyncio, "ProactorEventLoop"), reason="Windows Proactor loop is unavailable on this platform")
 def test_loop_handler_installs_on_proactor_runtime():
     """On the actual supported runtime the handler attaches to the real loop."""
     loop = asyncio.ProactorEventLoop()
