@@ -45,9 +45,11 @@ static const char *FALLBACK_SUITE_FILES[] = { "tests/critical_suite.txt",
  *   build  — [build-system] / [tool.setuptools.*] (what tests run against)
  *   mypy   — [tool.mypy.*] only (type-checking; mypy runs in its own step)
  *   lint   — [tool.ruff.*] only (lint; ruff runs in its own step)
- *   meta   — [project] name/version/description/scripts only
+ *   meta   — [project] name/version/description only
+ *   scripts — [project.scripts] (console entry points; fail closed to
+ *     global — no finer CLI selection exists)
  *   unknown — an unrecognised section, or the diff could not be classified
- * Global iff any token is pytest/deps/build/unknown. A NULL scope (old
+ * Global iff any token is pytest/deps/build/scripts/unknown. A NULL scope (old
  * callers that do not pass --pyproject-scope) -> global (fail closed).
  * An EMPTY scope means "no semantic difference" (comment/whitespace-only
  * diff) -> NOT global.
@@ -57,7 +59,7 @@ static const char *FALLBACK_SUITE_FILES[] = { "tests/critical_suite.txt",
 static bool pyproject_scope_is_global(const char *scope) {
     if (!scope) return true; /* unclassified -> fail closed */
     if (!*scope) return false; /* no semantic difference */
-    /* comma-separated tokens; global on any of pytest/deps/build/unknown */
+    /* comma-separated tokens; global on pytest/deps/build/scripts/unknown */
     const char *p = scope;
     while (*p) {
         const char *comma = strchr(p, ',');
@@ -65,6 +67,7 @@ static bool pyproject_scope_is_global(const char *scope) {
         if ((len == 6 && strncmp(p, "pytest", 6) == 0) ||
             (len == 4 && strncmp(p, "deps", 4) == 0) ||
             (len == 5 && strncmp(p, "build", 5) == 0) ||
+            (len == 7 && strncmp(p, "scripts", 7) == 0) ||
             (len == 7 && strncmp(p, "unknown", 7) == 0)) {
             return true;
         }

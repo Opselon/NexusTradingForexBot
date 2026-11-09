@@ -134,6 +134,25 @@ static int test_json_parser(void) {
         return 17;
     }
     sb_free(&w);
+    /* writer: astral plane -> surrogate pair (U+1F600). */
+    sb_init(&w);
+    json_write_escaped(&w, "\xf0\x9f\x98\x80"); /* 😀, U+1F600 */
+    if (!w.data || strcmp(w.data, "\"\\ud83d\\ude00\"") != 0) {
+        sb_free(&w);
+        arena_free(&a);
+        return 18;
+    }
+    sb_free(&w);
+    /* writer: invalid UTF-8 byte 0xFF escapes as its own codepoint
+     * (regression: a negative char used to print 8 hex digits). */
+    sb_init(&w);
+    json_write_escaped(&w, "\xff");
+    if (!w.data || strcmp(w.data, "\"\\u00ff\"") != 0) {
+        sb_free(&w);
+        arena_free(&a);
+        return 19;
+    }
+    sb_free(&w);
     sb_free(&deep);
     arena_free(&a);
     return 0;

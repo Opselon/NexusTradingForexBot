@@ -186,18 +186,31 @@ A change that touches `pyproject.toml`, `requirements.lock`,
 `requirements.txt`, `uv.lock`, `tests/conftest.py`, `pytest.ini`,
 `setup.cfg`, `tox.ini`, or anything under `configs/` triggers **global
 invalidation**: the C17 planner runs the expanded plan as the blocking PR
-gate (on PR #731: 351 of 866 test files, 5607 tests — the expanded plan is
-the full critical set plus the tests the changed files pull in), and the
-critical-file coverage gate enforces its per-file floors on that plan.
-The full critical suite therefore still gates global-impact PRs; the
-targeted fast shape applies only to leaf changes. A leaf change (e.g. one
-line in `src/nexus_scalp/research/worker.py`) selects 7 test files.
+gate (the expanded plan is the full critical set — 324 files — plus the
+tests the changed files pull in; on PR #731's full diff that was 351 of
+866 test files, 5607 tests), and the critical-file coverage gate
+enforces its per-file floors on that plan. The full critical suite
+therefore still gates global-impact PRs; the targeted fast shape applies
+only to leaf changes. A leaf change (e.g. one line in
+`src/nexus_scalp/research/worker.py`) selects 9 test files via the AST
+metadata path (7 via the line scanner).
+
+Note: the lane classifier (`scripts/ci/classify_changes.py`) is
+section-blind for `pyproject.toml` — any change to the file adds the
+`deps` and `python` lanes even for a mypy-only or lint-only change that
+the C17 planner treats as a non-global tooling scope. No gating decision
+depends on that distinction today, so it is a documented follow-up, not
+a blocker (see the comment in `classify_changes.py`).
 
 ### Wall-clock budget rule (timing assertions vs coverage)
 
 A test that asserts a **wall-clock** budget (`time.perf_counter_ns`,
 `time.time`) must never run under coverage instrumentation in parallel
-with other tests. Measured 2026-11-09 (leaf-change benchmark, local VM):
+with other tests. Two such assertions live in the critical suite: the
+payload value-gate cost test and the model-promotion transaction SLA
+(both pinned in `tests/ci/test_pr_policy_benchmark_lane.py`). Measured
+2026-11-09 (leaf-change benchmark, local VM) with the pre-optimization
+gate:
 
 | measurement | gate cost |
 | :--- | ---: |
@@ -207,19 +220,21 @@ with other tests. Measured 2026-11-09 (leaf-change benchmark, local VM):
 | without coverage, parallel suite running alongside | ~22 us/call |
 | CI Quality lane, 2-core tier-2, `--cov` + xdist `-n 2` | **158 us/call — FAIL vs the 100 us floor** |
 
-The gate itself costs ~23 us in every configuration; only the
-coverage + parallelism combination inflates the measurement. The
-assertion under coverage measures the scheduler, not the gate — the same
-tracer pattern as the MT5 CPU budget. So the payload value-gate budget
-test (`test_gate_cost_is_far_cheaper_than_the_write_it_prevents`) is
-deselected from every coverage-instrumented pytest invocation and runs
-in a dedicated step in the same lane — uninstrumented, single-process,
-blocking on every PR. The other four tests in that file are pure
-correctness assertions (byte reduction, production projection,
-losslessness) and stay in the coverage run. CPU-time budgets (e.g. the
-`budget_cpu_ms` / `process_time` seam used by the ML QA 018 suite) are
-not affected by this rule: CPU time removes scheduler noise, so those
-assertions stay in the coverage run.
+The gate itself was later optimized to ~0.6 us/call isolated (~2.8 us
+under the tracer), so the isolated number is now far below the floor —
+but the measurement distortion under coverage + parallelism remains,
+which is why the rule is structural, not a test-code tweak. Under
+coverage + parallelism a wall-clock assertion measures the scheduler,
+not the code — the same tracer pattern as the MT5 CPU budget. So both
+budget tests are deselected from every coverage-instrumented pytest
+invocation and run in a dedicated step in the same lane —
+uninstrumented, single-process, blocking on every PR. The other four
+tests in the gate file are pure correctness assertions (byte reduction,
+production projection, losslessness) and stay in the coverage run; the
+promotion node's functional assertions travel with it into the dedicated
+step. CPU-time budgets (e.g. the `budget_cpu_ms` / `process_time` seam
+used by the ML QA 018 suite) are not affected by this rule: CPU time
+removes scheduler noise, so those assertions stay in the coverage run.
 
 Enforcement is structural, not conventional: the deselect + dedicated
 step are pinned by `tests/ci/test_pr_policy_benchmark_lane.py`. If the

@@ -1,25 +1,37 @@
 """PR-policy regression: wall-clock budget tests never run under coverage.
 
 Policy (2026-11 audit, area 4): a test that asserts a WALL-CLOCK budget
-(``perf_counter_ns``) must not execute in a coverage-instrumented,
-parallel pytest run. Measured 2026-11-09: the payload value-gate costs
-~23 us/call isolated with or without coverage, but coverage + xdist on a
-loaded runner inflates the same measurement to 72 us (4-CPU VM under
-load) and 158 us in CI on the 2-core tier-2 box — past the 100 us floor.
-Under coverage + parallelism the assertion measures the scheduler, not
-the gate. The rule is therefore structural, not a test-code tweak:
+(``perf_counter`` / ``perf_counter_ns``) must not execute in a
+coverage-instrumented, parallel pytest run. Measured 2026-11-09: the
+payload value-gate cost ~23 us/call isolated with or without coverage,
+but coverage + xdist on a loaded runner inflated the same measurement to
+72 us (4-CPU VM under load) and 158 us in CI on the 2-core tier-2 box —
+past the 100 us floor. (The gate itself was later optimized to ~0.6
+us/call, so the isolated number is now far below the floor — but the
+measurement distortion under coverage + parallelism remains, which is
+why the rule is structural, not a test-code tweak.) Under coverage +
+parallelism the assertion measures the scheduler, not the code. The
+model-promotion SLA node has the same shape: a single-shot wall-clock
+assert (500 ms x 1.25 jitter headroom = 625 ms) over a real DB write,
+which its own comment admits already measured 511 ms once.
+
+The rule is therefore:
 
 * every coverage-instrumented pytest invocation deselects the
-  wall-clock node;
-* the node runs in a dedicated step in the SAME job/lane — uninstrumented
+  wall-clock nodes;
+* the nodes run in a dedicated step in the SAME job/lane — uninstrumented
   (no ``--cov``), single-process (no ``-n``), blocking;
-* the other tests in the file are pure correctness assertions and stay in
-  the coverage run.
+* the other tests in the gate file are pure correctness assertions and
+  stay in the coverage run; the promotion node's functional assertions
+  (commit, audit rows) travel with it into the dedicated step, so
+  nothing is lost — the node simply runs uninstrumented.
 
 These tests pin the workflow wiring so a future edit cannot silently
-re-instrument the budget assertion (which would re-open the 9715a4ae
-Quality-lane failure) or silently drop it (which would delete the
-protection entirely).
+re-instrument a budget assertion (which would re-open the 9715a4ae
+Quality-lane failure) or silently drop one (which would delete the
+protection entirely). A new wall-clock budget assertion anywhere in the
+critical suite must be added to WALL_CLOCK_NODES here AND to the
+deselect + dedicated step in every coverage lane.
 """
 
 from __future__ import annotations
@@ -30,12 +42,18 @@ import yaml
 
 WORKFLOWS = Path(".github/workflows")
 
-# The only wall-clock budget assertion in the critical suite. The node id
-# is pinned exactly: a rename in the test file must update the workflows
+# Every wall-clock budget assertion in the critical suite. The node ids
+# are pinned exactly: a rename in a test file must update the workflows
 # (and this test) together, never silently stop matching the deselect.
-WALL_CLOCK_NODE = (
+# NOTE (review 2026-11-09): an earlier version of this file claimed the
+# gate node was the ONLY such assertion — false. The promotion-transaction
+# SLA node below asserts a wall-clock budget too, so it is pinned here
+# like the gate node.
+WALL_CLOCK_NODES = (
     "tests/unit/news/ingest/test_payload_value_gate_benchmark.py"
-    "::test_gate_cost_is_far_cheaper_than_the_write_it_prevents"
+    "::test_gate_cost_is_far_cheaper_than_the_write_it_prevents",
+    "tests/integration/test_model_promotion_pipeline_e2e.py"
+    "::test_promotion_transaction_happy_path_and_benchmark",
 )
 
 
@@ -64,29 +82,45 @@ def _code(run: str) -> str:
     return "\n".join(line for line in run.splitlines() if not line.strip().startswith("#"))
 
 
-def test_ci_quality_tests_deselects_wall_clock_node_from_coverage_run() -> None:
-    """ci.yml quality-tests: the planner run deselects the budget node."""
+def test_ci_quality_tests_deselects_wall_clock_nodes_from_coverage_run() -> None:
+    """ci.yml quality-tests: the planner run deselects the budget nodes."""
     ci = _load("ci.yml")
     steps = _steps(ci["jobs"]["quality-tests"])
     planner = _named(steps, "Planner-driven pytest")
     run = _run(planner)
     assert "--cov=src" in run, "quality-tests planner run must stay coverage-instrumented"
-    assert f"--deselect {WALL_CLOCK_NODE}" in run, (
-        "quality-tests planner run must deselect the wall-clock budget node"
-    )
+    for node in WALL_CLOCK_NODES:
+        assert f"--deselect {node}" in run, (
+            f"quality-tests planner run must deselect the wall-clock budget node {node}"
+        )
 
 
 def test_ci_quality_tests_has_uninstrumented_blocking_budget_step() -> None:
-    """ci.yml quality-tests: the budget node has its own uninstrumented step."""
+    """ci.yml quality-tests: the budget nodes have their own uninstrumented step."""
     ci = _load("ci.yml")
     steps = _steps(ci["jobs"]["quality-tests"])
     budget = _named(steps, "Performance budget")
     run = _code(_run(budget))
-    assert WALL_CLOCK_NODE in run
+    for node in WALL_CLOCK_NODES:
+        assert node in run, f"budget step must run the wall-clock node {node}"
     assert "--cov" not in run, "budget step must run WITHOUT coverage instrumentation"
     assert '"-n"' not in run and " -n " not in run, "budget step must run single-process"
     assert "perf_budget" in _run(budget), "budget step must record a perf_budget check"
     assert 'exit "$rc"' in run, "budget step must fail the job when the budget trips"
+
+
+def test_ci_quality_tests_budget_step_has_no_skip_guard() -> None:
+    """ci.yml quality-tests: the budget step cannot be skipped or tolerated.
+
+    The step must have no ``if:`` (it runs in every mode) and no
+    ``continue-on-error`` (a tripped budget must fail the job). A guard
+    here would silently drop the wall-clock protection.
+    """
+    ci = _load("ci.yml")
+    steps = _steps(ci["jobs"]["quality-tests"])
+    budget = _named(steps, "Performance budget")
+    assert "if" not in budget, "budget step must have no if: guard"
+    assert "continue-on-error" not in budget, "budget step must not have continue-on-error"
 
 
 def test_ci_quality_tests_reports_perf_budget_status() -> None:
@@ -96,21 +130,22 @@ def test_ci_quality_tests_reports_perf_budget_status() -> None:
     assert '"perf_budget"' in text
 
 
-def test_os_full_runs_deselect_wall_clock_node_in_both_legs() -> None:
-    """tests-os.yml: both FULL legs deselect the node from the coverage run."""
+def test_os_full_runs_deselect_wall_clock_nodes_in_both_legs() -> None:
+    """tests-os.yml: both FULL legs deselect the nodes from the coverage run."""
     os_wf = _load("tests-os.yml")
     for leg in ("tests-linux-self-hosted", "tests-linux-hosted"):
         steps = _steps(os_wf["jobs"][leg])
         full = _named(steps, "Run Full Critical Suite")
         run = _run(full)
         assert "--cov=src" in run, f"{leg} FULL run must stay coverage-instrumented"
-        assert f"'--deselect', '{WALL_CLOCK_NODE}'" in run, (
-            f"{leg} FULL run must deselect the wall-clock budget node"
-        )
+        for node in WALL_CLOCK_NODES:
+            assert f"'--deselect', '{node}'" in run, (
+                f"{leg} FULL run must deselect the wall-clock budget node {node}"
+            )
 
 
 def test_os_full_runs_have_uninstrumented_blocking_budget_step() -> None:
-    """tests-os.yml: both legs run the node uninstrumented, FULL-mode only."""
+    """tests-os.yml: both legs run the nodes uninstrumented, FULL-mode only."""
     os_wf = _load("tests-os.yml")
     for leg in ("tests-linux-self-hosted", "tests-linux-hosted"):
         steps = _steps(os_wf["jobs"][leg])
@@ -118,19 +153,23 @@ def test_os_full_runs_have_uninstrumented_blocking_budget_step() -> None:
         assert budget.get("if") == "steps.lane.outputs.mode == 'FULL'", (
             f"{leg} budget step must be FULL-mode only"
         )
+        assert "continue-on-error" not in budget, (
+            f"{leg} budget step must not have continue-on-error"
+        )
         run = _code(_run(budget))
-        assert WALL_CLOCK_NODE in run
+        for node in WALL_CLOCK_NODES:
+            assert node in run, f"{leg} budget step must run the wall-clock node {node}"
         assert "--cov" not in run, f"{leg} budget step must run WITHOUT coverage"
         assert '"-n"' not in run and " -n " not in run, f"{leg} budget step must run single-process"
         assert 'exit "$rc"' in run, f"{leg} budget step must fail the job on a trip"
 
 
-def test_os_skew_runs_do_not_deselect_the_node() -> None:
-    """tests-os.yml: SKEW runs keep the node — they carry no --cov.
+def test_os_skew_runs_do_not_deselect_the_nodes() -> None:
+    """tests-os.yml: SKEW runs keep the nodes — they carry no --cov.
 
-    The SKEW planner run is uninstrumented, so the budget assertion already
-    runs where its measurement means something; deselecting it there would
-    leave the dedicated FULL-only step as its only home and the assertion
+    The SKEW planner run is uninstrumented, so the budget assertions already
+    run where their measurements mean something; deselecting them there would
+    leave the dedicated FULL-only step as their only home and the assertions
     would silently not run on PRs at all.
     """
     os_wf = _load("tests-os.yml")
@@ -139,6 +178,7 @@ def test_os_skew_runs_do_not_deselect_the_node() -> None:
         skew = _named(steps, "Run C-planned targeted subset")
         run = _run(skew)
         assert "--cov" not in run, f"{leg} SKEW run must stay uninstrumented"
-        assert WALL_CLOCK_NODE not in run, (
-            f"{leg} SKEW run must NOT deselect the node (it is the PR home)"
-        )
+        for node in WALL_CLOCK_NODES:
+            assert node not in run, (
+                f"{leg} SKEW run must NOT deselect the node {node} (it is the PR home)"
+            )

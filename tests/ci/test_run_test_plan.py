@@ -354,6 +354,10 @@ def test_pyproject_scope_classification(tmp_path):
         (PYPROJECT_BASE.replace('"torch>=2.2.0,<3.0.0"', '"torch>=2.3.0,<3.0.0"'), "deps"),
         (PYPROJECT_BASE.replace('version = "9.0.24"', 'version = "9.0.25"'), "meta"),
         (
+            PYPROJECT_BASE + '\n[project.scripts]\nnexus = "nexus_scalp.cli.main:app"\n',
+            "scripts",
+        ),
+        (
             PYPROJECT_BASE.replace('addopts = "-ra -q"', 'addopts = "-ra -q -x"').replace(
                 'python_version = "3.11"', 'python_version = "3.12"'
             ),
@@ -396,7 +400,7 @@ def test_mypy_only_pyproject_selects_tooling_suite(tmp_path, engine_binary):
     assert _plan_ids(mypy) == ["tests/ci/test_tooling.py"]
     assert "mypy" in mypy["notes"][0]
 
-    for scope in ("pytest", "deps", "build", "unknown", None):
+    for scope in ("pytest", "deps", "build", "scripts", "unknown", None):
         plan = rtp.c_plan(
             engine_binary,
             str(repo),

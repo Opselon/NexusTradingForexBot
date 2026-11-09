@@ -75,15 +75,18 @@ def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
       pytest — [tool.pytest.ini_options] (collection/behaviour for every test)
       deps   — [project] dependencies / requires-python / optional-dependencies
       build  — [build-system] / [tool.setuptools.*]
+      scripts — [project.scripts] (console entry points; the CLI tests must
+        run — no finer selection exists, so fail closed to global)
       mypy   — [tool.mypy.*] only
       lint   — [tool.ruff.*] only
-      meta   — [project] name/version/description/scripts only
+      meta   — [project] name/version/description only
       unknown — an unrecognised section, or the diff could not be classified
     "" (empty) means the two versions are semantically identical
     (comment/whitespace-only diff). The C engine owns the final verdict:
-    pytest/deps/build/unknown (or an absent scope) -> global invalidation;
-    mypy/lint/meta-only -> CI-tooling scope, no full suite. A git or parse
-    failure returns "unknown" (fail closed, same as today's behaviour).
+    pytest/deps/build/scripts/unknown (or an absent scope) -> global
+    invalidation; mypy/lint/meta-only -> CI-tooling scope, no full suite.
+    A git or parse failure returns "unknown" (fail closed, same as today's
+    behaviour).
     """
 
     def _load(rev: str) -> dict | None:
@@ -105,6 +108,13 @@ def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
             if op.get(key) != np.get(key):
                 if key in ("dependencies", "requires-python", "optional-dependencies"):
                     scopes.add("deps")
+                elif key == "scripts":
+                    # Console entry points: the installed CLI changes, so
+                    # tests/cli/* must run. The engine has no "cli"
+                    # selection, so fail closed to global (review 2026-11-09:
+                    # scripts used to land in "meta" and run tests/ci only,
+                    # which would never exercise the CLI).
+                    scopes.add("scripts")
                 else:
                     scopes.add("meta")
 

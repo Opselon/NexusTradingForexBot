@@ -167,8 +167,8 @@ Engine `0.2.0`, one changed file, `pull_request` event, targeted mode:
 | `shadow/shadow70/runtime.py` | — | 20 (plugin-fixture users included) |
 | `shadow/shadow70/models.py` | — | 31 |
 | `pyproject.toml` (pytest scope) | expanded, 324 | expanded, 324 |
-| `pyproject.toml` (mypy scope) | targeted, 10 (`tests/ci`) | targeted, 10 |
-| `pyproject.toml` + `tests/conftest.py` | expanded, 325 | expanded, 325 |
+| `pyproject.toml` (mypy scope) | targeted, 12 (`tests/ci`) | targeted, 12 |
+| `pyproject.toml` + `tests/conftest.py` | expanded, 324 | expanded, 324 |
 
 Costs: AST extraction takes ~15 s wall on the full repo (1679 files,
 3.8 MB JSON) on this VM; the engine plan itself takes <1 s. The
@@ -188,11 +188,9 @@ string (an em-dash in a fallback reason or note) failed validation with
 
 ## 7. Open questions / risks (for the coordinator)
 
-- **Engine version is 0.2.0.** `ci.yml` still greps `0.1.0` in the
-  native-binary restore step and cache key (area 4's files). The cache
-  key also hashes `scripts/ci/native/**`, so no stale binary restores;
-  the grep falling through only forces a rebuild. Area 4 should bump
-  the literals to `0.2.0`.
+- **Engine version is 0.2.0.** The `ci.yml` `0.1.0` literals in the
+  native-binary restore step and cache key were bumped to `0.2.0` by the
+  coordinator fixup (431d91e6).
 - **Symbol-level reachability** (see §3 residual) is the principled fix
   for hub fan-outs; it is a larger design change, not attempted here.
 - **Non-literal dynamic imports** (11 files) and **helper-defined

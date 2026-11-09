@@ -280,39 +280,39 @@ jobs:
         shell: bash
         run: |
           set +e
-          # Wall-clock budget test deselected from this coverage run (see
+          # Wall-clock budget tests deselected from this coverage run (see
           # the dedicated perf-budget step below): coverage + xdist inflates
-          # its perf_counter_ns past the 100 us floor on the 2-core box.
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '-q']).returncode)" \
+          # perf_counter measurements past their floors on the 2-core box.
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '--deselect', 'tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark', '-q']).returncode)" \
                  > "pytest-linux.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           cat "pytest-linux.txt" | tail -60
           exit $rc
 
-      - name: Performance budget — wall-clock gate (uninstrumented)
+      - name: Performance budget — wall-clock budgets (uninstrumented)
         if: steps.lane.outputs.mode == 'FULL'
         shell: bash
         run: |
           set +e
-          # FULL mode runs the critical suite WITH coverage, so the payload
-          # value-gate wall-clock budget test is deselected there (coverage
-          # + xdist inflates perf_counter_ns past the 100 us floor on the
-          # 2-core runner; measured 2026-11-09) and runs here instead —
+          # FULL mode runs the critical suite WITH coverage, so the
+          # wall-clock budget tests are deselected there (coverage + xdist
+          # inflates perf_counter measurements past their floors on the
+          # 2-core runner; measured 2026-11-09) and run here instead —
           # uninstrumented, single-process, blocking. SKEW mode needs no
-          # step: its planner run carries no --cov, so the test already
-          # runs uninstrumented there.
-          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents \
+          # step: its planner run carries no --cov, so the tests already
+          # run uninstrumented there.
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark \
             -q --tb=short -p no:cacheprovider \
             --junitxml=pytest-perf-budget.xml \
             2>&1 | tee pytest-perf-budget.txt
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
-            echo "::error::payload value-gate wall-clock budget tripped while UNINSTRUMENTED — the gate itself got slower (see pytest-perf-budget.xml)"
+            echo "::error::wall-clock budget tripped while UNINSTRUMENTED — the code itself got slower (see pytest-perf-budget.xml)"
             exit "$rc"
           fi
           grep -h "gate cost" pytest-perf-budget.txt || true
-          echo "perf-budget: PASS (gate cost under 100us/call, uninstrumented)"
+          echo "perf-budget: PASS (wall-clock budgets hold, uninstrumented)"
 
       - name: Lane report (always — required-context honesty contract)
         if: always()
@@ -496,39 +496,39 @@ jobs:
         shell: bash
         run: |
           set +e
-          # Wall-clock budget test deselected from this coverage run (see
+          # Wall-clock budget tests deselected from this coverage run (see
           # the dedicated perf-budget step below): coverage + xdist inflates
-          # its perf_counter_ns past the 100 us floor on the 2-core box.
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '-q']).returncode)" \
+          # perf_counter measurements past their floors on the 2-core box.
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '--deselect', 'tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark', '-q']).returncode)" \
                  > "pytest-linux.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           cat "pytest-linux.txt" | tail -60
           exit $rc
 
-      - name: Performance budget — wall-clock gate (uninstrumented)
+      - name: Performance budget — wall-clock budgets (uninstrumented)
         if: steps.lane.outputs.mode == 'FULL'
         shell: bash
         run: |
           set +e
-          # FULL mode runs the critical suite WITH coverage, so the payload
-          # value-gate wall-clock budget test is deselected there (coverage
-          # + xdist inflates perf_counter_ns past the 100 us floor on the
-          # 2-core runner; measured 2026-11-09) and runs here instead —
+          # FULL mode runs the critical suite WITH coverage, so the
+          # wall-clock budget tests are deselected there (coverage + xdist
+          # inflates perf_counter measurements past their floors on the
+          # 2-core runner; measured 2026-11-09) and run here instead —
           # uninstrumented, single-process, blocking. SKEW mode needs no
-          # step: its planner run carries no --cov, so the test already
-          # runs uninstrumented there.
-          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents \
+          # step: its planner run carries no --cov, so the tests already
+          # run uninstrumented there.
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark \
             -q --tb=short -p no:cacheprovider \
             --junitxml=pytest-perf-budget.xml \
             2>&1 | tee pytest-perf-budget.txt
           rc=${PIPESTATUS[0]}
           if [ "$rc" -ne 0 ]; then
-            echo "::error::payload value-gate wall-clock budget tripped while UNINSTRUMENTED — the gate itself got slower (see pytest-perf-budget.xml)"
+            echo "::error::wall-clock budget tripped while UNINSTRUMENTED — the code itself got slower (see pytest-perf-budget.xml)"
             exit "$rc"
           fi
           grep -h "gate cost" pytest-perf-budget.txt || true
-          echo "perf-budget: PASS (gate cost under 100us/call, uninstrumented)"
+          echo "perf-budget: PASS (wall-clock budgets hold, uninstrumented)"
 
       - name: Lane report (always — required-context honesty contract)
         if: always()

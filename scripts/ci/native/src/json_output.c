@@ -61,9 +61,13 @@ void json_write_escaped(StrBuf *sb, const char *s) {
                         adv = 4;
                     }
                     if (cp == 0) {
-                        /* Invalid UTF-8 lead byte: escape the byte itself. */
-                        char buf[8];
-                        snprintf(buf, sizeof(buf), "\\u%04x", *p);
+                        /* Invalid UTF-8 lead byte: escape the byte itself.
+                         * (unsigned char) matters: a byte >= 0x80 is a
+                         * negative char on this platform, and %04x of a
+                         * negative int prints 8 hex digits ("ffffff80"),
+                         * which truncated the escape in an 8-byte buffer. */
+                        char buf[16];
+                        snprintf(buf, sizeof(buf), "\\u%04x", (unsigned char)*p);
                         sb_append(sb, buf);
                     } else if (cp < 0x10000) {
                         char buf[8];
