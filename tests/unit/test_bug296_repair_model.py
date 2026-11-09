@@ -79,6 +79,15 @@ def _clone_ws(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("HOME", str(userroot))
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(userroot / "app_settings.db"))
     monkeypatch.setenv("NEXUS_AUDIT_DB", str(ws / "artifacts" / "audit.db"))
+    # The audit seam has TWO keys and load_database_config() lets an
+    # explicit NSE_DATABASE__SQLITE_PATH win over NEXUS_AUDIT_DB — and the
+    # conftest autouse fixture sets that key to a per-run tmp file (bbf1f7de
+    # cross-test-leak fix). Without this line, _champion_binding reads THAT
+    # DB (no CHAMPION row) instead of the clone's audit.db where the
+    # governed-champion test seeds its row, so the refusal lookup is
+    # blind and repair --model --force MINTs instead of REFUSED (4d80ce05:
+    # the last remaining failure on both Linux lanes).
+    monkeypatch.setenv("NSE_DATABASE__SQLITE_PATH", str(ws / "artifacts" / "audit.db"))
     monkeypatch.setenv("NEXUS_DATA_ROOT", str(tmp_path / "data"))
     monkeypatch.setenv("NSE_NO_TELEGRAM", "1")
     monkeypatch.chdir(ws)
