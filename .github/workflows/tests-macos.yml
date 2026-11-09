@@ -34,6 +34,15 @@ name: Tests (macOS, manual)
 # ---------------------------------------------------------------------------
 
 on:
+  schedule:
+    # Semi-monthly cross-platform sweep (1st & 15th, 07:17 UTC) — the
+    # same cadence as tests-os.yml and tests-windows.yml. macOS runs the
+    # FULL suite here, never on PRs: Quality owns PR test execution, and
+    # this workflow has no push/pull_request trigger (the
+    # `Py Tests (macos-latest)` check on a PR is a routing notice from
+    # tests-os.yml, not a test run — no macOS runner is borrowed on a
+    # PR). Same treatment as Windows: schedule + dispatch only.
+    - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
       full_suite:

@@ -16,11 +16,11 @@ this file is the CI-specific companion.
 | `mt5-native-windows.yml` | `workflow_call` (from ci.yml); dispatch | **Native Windows MT5 certification** (primary runtime platform): Authenticode-verified installer + real `mt5.initialize()` IPC + `DirectMT5Adapter` connect; demo (Level 2/3) legs are dispatch-only | python/runtime |
 | `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
-| `tests-os.yml` | push/PR main·develop·ci-tests; Monday cron; dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
+| `tests-os.yml` | push/PR main·develop·ci-tests; semi-monthly cron (1st & 15th); dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
 | `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + hash-bound lock venv (one definition, no per-job copy) | ci |
-| `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
-| `tests-macos.yml` | `workflow_dispatch` ONLY | **Manual macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`) | python (macOS) |
+| `tests-windows.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`); never on PRs (Quality owns PR execution) | python (Windows) |
+| `tests-macos.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`); never on PRs (same treatment as Windows) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
 | `docker.yml` | push `docker` branch; dispatch | Build + publish GHCR image | docker |
@@ -172,7 +172,7 @@ reduced / advisory form.
 | Full runtime soak, SQLite + PostgreSQL (`full-runtime-provider`) | — | — | ✓ | ✓ (`full=true`) | Provider-specific runtime regressions (e.g. a PostgreSQL-only query failure) can merge. Mitigation: the soak runs on the semi-monthly schedule and on full dispatch, blocking there; PR lanes pin sqlite isolation and fail closed on the DB assert step. The PostgreSQL arms never ran on PRs — they need a migrated server, not a throwaway container. |
 | DB fabric certification, SQLite ↔ PostgreSQL (`db-fabric-certification`) | — | — | ✓ | ✓ (`full=true`) | Same as the runtime soak it follows: migration/facility regressions surface on the schedule or full dispatch, not on the PR. |
 | MT5 native Windows IPC (`mt5-native`) | — | — | ✓ | ✓ | Windows MT5 regressions can merge. Mitigation: the release gate refuses a release SHA with no green Windows lane; Windows is manual-only by design (the primary runtime is the Windows EXE). |
-| Windows / macOS test suites (`tests-windows.yml`, `tests-macos.yml`) | — | — | — | ✓ | Platform-specific regressions (paths / CRLF / encoding) can merge. Mitigation: manual lane before a release; the release gate requires Windows lane evidence for the release SHA. macOS has no release-gate requirement — that gap is explicit, not hidden. |
+| Windows / macOS test suites (`tests-windows.yml`, `tests-macos.yml`) | — | — | ✓ (semi-monthly FULL sweep) | ✓ | Platform-specific regressions (paths / CRLF / encoding) can merge. Mitigation: a semi-monthly FULL sweep (1st & 15th, 07:17 UTC) + manual dispatch; the release gate requires Windows lane evidence for the release SHA. macOS has no release-gate requirement — that gap is explicit, not hidden. Neither lane runs on PRs: Quality owns PR execution, and the `Py Tests (windows-latest)` / `Py Tests (macos-latest)` checks on a PR are routing notices from tests-os.yml's ctx jobs on ubuntu-latest (3 s, no test execution) — no Windows/macOS runner is borrowed on a PR. |
 | QA deep assurance (`qa-deep-assurance.yml`, `nightly-qa.yml`) | — | — | ✓ | ✓ | Deep-QA / mutation findings land after merge by design; advisory, never a PR gate. |
 | Nightly ML benchmark (`nightly-ml-benchmark.yml`) | — | — | ✓ | ✓ | Perf drift is watched on the schedule, not per PR (the PR perf-benchmark workflow covers path-triggered regressions). |
 | Wine compatibility soak (`mt5-wine-compat.yml`) | — | — | ✓ | ✓ | Advisory only; a Wine failure can never block a PR, the runtime verdict, or a release. |
@@ -384,7 +384,7 @@ GitHub event (push / PR / schedule / dispatch)
 | `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace (import-only; `--verify` self-check). |
 | `scripts/ci/runner_select.py` | Availability preflight + runner-class decision. Pure `select()` function; fail-open to github-hosted on ANY error. |
 | `.github/actions/runner-select` | Composite action: availability preflight + class decision, used by every lane's preflight job. (A reusable *workflow* cannot declare workflow-level `outputs:` in this repository — verified by experiment — so the shared component is an action.) |
-| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. SKIP-REPORT on PR/push/schedule (Quality owns execution, one run per PR); FULL/SKEW on dispatch only. |
+| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both platform workflows. Linux: SKIP-REPORT on PR/push/schedule (Quality owns execution, one run per PR); FULL/SKEW on dispatch only. Windows/macOS: SKIP-REPORT on PR/push, FULL on schedule (their semi-monthly sweep — no Quality lane exists for those platforms), FULL/SKEW on dispatch. |
 | `.github/workflows/tests-windows.yml` | Manual Windows suite (full coverage preserved) + `ENABLE_WINDOWS_SELF_HOSTED` flag. |
 | `.github/workflows/tests-macos.yml` | Manual macOS suite (full coverage preserved) + `ENABLE_MACOS_SELF_HOSTED` flag. |
 
@@ -410,12 +410,32 @@ GitHub event (push / PR / schedule / dispatch)
   fallback. The workflow's own `GITHUB_TOKEN` has no Administration
   permission and cannot read runner state.
 
-### Windows — manual-only, self-hosted-ready
+### Windows / macOS — schedule + dispatch only, never on PRs
 
 * **Automatic PR/push execution: removed.** `tests-os.yml` no longer
   schedules a Windows test leg; `ci.yml :: mt5-native` runs only on
   schedule/dispatch; `go-api.yml :: go-api-windows` runs only on
-  schedule/dispatch.
+  schedule/dispatch. `tests-windows.yml` and `tests-macos.yml` have no
+  push/pull_request trigger at all.
+* **Correction (2026-11-09, verified on the fe1fe521 run):** no
+  Windows/macOS runner was being borrowed on PRs in the first place.
+  The `Py Tests (windows-latest)` / `Py Tests (macos-latest)` checks
+  on a PR are `tests-os.yml`'s ctx jobs: they run on **ubuntu-latest**,
+  take ~3 s, and only emit a "NOT EXECUTED — manual-only" routing
+  notice (fe1fe521: both completed success in 3 s on hosted runners
+  `GitHub Actions 1000082307/1000082308`). The check *names* are the
+  required-context names; the *runner* is Linux. What was actually
+  missing was any automatic Windows/macOS coverage at all — the lanes
+  were dispatch-only, so they never ran unless someone remembered.
+* **Semi-monthly sweep (2026-11-09):** `tests-windows.yml` and
+  `tests-macos.yml` now run the FULL suite on a schedule — 1st & 15th,
+  07:17 UTC, the same cadence as `tests-os.yml` (at most twice a month,
+  like the MT5-native line). `decide_os_lane.bash` returns FULL for
+  windows/macos on schedule (unconditional — a periodic health sweep,
+  not a change-driven run, so the classifier does not downgrade it);
+  Linux still SKIP-REPORTs on schedule because Quality runs the FULL
+  suite once there. macOS gets the identical treatment as Windows:
+  schedule + dispatch only, never on PRs.
 * **Nothing was deleted.** The full Windows critical suite, the
   Windows-skew fast lane, the MT5 native IPC certification and the Go
   Windows leg are all intact and executable on demand.
@@ -428,11 +448,12 @@ GitHub event (push / PR / schedule / dispatch)
   automatically prefers an eligible `self-hosted,Windows,X64` runner with a
   `windows-latest` fallback — **no workflow edit, no redesign**.
 
-### macOS — manual-only, self-hosted-ready
+### macOS — schedule + dispatch only, self-hosted-ready
 
 * Same architecture as Windows, flag **`ENABLE_MACOS_SELF_HOSTED`**
   (default **disabled**), labels `(self-hosted, macOS, ARM64)`, fallback
-  `macos-latest`.
+  `macos-latest`. Same schedule as Windows: semi-monthly FULL sweep
+  (1st & 15th, 07:17 UTC) + dispatch, never on PRs.
 * **Architecture note (ARM64 vs x64).** `macos-latest` is Apple Silicon
   (ARM64). The self-hosted label set is deliberately ARM64 so both runner
   classes share ONE architecture — a verdict means the same thing on

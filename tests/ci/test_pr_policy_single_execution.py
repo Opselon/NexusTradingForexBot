@@ -55,8 +55,8 @@ def _run(step: dict) -> str:
     return step.get("run", "")
 
 
-def _decide_mode(event: str) -> str:
-    """Run decide_os_lane.bash with the given event; return its mode."""
+def _decide_mode(event: str, platform: str = "linux") -> str:
+    """Run decide_os_lane.bash with the given event/platform; return its mode."""
     with tempfile.TemporaryDirectory() as tmp:
         out = Path(tmp) / "gh-out.txt"
         env = dict(os.environ)
@@ -66,7 +66,7 @@ def _decide_mode(event: str) -> str:
         env.pop("GITHUB_EVENT_BEFORE", None)
         env.pop("NSE_FORCE_FULL_SUITE", None)
         proc = subprocess.run(
-            ["bash", str(DECIDE), "linux"],
+            ["bash", str(DECIDE), platform],
             cwd=str(REPO),
             env=env,
             check=False,
@@ -74,11 +74,11 @@ def _decide_mode(event: str) -> str:
             text=True,
             timeout=60,
         )
-        assert proc.returncode == 0, f"decide script failed for {event}: {proc.stderr}"
+        assert proc.returncode == 0, f"decide script failed for {event}/{platform}: {proc.stderr}"
         for line in out.read_text(encoding="utf-8").splitlines():
             if line.startswith("mode="):
                 return line.split("=", 1)[1]
-    raise AssertionError(f"decide script wrote no mode for {event}")
+    raise AssertionError(f"decide script wrote no mode for {event}/{platform}")
 
 
 def test_quality_planner_deselects_the_smoke_file() -> None:
@@ -133,3 +133,68 @@ def test_os_lane_dispatch_escape_hatch_still_exists() -> None:
     assert "workflow_dispatch)" in text, "decide script must keep the dispatch branch"
     assert 'MODE="FULL"' in text, "dispatch with force must still select FULL"
     assert 'MODE="SKEW"' in text, "dispatch without force must still select SKEW"
+
+
+# --- Windows / macOS: schedule + dispatch only, never on PRs ----------
+
+
+def _on(wf: dict) -> dict:
+    # PyYAML parses the `on:` key as boolean True (YAML 1.1).
+    return wf.get(True, wf.get("on", {}))
+
+
+def test_windows_and_macos_run_on_schedule_never_on_prs() -> None:
+    """Windows/macOS lanes: semi-monthly schedule + dispatch, no PR trigger.
+
+    The Windows OS lane must not borrow a hosted Windows runner on every
+    PR — Quality owns PR test execution. These workflows have no
+    push/pull_request trigger at all (the `Py Tests (windows-latest)` /
+    `Py Tests (macos-latest)` checks on a PR are routing notices from
+    tests-os.yml's ctx jobs on ubuntu-latest, not test execution). Their
+    cross-platform coverage comes from the semi-monthly sweep (1st &
+    15th, 07:17 UTC — the same cadence as tests-os.yml, at most twice a
+    month, like the MT5-native line).
+    """
+    for wf_name in ("tests-windows.yml", "tests-macos.yml"):
+        wf = _load(wf_name)
+        on = _on(wf)
+        assert "push" not in on and "pull_request" not in on, (
+            f"{wf_name} must have no push/pull_request trigger (never on PRs)"
+        )
+        assert "schedule" in on, f"{wf_name} must have a schedule trigger"
+        crons = [s.get("cron", "") for s in on["schedule"]]
+        assert "17 7 1,15 * *" in crons, (
+            f"{wf_name} schedule must be semi-monthly (1st & 15th, 07:17 UTC)"
+        )
+        assert "workflow_dispatch" in on, f"{wf_name} must keep the dispatch escape hatch"
+
+
+def test_windows_and_macos_run_full_on_schedule() -> None:
+    """decide_os_lane.bash: FULL for windows/macos on schedule, SKIP for linux.
+
+    Linux skips on schedule because Quality runs the FULL suite once
+    there. Windows/macOS have no Quality lane, so their scheduled sweep
+    runs FULL here — unconditionally (a periodic health sweep, not a
+    change-driven run; the classifier must not downgrade it, so this
+    asserts the mode with no diff context at all).
+    """
+    assert _decide_mode("schedule", "linux") == "SKIP-REPORT", (
+        "Linux must SKIP-REPORT on schedule (Quality owns the scheduled FULL suite)"
+    )
+    for platform in ("windows", "macos"):
+        assert _decide_mode("schedule", platform) == "FULL", (
+            f"{platform} must run FULL on schedule (semi-monthly cross-platform sweep)"
+        )
+
+
+def test_windows_and_macos_still_skip_on_prs() -> None:
+    """decide_os_lane.bash: SKIP-REPORT for windows/macos on PR/push too.
+
+    Belt and braces with the trigger test above: even if someone re-adds
+    a PR trigger, the lane must not execute on a PR.
+    """
+    for platform in ("windows", "macos"):
+        for event in ("pull_request", "push"):
+            assert _decide_mode(event, platform) == "SKIP-REPORT", (
+                f"{platform} must SKIP-REPORT on {event} (Quality owns PR execution)"
+            )

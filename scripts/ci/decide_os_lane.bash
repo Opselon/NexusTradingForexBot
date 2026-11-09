@@ -25,6 +25,17 @@
 # on explicit dispatch it runs here (FULL). SKEW survives only as the
 # manual dispatch shape (targeted subset on demand), never automatic.
 #
+# Windows / macOS (2026-11-09): those platforms have NO Quality lane —
+# their workflows (tests-windows.yml, tests-macos.yml) are dispatch-only
+# and never run on PRs (the `Py Tests (windows-latest)` /
+# `Py Tests (macos-latest)` checks on a PR are routing notices emitted
+# by tests-os.yml's ctx jobs on ubuntu-latest, not test execution — no
+# Windows/macOS runner is borrowed on a PR). Their cross-platform
+# coverage comes from a SEMI-MONTHLY schedule (1st & 15th, 07:17 UTC,
+# the same cadence as tests-os.yml): on schedule they run FULL HERE,
+# unconditionally — a periodic health sweep, not a change-driven run,
+# so the classifier must not downgrade it.
+#
 # Usage:   scripts/ci/decide_os_lane.bash <platform>      (linux|windows|macos)
 # Outputs: mode=<FULL|SKEW|SKIP-REPORT> into $GITHUB_OUTPUT
 set -uo pipefail
@@ -41,15 +52,28 @@ case "${GITHUB_EVENT_NAME:-}" in
     # Same: Quality owns the push diff; this leg runs on dispatch only.
     MODE="SKIP-REPORT" ;;
   schedule)
-    # The FULL suite runs ONCE on schedule — in the Quality lane.
+    # Linux: the FULL suite runs ONCE on schedule — in the Quality lane.
     # This leg does not re-run it.
-    MODE="SKIP-REPORT" ;;
+    # Windows / macOS: no Quality lane exists for those platforms, so
+    # their semi-monthly sweep runs HERE (FULL, unconditional — a
+    # periodic health sweep, not a change-driven run, so the classifier
+    # below must not downgrade it; SCHEDULE_FULL bypasses it).
+    if [ "$PLATFORM" = "linux" ]; then
+      MODE="SKIP-REPORT"
+    else
+      MODE="FULL"
+      SCHEDULE_FULL=true
+    fi ;;
   workflow_dispatch)
     if [ "${NSE_FORCE_FULL_SUITE:-false}" = "true" ]; then MODE="FULL"; else MODE="SKEW"; fi ;;
 esac
 
-if [ "$MODE" != "SKIP-REPORT" ]; then
+if [ "$MODE" != "SKIP-REPORT" ] && [ "${SCHEDULE_FULL:-false}" != "true" ]; then
   # Canonical classifier: no Python in the diff -> nothing to run.
+  # Skipped for a scheduled Windows/macOS FULL sweep: that is a periodic
+  # health sweep, not a change-driven run, and the schedule event has no
+  # meaningful diff to classify (the last commit's files are not the
+  # reason the sweep runs).
   # Fail-open on uncertainty (empty diff / classifier error => run).
   # Every git probe below is ||-guarded: the default checkout has no local
   # origin/<base> ref, and bash -e/pipefail made an unresolvable
