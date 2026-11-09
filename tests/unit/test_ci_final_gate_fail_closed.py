@@ -360,3 +360,52 @@ def test_rich_report_renders_under_non_utf8_output(tmp_path: Path) -> None:
     # The diagnostic trace that the UnicodeEncodeError used to eat:
     assert "src/nexus_scalp/risk/risk_engine.py" in r.stdout
     assert "F401" in r.stdout
+
+
+@pytest.mark.parametrize("state", ["skipped", "cancelled", "not_executed", "unknown"])
+def test_non_execution_and_unknown_states_fail_closed(tmp_path: Path, state: str) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    result_path = root / "run-info" / "pytest.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload["status"] = state
+    payload["detail"] = "test process did not provide a passing result"
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    r = _run_gate(root)
+    assert r.returncode == 1, f"{state!r} must never count as passed"
+    assert f"pytest={state}" in r.stdout
+    assert "UNACCEPTED CHECK STATES" in r.stdout
+    assert "ALL CHECKS PASSED" not in r.stdout
+
+
+def test_blocked_without_a_failed_root_fails_closed(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    result_path = root / "run-info" / "pytest.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload["status"] = "blocked"
+    payload["detail"] = "blocked but no root failure was recorded"
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "pytest=blocked" in r.stdout
+    assert "BLOCKED WITHOUT A FAILED ROOT" in r.stdout
+
+
+def test_passed_status_requires_zero_exit_code(tmp_path: Path) -> None:
+    root = _init_tree(tmp_path)
+    for check in CHECKS:
+        _record(root, check, "0")
+    result_path = root / "run-info" / "pytest.json"
+    payload = json.loads(result_path.read_text(encoding="utf-8"))
+    payload["exit_code"] = 7
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    r = _run_gate(root)
+    assert r.returncode == 1
+    assert "pytest=errored" in r.stdout
+    assert "ALL CHECKS PASSED" not in r.stdout
