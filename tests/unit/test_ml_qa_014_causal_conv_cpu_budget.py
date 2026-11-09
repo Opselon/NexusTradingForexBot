@@ -430,9 +430,17 @@ def test_legacy_bit_identity_kept() -> None:
 def test_no_production_file_changed() -> None:
     """The remediation is test-only. Every latency assertion is a property of
     the *measurement*, not of the model, so the architectures module must be
-    untouched by this work."""
+    untouched by this work.
+
+    Scope note: the original form diffed the whole tree against origin/main
+    and assumed only this battery's work was in flight. That contract cannot
+    survive a CI/DevOps branch (workflows, scripts/ci, docs and test
+    infrastructure are legitimately in the diff while no *production* module
+    is). The invariant this test actually pins is that the production module
+    this battery governs is untouched, so the diff is scoped to it."""
     repo = _REPO_ROOT
-    proc = _run(["git", "-C", str(repo), "diff", "--name-only", "origin/main..HEAD"])
+    module = "src/nexus_scalp/model_generation/architectures.py"
+    proc = _run(["git", "-C", str(repo), "diff", "--name-only", "origin/main..HEAD", "--", module])
     assert proc.strip() == "", f"unexpected production diff: {proc!r}"
 
 
@@ -457,6 +465,13 @@ def test_cpu_time_budget_holds_on_real_forward_passes(monkeypatch) -> None:
     )
 
     torch.manual_seed(0)
+    # CPU time is summed across ALL worker threads, and torch defaults to one
+    # thread per core (4 here). On the co-tenant-loaded 2-core runner the
+    # threads oversubscribe the box, the context switching is billed as CPU
+    # time, and a genuinely ~2 ms forward pass reports 20-60x that (observed
+    # 67ms vs the 50ms budget, 4566ms vs the 500ms family check). The docstring
+    # already says one thread is what this runner delivers - set it so.
+    torch.set_num_threads(1)
     seq_len, feature_dim = 64, 16
     budget_ms = 50.0
     ratio = 15.0
@@ -498,6 +513,7 @@ def test_cpu_time_is_representative_under_load(monkeypatch) -> None:
     from nexus_scalp.model_generation.architectures import TCNAttentionV1
 
     torch.manual_seed(0)
+    torch.set_num_threads(1)
     model = TCNAttentionV1(input_dim=8, hidden_dim=16, blocks=4, dropout=0.0, max_seq_len=64).eval()
     x = torch.randn(2, 64, 8)
     with torch.no_grad():
