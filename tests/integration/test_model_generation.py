@@ -77,8 +77,12 @@ def mg_store(tmp_path: Path) -> ArtifactStore:
 class TestModelGenerationEndToEnd:
     def test_full_artifact_flow(self, mg_store: ArtifactStore):
         # 1. build dataset artifact (+ causal news context)
+        # n=700 (not the 300 default): the OOS population (val+test rows,
+        # minus the 2x15 purge bars) must reach MIN_EVIDENCE_SAMPLES=100
+        # or validate() returns INSUFFICIENT_EVIDENCE with no regime_results.
+        # n=700 -> OOS = 90 (val) + 105 (test) = 195.
         dh = DatasetFactory(store=mg_store).build(
-            make_bars(), symbol="XAUUSD", timeframe="M5", news_frame=make_news()
+            make_bars(n=700), symbol="XAUUSD", timeframe="M5", news_frame=make_news()
         )
         assert dh["dataset_id"].startswith("ds_")
         man = mg_store.read_dataset_manifest(dh["dataset_id"])
@@ -145,7 +149,12 @@ class TestModelGenerationEndToEnd:
 
         # 9. validation produces a verdict (regime results computed)
         vf = ValidationFactory()
-        labels = frame["label"].to_numpy().astype(np.int64)
+        # P0-4: the verdict evaluates the OOS population (val/test rows)
+        # only — the label vector must describe exactly those rows, never
+        # the full frame (passing full-frame labels is the historical
+        # contamination shape the OOS_SPLIT_INTEGRITY gate refuses).
+        oos_mask = np.isin(frame["_split"].to_numpy(), ["test", "val"])
+        labels = frame["label"].to_numpy().astype(np.int64)[oos_mask]
         vr = vf.validate("cand_e2e", "exp_e2e_news", frame, None, labels)
         assert vr.regime_results  # per-regime evaluation exists
         assert "label_integrity" in [g["gate"] for g in vr.gates]
