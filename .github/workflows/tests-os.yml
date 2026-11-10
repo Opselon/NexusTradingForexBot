@@ -268,11 +268,11 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
           HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
           bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
-          # 2026-11-10 (user directive): ONE worker on this box (Dubai,
-          # 4 cores / 8 GB) — -n 4 measured no speedup, only memory
-          # pressure and swap thrash. The hosted leg keeps the
-          # core-sized count.
-          XDIST=1
+          # 2026-11-10 (user directive, revised ~08:57): FOUR workers on
+          # this box (Dubai, 4 cores / 8 GB) — the -n 1 serial run on the
+          # expanded suite crept at ~1% at a time. The hosted leg keeps
+          # the core-sized count.
+          XDIST=4
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "$BASE" \
