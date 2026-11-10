@@ -156,10 +156,12 @@ def gov_store(tmp_path_factory: pytest.TempPathFactory):
     """One AuditRepository + GovernanceStore shared by the transaction tests.
 
     Each transaction test uses distinct model_ids, asserts on its own audit
-    row (``audits[-1]`` at assertion time), and keeps its own lock file +
-    candidate artifacts in its own ``tmp_path`` — so sharing the store
-    saves 3 redundant repository constructions (schema + write plane)
-    without coupling the tests.
+    row (``audits[0]`` at assertion time — list_promotion_audits() returns
+    newest-first, ORDER BY recorded_at DESC, so [0] is the test's own row
+    and [-1] would be the oldest row from an earlier test), and keeps its
+    own lock file + candidate artifacts in its own ``tmp_path`` — so sharing
+    the store saves 3 redundant repository constructions (schema + write
+    plane) without coupling the tests.
     """
     workdir = tmp_path_factory.mktemp("model_promotion_gov")
     repo = AuditRepository(db_url=f"sqlite:///{workdir / 'gov.db'}")
@@ -376,8 +378,8 @@ def test_promotion_atomic_rollback_on_activation_failure(tmp_path: Path, gov_sto
     # Audits must reflect failed promotion
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_FAILED"
-    assert audits[-1]["old_champion_model_id"] == "champ_steady"
+    assert audits[0]["status"] == "PROMOTION_FAILED"
+    assert audits[0]["old_champion_model_id"] == "champ_steady"
 
 
 def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path, gov_store) -> None:
@@ -423,7 +425,7 @@ def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path, 
     # Audits must reflect PROMOTION_ROLLED_BACK
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_ROLLED_BACK"
+    assert audits[0]["status"] == "PROMOTION_ROLLED_BACK"
 
 
 # =============================================================================
@@ -493,4 +495,4 @@ def test_promotion_transaction_happy_path_and_benchmark(tmp_path: Path, gov_stor
     # Audit log verification
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_COMMITTED"
+    assert audits[0]["status"] == "PROMOTION_COMMITTED"
