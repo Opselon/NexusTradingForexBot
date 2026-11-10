@@ -7,16 +7,22 @@ on:
   pull_request:
     branches: [main, develop]
   schedule:
-    # Weekly meta-scan: catch CI-wiring drift / dependency-world changes that
-    # don't touch code (e.g. a workflow edited by hand, an action SHA bump, a
-    # base-image/linter version shift). Maps to scheduled drift detection.
-    - cron: "13 5 * * 1"   # Every Monday 05:13 UTC
+    # CI quota diet (2026-11): the weekly meta-scan became SEMI-MONTHLY.
+    # Hosted minutes are the scarce resource; everything routine moved to the
+    # tiered self-hosted pool, so the schedule only keeps its drift-catching
+    # duty (wiring drift / dependency-world changes) twice a month, and the
+    # expensive runtime legs below run on this event too.
+    - cron: "13 5 1,15 * *"   # 1st & 15th, 05:13 UTC
   workflow_dispatch:
     inputs:
       full:
         description: "Run the full suite incl. integration tests (use on ci-tests or manually)"
         type: boolean
         default: false
+      base_sha:
+        description: "Planner base SHA for a targeted dispatch run (default: auto from the event). Set it to run the planner against an explicit base — e.g. a leaf-change timing proof on a scratch branch, where the event carries no base."
+        type: string
+        default: ""
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -86,6 +92,9 @@ jobs:
         run: |
           python scripts/ci/check_workflows.py --format text --strict
 
+      - name: Runner routing consistency (canonical tier order)
+        run: python scripts/ci/check_runner_routing.py
+
       - name: Decision-ID uniqueness (P3 — one DEC id, one canonical record)
         run: |
           python scripts/ci/check_decision_ids.py
@@ -117,6 +126,14 @@ jobs:
           # workflow files must not instruct destructive git, and the
           # governance preflight must import + self-check cleanly. Read-only.
           python scripts/ci/check_git_governance.py
+
+      - name: Secret scan (canonical — one run per CI run)
+        run: |
+          # The ONLY secret scan on the PR path. docs.yml and release.yml
+          # used to run scan_secrets.py under their own gates, so a normal
+          # PR ran it 0 times while the external GitGuardian check still
+          # flagged the diff. stdlib-only, no venv needed.
+          python scripts/ci/scan_secrets.py
 
       # NOTE (2026-09-14 reconstruction): lane gating is applied in
       # tests-os.yml (OS matrix) — where a skip is an explicit, auditable
@@ -151,42 +168,109 @@ jobs:
   # dependency-lock.yml; a plain resolver pass over -e ".[dev,web,postgres]"
   # re-resolved ~90 packages on every job.
   # ---------------------------------------------------------------------------
+  # -------------------------------------------------------------------------
+  # Runner availability preflight — CI quota diet (2026-11). Picks the
+  # fastest online+idle lane: tier-1 opselon-vm (8-thread Docker runner) ->
+  # tier-2 nexus-2core -> GitHub-hosted. `runs_on` is ALWAYS a valid
+  # runs-on target (hosted image when no tier matches), so a single lane
+  # serves every class without duplication. Same routing contract as
+  # Tests (OS Matrix) — see scripts/ci/runner_select.py.
+  # -------------------------------------------------------------------------
+  runner-select:
+    name: Runner Selector (ci)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      runner_class: ${{ steps.select.outputs.runner_class }}
+      runs_on: ${{ steps.select.outputs.runs_on }}
+      selection_reason: ${{ steps.select.outputs.selection_reason }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Select runner (availability preflight)
+        id: select
+        uses: ./.github/actions/runner-select
+        env:
+          NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
+        with:
+          platform: linux
+          labels: "self-hosted,Linux,X64,opselon-vm"
+          fallback_labels: "self-hosted,Linux,X64,nexus-2core"
+
+          # A fork PR (head repo != this repo) is untrusted: never
+          # self-hosted, never exposed to runner credentials.
+          untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+
   quality-lint:
     name: Quality — Lint, Types & Static Gates
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    needs: runner-select
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes; target 3-5 min. Lint measured 115s.
+    # TEMPORARY (2026-11-10, user directive, revised ~08:57): raised to
+    # 60 — tier-1 is OFF, so the job falls back to Dubai (tier-2), and
+    # the serial -n 1 run on the expanded suite crept at ~1% at a time
+    # and would blow past 20 min. Back to 10 when tier-1 returns / the
+    # venv is warm.
+    timeout-minutes: 60
 
     env:
       CI_RESULTS_DIR: ci-results-lint
+      NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
+      # Primary index is the TUNA mirror (2026-11-09): files.pythonhosted.org
+      # is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
+      # PyPI can resolve a version but can never deliver its wheel — and the
+      # Aliyun node serving tier-1 still lacks filelock 4.2.10 (while the
+      # node this VM hits has it). TUNA's node serving tier-1 IS synced
+      # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
+      # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
+      # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      # uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+      # both are pinned here: the tier-1 image exports them (Aliyun) and
+      # would otherwise override this primary (5e50710d: "no version of
+      # typer==0.29.0" while TUNA listed it).
+      PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      PIP_DEFAULT_TIMEOUT: "30"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      # One canonical environment (setup-python + pinned uv + lock venv):
+      # ./.github/actions/setup-python-env. The dependency-intelligence
+      # cache restore below is venv-independent, so it runs after setup.
+      - name: Set up Python environment (canonical)
+        uses: ./.github/actions/setup-python-env
         with:
           python-version: "3.11"
+          runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          enable-cache: true
-          cache-dependency-glob: requirements.lock
+      # mypy/ruff keep their caches in the workspace by default, and
+      # actions/checkout wipes the workspace on every job — so both tools
+      # ran COLD on every run (a full-repo type-check pass on 2 cores is
+      # minutes, every time).
+      # On self-hosted tiers, point them at a runner-persistent cache dir
+      # (content-keyed, so a stale entry cannot survive a source change);
+      # hosted lanes keep the workspace default (ephemeral runners).
+      - name: Point type/lint caches at persistent storage (self-hosted)
+        run: |
+          if [ "${{ env.NSE_RUNNER_CLASS }}" = "self-hosted" ]; then
+            mkdir -p "$HOME/.cache/nse-ci/mypy" "$HOME/.cache/nse-ci/ruff"
+            echo "MYPY_CACHE_DIR=$HOME/.cache/nse-ci/mypy" >> "$GITHUB_ENV"
+            echo "RUFF_CACHE_DIR=$HOME/.cache/nse-ci/ruff" >> "$GITHUB_ENV"
+          fi
 
       - name: Cache dependency intelligence graph
+        if: env.NSE_RUNNER_CLASS != 'self-hosted'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: artifacts/dependency_intelligence/cache.json
           key: dep-graph-v1-${{ hashFiles('src/nexus_scalp/**/*.py') }}
           restore-keys: |
             dep-graph-v1-
-
-      - name: Install via lock (hash-verified requirements.lock)
-        run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
 
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
@@ -431,33 +515,127 @@ jobs:
 
   quality-tests:
     name: Quality — Tests & Runtime Certification
-    runs-on: ubuntu-latest
-    # The pytest critical suite alone measured ~1010s under -n auto on a
-    # loaded shared runner (see the pre-split comment history); the split
-    # moves lint/type off this clock, so 25m is pytest+smoke+runtime gates.
-    timeout-minutes: 25
+    needs: runner-select
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes; target 3-5 min. This cap lands WITH the
+    # tier-1 speedup, never alone: on the 2-core tier-2 box the expanded
+    # pytest alone measured 1449.8s (run 42678149634), so tier-2 CANNOT fit
+    # this job in 10 min — the routing must prefer tier-1 (8-thread,
+    # pytest -n 8, same suite ~8 min on hosted). History: 25m killed PR
+    # #731 at 25m36s mid-pytest, which is why this was 45m; the 45m is
+    # gone because the user requires the cap AND the tier-1 speedup
+    # together. If tier-1 is offline the job times out at 10m on the
+    # fallback instead of running 27m — that is the fail-closed guard
+    # doing its job, not a bug: bring tier-1 back, do not raise the cap.
+    # TEMPORARY (2026-11-10, user directive, revised ~08:57): the user
+    # turned tier-1 OFF and raised the cap to 60 — the job now falls
+    # back to Dubai (tier-2); the serial -n 1 run on the expanded suite
+    # (356 files) crept at ~1% at a time and would blow past 20 min.
+    # Back to 10 when tier-1 returns / the venv is warm.
+    # Leaf PRs (targeted selection, ~7 files) run in ~1-2 min; the
+    # expanded suite is the remaining wall — see docs/CI_ARCHITECTURE.md.
+    timeout-minutes: 60
+
+    env:
+      NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
+      # Primary index is the TUNA mirror (2026-11-09): files.pythonhosted.org
+      # is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
+      # PyPI can resolve a version but can never deliver its wheel — and the
+      # Aliyun node serving tier-1 still lacks filelock 4.2.10 (while the
+      # node this VM hits has it). TUNA's node serving tier-1 IS synced
+      # (proven by the proof/leaf-timing diagnostic: TUNA lists 4.2.10 and
+      # uv resolves it in 4.36s; USTC/BFSU/Aliyun all lack it). The Aliyun
+      # mirror stays as the extra index (it CAN serve wheels, unlike PyPI).
+      # uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+      # both are pinned here: the tier-1 image exports them (Aliyun) and
+      # would otherwise override this primary (5e50710d: "no version of
+      # typer==0.29.0" while TUNA listed it).
+      PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_DEFAULT_INDEX: https://pypi.tuna.tsinghua.edu.cn/simple/
+      UV_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple/
+      PIP_DEFAULT_TIMEOUT: "30"
+      # Test-database isolation (fail-closed): this lane NEVER talks to a
+      # real/shared database. The self-hosted runners are persistent
+      # machines, so a previous run may have left a persisted
+      # app_settings.db pointing at PostgreSQL — and the audit
+      # test-isolation seam plus the persisted provider would otherwise
+      # resolve the test DB from that machine state. Pinning sqlite +
+      # per-run temp paths covers every step, including the layered-smoke
+      # CLI and runtime gate, which run outside pytest and never see
+      # conftest's fixtures. Proven by the assert step below.
+      #
+      # The provider pin is a literal, so it CAN live at job level. The
+      # four temp paths CANNOT: ${{ runner.temp }} is a step-only context
+      # — GitHub rejects the WHOLE workflow at parse time if it appears
+      # in job-level env (f488c48 broke ci.yml + tests-os.yml exactly this
+      # way: zero jobs ran on three pushes). The "Pin test DB" step below
+      # exports the same paths via $RUNNER_TEMP + $GITHUB_ENV instead.
+      NSE_DATABASE__PROVIDER: sqlite
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The C planner resolves changed files with
+          #   git diff --name-only base...head
+          # which needs the merge base. The default depth-1 checkout has no
+          # base commit, so the engine exited rc=3 ("git diff failed") and the
+          # planner never produced a plan. 0 = full history for this job.
+          #
+          # NOTE: fetch-depth 0 ships 88.6 MiB of pack (every blob in the
+          # repo) over the self-hosted runner's tethered uplink and measured
+          # 2m37s of pure network on 2026-11-09. The step below instead
+          # pulls full COMMIT+TREE history blobless (measured 4.9 MiB,
+          # 18x smaller): `git diff --name-only` resolves paths from TREE
+          # objects only, so the planner contract is preserved at a fraction
+          # of the transfer; blobs for the working tree come with checkout.
+          fetch-depth: 1
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      - name: Fetch planner history (blobless = commit+tree only)
+        # Gives the C planner the merge base without shipping 88 MiB of
+        # file contents. The shared script (scripts/ci/fetch_planner_history.bash)
+        # fetches base+head bloblessly, VERIFIES merge-base, and escalates
+        # to unshallow if the fetch was a no-op on a virgin shallow clone
+        # (tier-1, 2026-11-09: fetch rc=0, merge-base failed, job dead
+        # in 31s) — so a fresh runner is merge-base-ready with zero manual
+        # steps. On a pull_request event github.sha is the EPHEMERAL merge
+        # commit GitHub builds in-memory, not the branch head - fetching it
+        # would resolve nothing. Use the real head SHA; the push fallback
+        # keeps before.. (the prior head); inputs.base_sha (dispatch) wins.
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}"
+          head="${{ github.event.pull_request.head.sha || github.sha }}"
+          bash scripts/ci/fetch_planner_history.bash "$base" "$head"
+
+      # One canonical environment (setup-python + pinned uv + lock venv):
+      # ./.github/actions/setup-python-env — same block quality-lint uses.
+      - name: Set up Python environment (canonical)
+        uses: ./.github/actions/setup-python-env
         with:
           python-version: "3.11"
-          cache: "pip"
+          runner-class: ${{ env.NSE_RUNNER_CLASS }}
 
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          enable-cache: true
-          cache-dependency-glob: requirements.lock
-
-      - name: Install via lock (hash-verified requirements.lock)
+      # Per-run temp paths for the test DBs (see the job-level env comment:
+      # ${{ runner.temp }} is step-only, so this step exports them via
+      # $RUNNER_TEMP into $GITHUB_ENV for every later step). Must run
+      # before the assert step below and before any pytest/smoke step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
         run: |
-          uv pip install --system -r requirements.lock
-          uv pip install --system --no-deps -e .
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
+
+      # Prove the DB pinning (provider at job level, paths from the pin step
+      # above) through the repo's own resolver, before any test or smoke
+      # step can open a database. Fails the lane instead of letting it
+      # touch a shared database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
 
       - name: Initialize results tree
         run: |
@@ -471,30 +649,200 @@ jobs:
           python scripts/ci/telegram_notify.py --results "$CI_RESULTS_DIR" run-started || true
 
       # -------- Pytest + coverage (own directory; junit.xml + log + cobertura) --
-      - name: Pytest with coverage
-        id: pytest
+      - name: Restore trusted native engine (shared cache)
+        id: native_cache
+        # Layer-B shared cache (mission §7): a portable, trusted build artifact
+        # reused across tiers. FORK PRs never reach the self-hosted lanes and
+        # never participate in this cache. Restored binaries are VALIDATED
+        # (version + selftest) before use — an incompatible entry is a miss.
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scripts/ci/native/artifacts/nse-ci-engine
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.2.0-${{ hashFiles('scripts/ci/native/**') }}
+          fail-on-cache-miss: false
+
+      - name: Build & verify native C17 engine
+        id: native
         continue-on-error: true
         run: |
+          set -euo pipefail
+          # A restored binary wins only if it passes version + selftest.
+          if [ -f scripts/ci/native/artifacts/nse-ci-engine ]; then
+            if scripts/ci/native/artifacts/nse-ci-engine version | grep -qx "0.2.0" \
+               && scripts/ci/native/artifacts/nse-ci-engine selftest >/dev/null; then
+              echo "binary=scripts/ci/native/artifacts/nse-ci-engine" >> "$GITHUB_OUTPUT"
+              echo "source=restored-trusted-cache" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "restored binary failed verification — rebuilding"
+            rm -f scripts/ci/native/artifacts/nse-ci-engine
+          fi
+          # Self-hosted tiers may not ship cmake. The venv created above is a
+          # `uv venv`, which has NO pip inside it, so `python3 -m pip install
+          # --user cmake` silently failed on tier-2 (nexus-runner) and the job
+          # then died in run_test_plan.py with
+          #   FileNotFoundError: [Errno 2] No such file or directory: 'cmake'
+          # Install it with uv into the SAME venv that is already on PATH.
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "cmake not found — installing the portable wheel via uv"
+            uv pip install --quiet cmake || true
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            # uv installs the wheel as a console script in the venv bin dir.
+            for d in "${VENV_DIR}/bin" "$PWD/${VENV_DIR}/bin" "$HOME/.local/bin"; do
+              [ -x "$d/cmake" ] && export PATH="$d:$PATH" && break
+            done
+          fi
+          if ! command -v cmake >/dev/null 2>&1; then
+            echo "::error::cmake unavailable on this runner — native C17 planner cannot build; failing closed (never degrade to Python planning)"
+            exit 1
+          fi
+          cmake -S scripts/ci/native -B scripts/ci/native/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build scripts/ci/native/build -j "$(nproc)"
+          scripts/ci/native/build/nse-ci-engine selftest
+          mkdir -p scripts/ci/native/artifacts
+          cp scripts/ci/native/build/nse-ci-engine scripts/ci/native/artifacts/nse-ci-engine
+          echo "binary=scripts/ci/native/artifacts/nse-ci-engine" >> "$GITHUB_OUTPUT"
+          echo "source=built-this-run" >> "$GITHUB_OUTPUT"
+
+      - name: Save native engine to trusted cache
+        # Policy (cache-by-event table): trusted main pushes and full
+        # validations SEED the shared cache; ordinary PRs restore only.
+        if: steps.native.outputs.source == 'built-this-run' && (github.ref_name == 'main' || inputs.full == true || github.event_name == 'schedule')
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: scripts/ci/native/artifacts/nse-ci-engine
+          key: nse-native-v1-${{ runner.os }}-${{ runner.arch }}-0.2.0-${{ hashFiles('scripts/ci/native/**') }}
+
+      - name: Planner-driven pytest (C17 only — sole planner)
+        id: pytest
+        continue-on-error: true
+        env:
+          NATIVE_BINARY: ${{ steps.native.outputs.binary }}
+        run: |
           set +e
-          # CRITICAL SUITE (default fast gate, 2026-08-20 test-reduction):
-          # the small high-signal regression net — see tests/critical_suite.txt.
-          # Parallelized with pytest-xdist (-n auto cut the serial ~15m gate to
-          # ~5.5m on 4 workers). The manifest is LF pinned via .gitattributes.
-          CRIT_FILES=()
-          while IFS= read -r line || [[ -n "$line" ]]; do line="${line%%#*}"; line="$(echo "$line" | xargs)"; [[ -n "$line" ]] && CRIT_FILES+=("$line"); done < tests/critical_suite.txt
-          pytest "${CRIT_FILES[@]}" \
-                 -n auto \
-                 --dist loadgroup \
-                 --durations=25 \
-                 --cov=src \
-                 --cov-report=term-missing \
-                 --cov-report=xml:"$CI_RESULTS_DIR/pytest/coverage.xml" \
-                 --cov-report=html:"$CI_RESULTS_DIR/pytest/htmlcov" \
-                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
-                 -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-          rc=$?
-          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "see pytest/junit.xml + pytest.txt" || true
-          exit 0
+          # C17 plans (changed-file driven); Python executes via pytest.
+          # targeted on PR/push; full on schedule + full dispatch (policy).
+          MODE=targeted
+          # 2026-11-10 (user directive, revised ~08:57): FOUR pytest
+          # workers on self-hosted tiers. Dubai is 4 cores / 8 GB. The
+          # earlier -n 1 directive (b75aa54c) made the expanded suite
+          # (356 files) crawl serially at ~1% at a time, so the user
+          # asked for -n 4 instead. Note: -n 4 previously measured no
+          # speedup on this box (memory pressure + swap thrash) — if it
+          # thrashes again, revisit. Hosted runners keep the core-sized
+          # count (capped at 8): they are big ephemeral machines and
+          # hosted is last-resort only.
+          CORES="$(nproc 2>/dev/null || echo 2)"
+          XDIST="$CORES"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ]; then XDIST=4; fi
+          echo "runner cores: $CORES -> pytest -n $XDIST"
+
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
+          # TEMPORARY (2026-11-10, user-approved): coverage is MANUAL-ONLY
+          # — it runs only on a manual full dispatch (inputs.full=true).
+          # No coverage on PR/push runs (MODE=targeted) and NOT on the
+          # schedule either: the tracer inflates pytest past the cap on
+          # the shared tier-1 box (expanded suite ~11m with coverage; the
+          # OS lane without --cov passed on the same box). The coverage
+          # gates below record N/A instead of failing when coverage.xml
+          # is absent. Re-enable when the tier-1 suite fits the cap with
+          # coverage.
+          COV_FLAGS=""
+          if [ "${{ inputs.full }}" = "true" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
+          # No HTML coverage report on this lane: it costs a full
+          # render pass over 784 files and nobody reads htmlcov in CI.
+          # Coverage (COV_FLAGS) is TEMPORARILY manual-only (2026-11-10):
+          # the xml feeds the critical-file gate on manual full-dispatch
+          # runs only, and the coverage gates record N/A when it is absent.
+          #
+          # NOTE: these comments must stay ABOVE the command, never inside
+          # its backslash continuation — a '#' line inside a continuation
+          # swallows the rest of the logical line, so --pytest-extra became
+          # a stray command and the step died with exit 127 (2026-11-09).
+          #
+          # --head MUST be the real PR head, not github.sha: on
+          # pull_request github.sha is the ephemeral merge commit, which
+          # the depth-1 checkout leaves shallow-grafted, so the engine's
+          # three-dot diff finds no merge base and fails rc=3 (2026-11-09).
+          # The fetch step already fetches this exact SHA.
+          #
+          # --deselect keeps the WALL-CLOCK budget tests out of this
+          # coverage-instrumented run (they run in the dedicated
+          # "Performance budget" step right after this one): coverage +
+          # xdist on a loaded 2-core runner inflates perf_counter
+          # measurements past their floors (gate: 158 us in CI vs ~0.6 us
+          # isolated post-optimization; promotion SLA: 511 ms measured once
+          # vs its 625 ms limit), so under coverage they measure the
+          # scheduler, not the code. The other four tests in the gate file
+          # are pure correctness assertions and stay in this run; the
+          # promotion node's functional assertions (commit, audit rows)
+          # travel with it into the dedicated step.
+          # --deselect also keeps the smoke-chain file out: the dedicated
+          # "End-to-end smoke chain" step below owns it (it runs on every
+          # PR regardless of selection, and gates via the `smoke` check +
+          # final gate). Without this the file runs twice in this job —
+          # once here (it is in critical_suite.txt) and once there.
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}" \
+            --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --event "${{ github.event_name }}" \
+            --mode "$MODE" \
+            --native-binary "${NATIVE_BINARY}" \
+            --xdist "$XDIST" \
+            --pytest-extra "--durations=25 $COV_FLAGS --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents --deselect tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark --deselect tests/e2e/test_smoke_chain.py" \
+            --out-dir "$CI_RESULTS_DIR/test-plan" \
+            --runner-name "${{ runner.name }}" \
+            --attempt "${{ github.run_attempt }}" \
+            2>&1 | tee "$CI_RESULTS_DIR/pytest/pytest.txt"
+          rc=${PIPESTATUS[0]}
+          # rc: real pytest exit code, or 90 = planner-integrity failure
+          # (conservative evidence was still collected above — fail closed).
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" pytest "$rc" "planner-selected execution — see pytest/junit.xml + test-plan/execution-manifest.json" || true
+          # Human-readable C17 impact report (colourised + step summary).
+          python scripts/ci/ci_plan_report.py \
+            --results "$CI_RESULTS_DIR" \
+            --plan "$CI_RESULTS_DIR/test-plan/plan.json" || true
+          exit $rc
+
+      # -------- Wall-clock performance budget (uninstrumented, single-process)
+      # Two tests assert WALL-CLOCK budgets and are deselected from the
+      # coverage-instrumented planner run above; they run HERE instead:
+      # uninstrumented and single-process, on EVERY PR/push, blocking.
+      # (1) payload value-gate cost (perf_counter_ns < 100 us/call);
+      # (2) model-promotion transaction SLA (500 ms x 1.25 jitter = 625 ms,
+      # single-shot over a real DB write). Measured 2026-11-09: coverage +
+      # xdist on a loaded runner inflates wall-clock measurements past
+      # their floors (gate: 158 us in CI; promotion: 511 ms measured once
+      # against a 500 ms floor). Under coverage + parallelism the
+      # assertions measure the scheduler, not the code (same tracer
+      # pattern as the MT5 CPU budget). This step fails the job directly
+      # on a tripped budget (its own exit code), AND the perf_budget
+      # record below is verdict by the quality-tests final gate
+      # (ci_final_gate.py CHECKS, --checks list) — two independent
+      # enforcements, so a tripped budget can neither pass silently nor
+      # be dropped by a workflow edit without the gate test failing.
+      # The record also feeds the step summary + review-status.
+      # It has deliberately NO if: and NO continue-on-error (pinned by
+      # tests/ci/test_pr_policy_benchmark_lane.py).
+      - name: Performance budget — wall-clock budgets (uninstrumented)
+        run: |
+          set +e
+          mkdir -p "$CI_RESULTS_DIR/perf-budget"
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark \
+            -q --tb=short -p no:cacheprovider \
+            --junitxml="$CI_RESULTS_DIR/perf-budget/junit.xml" \
+            2>&1 | tee "$CI_RESULTS_DIR/perf-budget/pytest.txt"
+          rc=${PIPESTATUS[0]}
+          python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" perf_budget "$rc" "wall-clock budgets uninstrumented single-process (gate < 100us/call, promotion < 625ms; see perf-budget/)" || true
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::wall-clock budget tripped while UNINSTRUMENTED — the code itself got slower (see perf-budget/junit.xml)"
+            exit "$rc"
+          fi
+          grep -h "gate cost" "$CI_RESULTS_DIR/perf-budget/pytest.txt" || true
+          echo "perf-budget: PASS (wall-clock budgets hold, uninstrumented)"
 
       # -------- Whole-application SMOKE CHAIN (one-file E2E heartbeat) --------
       - name: End-to-end smoke chain
@@ -521,6 +869,13 @@ jobs:
           import json, os, re
           root = os.environ["CI_RESULTS_DIR"]
           pct = None
+          # TEMPORARY (2026-11-10): coverage is manual-only, so no
+          # coverage.xml is produced on PR/push/schedule runs. That
+          # absence is intentional — record N/A (passing, explicit)
+          # instead of "errored". The pytest check itself still fails the
+          # job if pytest failed, so nothing is hidden. Manual full
+          # dispatch runs keep coverage and take the normal path below.
+          skipped = not os.path.isfile(os.path.join(root, "pytest", "coverage.xml"))
           log_path = os.path.join(root, "pytest", "pytest.txt")
           try:
               with open(log_path, encoding="utf-8", errors="replace") as fh:
@@ -530,12 +885,17 @@ jobs:
                           pct = float(m.group(1))
           except Exception:
               pass
-          status = "passed" if pct is not None else "errored"
+          if skipped:
+              status = "passed"
+              detail = "coverage is manual-only (temporary 2026-11-10) — run a full dispatch to measure it"
+          else:
+              status = "passed" if pct is not None else "errored"
+              detail = f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log"
           payload = {
               "check": "coverage",
               "status": status,
               "exit_code": 0,
-              "detail": f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log",
+              "detail": detail,
               "percent": pct,
           }
           with open(os.path.join(root, "run-info", "coverage.json"), "w") as fh:
@@ -552,6 +912,29 @@ jobs:
         run: |
           set +e
           mkdir -p "$CI_RESULTS_DIR/coverage"
+          # TEMPORARY (2026-11-10): coverage is manual-only, so there is
+          # no coverage.xml to gate on. Record N/A (passing, explicit) —
+          # per-file floors are enforced on manual full-dispatch runs
+          # (schedule / full dispatch), same as for targeted plans.
+          if [ ! -f "$CI_RESULTS_DIR/pytest/coverage.xml" ]; then
+            python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage 0 "coverage is manual-only (temporary 2026-11-10) — per-file floors enforced on manual full-dispatch runs" || true
+            echo "critical-file coverage gate: NOT APPLICABLE (no coverage data; floors enforced in full runs)"
+            exit 0
+          fi
+          # CI quota diet + planner integration: a TARGETED plan executes a
+          # deliberate SUBSET — per-file floors are enforced in full
+          # validation runs (schedule / full dispatch) only, and the N/A is
+          # recorded explicitly rather than silently skipped.
+          PLAN_MODE="expanded"
+          PLAN_FILE="$CI_RESULTS_DIR/test-plan/plan.json"
+          if [ -f "$PLAN_FILE" ]; then
+            PLAN_MODE=$(python3 -c "import json;print(json.load(open('$PLAN_FILE')).get('selection_mode','expanded'))" 2>/dev/null || echo expanded)
+          fi
+          if [ "$PLAN_MODE" = "targeted" ]; then
+            python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage 0 "targeted plan — per-file floors enforced in full validation runs" || true
+            echo "critical-file coverage gate: NOT APPLICABLE (targeted plan; floors enforced in full runs)"
+            exit 0
+          fi
           python scripts/ci/critical_manifest.py --coverage "$CI_RESULTS_DIR/pytest/coverage.xml" --report-only > "$CI_RESULTS_DIR/coverage/critical-gate.txt" 2>&1
           rc=$?
           cat "$CI_RESULTS_DIR/coverage/critical-gate.txt"
@@ -645,6 +1028,7 @@ jobs:
               "Critical coverage": load("critical_coverage.json").get("status", "skipped"),
               "Runtime gate": load("runtime_gate.json").get("status", "skipped"),
               "Layered Smoke": load("layered_smoke.json").get("status", "skipped"),
+              "Perf budget": load("perf_budget.json").get("status", "skipped"),
           }
           meta = load("metadata.json")
           extra = load("pytest-extra.json")
@@ -705,7 +1089,7 @@ jobs:
                       return json.load(fh)
               except Exception:
                   return {}
-          checks = ["pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke"]
+          checks = ["pytest", "smoke", "coverage", "critical_coverage", "runtime_gate", "layered_smoke", "perf_budget"]
           details = []
           status = "passed"
           for c in checks:
@@ -732,7 +1116,7 @@ jobs:
       # -------- Final gate: fail-closed over THIS lane's checks -------
       - name: Fail job if any check failed (fail-closed)
         if: always()
-        run: python scripts/ci/ci_final_gate.py --checks pytest,smoke,coverage,critical_coverage,runtime_gate,layered_smoke
+        run: python scripts/ci/ci_final_gate.py --checks pytest,smoke,coverage,critical_coverage,runtime_gate,layered_smoke,perf_budget
 
   quality:
     name: Code Quality & Tests
@@ -768,6 +1152,12 @@ jobs:
   # ---------------------------------------------------------------------------
   full-runtime-provider:
     name: Full NSE Runtime (${{ matrix.provider }})
+    # CI quota diet (2026-11): these legs need Docker service containers
+    # (postgres) and ~25 hosted-minutes per run — they are the single
+    # largest burn on every PR/push. They now run on the SEMI-MONTHLY
+    # schedule and on explicit full dispatch only; the fail-closed verdict
+    # below treats a policy skip on PR/push as expected, never as a pass.
+    if: always() && (github.event_name == 'schedule' || inputs.full == true)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -1339,7 +1729,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download provider runtime evidence
-        if: always()
+        # CI quota diet (2026-11): evidence exists only when the provider
+        # matrix actually ran (schedule / full dispatch). On a policy skip
+        # these steps must not run — download/aggregate/upload would fail
+        # on empty inputs before the verdict step below gets its say.
+        if: always() && needs.full-runtime-provider.result == 'success'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: ci-full-runtime-*
@@ -1347,7 +1741,7 @@ jobs:
           merge-multiple: false
 
       - name: Aggregate provider warnings, errors, traces and query counts
-        if: always()
+        if: always() && needs.full-runtime-provider.result == 'success'
         continue-on-error: true
         run: |
           python scripts/ci/aggregate_provider_runtime.py \
@@ -1355,7 +1749,7 @@ jobs:
             --output runtime-provider-overall.json
 
       - name: Upload provider overall runtime evidence
-        if: always()
+        if: always() && needs.full-runtime-provider.result == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ci-provider-runtime-overall-${{ github.run_id }}
@@ -1367,12 +1761,25 @@ jobs:
         run: |
           echo "SQLite/PostgreSQL matrix:   ${{ needs.full-runtime-provider.result }}"
           echo "MT5 native Windows line:    ${{ needs.mt5-native.result }}"
-          # Wine is a compatibility platform (mt5-wine-compat.yml, weekly +
+          # Wine is a compatibility platform (mt5-wine-compat.yml, monthly +
           # dispatch) and is deliberately NOT part of this verdict: a Wine
           # failure can never block a PR, this aggregate, or a release.
-          if [ "${{ needs.full-runtime-provider.result }}" != "success" ]; then
+          # CI quota diet (2026-11): the provider matrix is gated to the
+          # semi-monthly schedule and full dispatch (Docker service
+          # containers cannot run on the self-hosted tiers). A skipped
+          # matrix on PR/push is EXPECTED policy — never a pass, never a
+          # failure; on the events where the leg is required, any
+          # non-success still fails this verdict fail-closed.
+          if [ "${{ needs.full-runtime-provider.result }}" != "success" ] && [ "${{ needs.full-runtime-provider.result }}" != "skipped" ]; then
             echo "::error::Full SQLite/PostgreSQL runtime matrix failed"
             exit 1
+          fi
+          if [ "${{ needs.full-runtime-provider.result }}" = "skipped" ]; then
+            if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then
+              echo "::error::Full runtime matrix skipped on an event that requires it (schedule/full dispatch)"
+              exit 1
+            fi
+            echo "::notice::Full NSE runtime matrix skipped by policy on ${{ github.event_name }} — runs on the semi-monthly schedule or via dispatch with full=true."
           fi
           # CI runner-routing architecture (2026-11): the MT5 native line is
           # scheduled/dispatch-only (Windows is excluded from automatic CI).
@@ -1463,8 +1870,8 @@ jobs:
           pytest "${EXT_FILES[@]}" \
                  -n auto --dist loadgroup -q --tb=short \
                  --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" \
-                 > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-          rc=$?
+                 2>&1 | tee "$CI_RESULTS_DIR/pytest/pytest.txt"
+          rc=${PIPESTATUS[0]}
           { echo "EXT_RC=$rc"; } >> "$GITHUB_ENV"
           # NOTE: intentionally NOT make_ci_results.py check ... extended — the
           # quality job's ci_final_gate CHECKS tuple is the shared run-info

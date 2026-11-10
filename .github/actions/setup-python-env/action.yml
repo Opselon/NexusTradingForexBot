@@ -1,0 +1,179 @@
+name: "NSE Python environment"
+
+description: >-
+  Canonical Python environment for CI jobs: setup-python, pinned uv, and a
+  stable venv synced exactly to requirements.lock. ONE definition — the
+  quality lanes in ci.yml (and any future lane) use this instead of
+  copy-pasting the setup-python / setup-uv / lock-install block per job.
+  The venv is keyed by repo + Python version only and `uv pip sync`
+  makes it match the lock EXACTLY on every run, so a dependency switch
+  installs only the delta and can never reuse a stale environment.
+  Installs into a project venv, never --system (PEP-668
+  externally-managed system Pythons on the self-hosted tiers refuse
+  bare system installs).
+
+  Checkout stays in the calling job (the workflow-integrity scan requires
+  actions/checkout before any local composite action), and the results
+  tree is initialized by the caller so lane-specific ordering is kept.
+
+inputs:
+  python-version:
+    description: "Python version to provision"
+    required: false
+    default: "3.11"
+  runner-class:
+    description: "Runner class from the runner-select preflight: self-hosted | github-hosted (drives uv cache enablement)"
+    required: false
+    default: "github-hosted"
+
+outputs:
+  venv-dir:
+    description: "Absolute path of the created venv (also exported as VENV_DIR)"
+    value: ${{ steps.install.outputs.venv_dir }}
+  venv-python:
+    description: "Python version of the created venv (also exported as VENV_PYTHON)"
+    value: ${{ steps.install.outputs.venv_python }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install uv (pinned — the canonical lock tool)
+      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      with:
+        version: "0.12.10"
+        # Self-hosted tiers keep their warmth in the runner's own
+        # persistent volumes; uploading a multi-GB uv cache from a
+        # tethered box burns hours of Post time and cache storage. The
+        # GitHub cache only pays off on hosted lanes.
+        enable-cache: ${{ inputs.runner-class != 'self-hosted' }}
+        cache-dependency-glob: requirements.lock
+
+    - name: Install via lock (hash-verified requirements.lock)
+      id: install
+      shell: bash
+      env:
+        # Extra index is the Aliyun mirror (2026-11-09): the primary is
+        # now TUNA (see ci.yml) and Aliyun is the fallback for any version
+        # TUNA lacks. PyPI was REMOVED as the extra: files.pythonhosted.org
+        # is unreachable from tier-1, so PyPI can resolve a version but
+        # can never deliver its wheel (proven by the proof/leaf-timing
+        # diagnostic — uv resolved filelock 4.2.10 from PyPI, then the
+        # download timed out after 3 retries in 43.5s). An extra index
+        # must be a mirror that CAN serve wheels. The Dubai runner
+        # overrides the primary in the run script below (PyPI, measured
+        # fastest there) — the index is a per-machine network property,
+        # so the runner picks it itself by RUNNER_NAME. UV_INDEX_STRATEGY is
+        # load-bearing: uv's default first-index strategy uses the FIRST
+        # index that has a package and never consults the others for it,
+        # so without unsafe-best-match the extra index is a no-op for
+        # packages the primary already carries (proven by the
+        # proof/leaf-timing run). unsafe-best-match considers all indexes
+        # and picks the best version; downloads prefer the primary when
+        # it has the chosen version.
+        # load-bearing: uv's default first-index strategy uses the FIRST
+        # index that has a package and never consults the others for it,
+        # so without unsafe-best-match the extra index is a no-op for
+        # packages the primary already carries (proven by the
+        # proof/leaf-timing run). unsafe-best-match considers all indexes
+        # and picks the best version; downloads prefer the primary when
+        # it has the chosen version.
+        PIP_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+        # uv reads UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so
+        # the workflow's PIP_INDEX_URL primary is a no-op on any runner
+        # whose image exports them (tier-1's opselon/gh-runner image
+        # hard-codes the Aliyun mirror). 5e50710d: uv resolved against
+        # Aliyun only and reported "no version of typer==0.29.0" while the
+        # TUNA primary already listed it. Pin both UV variables here so the
+        # primary is identical on every machine of the fleet.
+        UV_DEFAULT_INDEX: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+        UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+        UV_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+        UV_INDEX_STRATEGY: "unsafe-best-match"
+      run: |
+        set -euo pipefail
+        # Automatic runner hygiene (2026-11-09): prune stale venvs /
+        # caches (>30d) and /tmp test leftovers (>24h). Age-gated and
+        # failure-proof — a prune must never fail a lane.
+        bash scripts/ci/prune_runner_state.bash || true
+        # Per-runner primary index (2026-11-10, measured on Dubai):
+        # the default primary is TUNA (tier-1 cannot reach
+        # files.pythonhosted.org), but the Dubai runner (RUNNER_NAME
+        # nexus-*) downloads the same 14 MB wheel from PyPI at
+        # 3.4 MB/s vs 1.6 MB/s from TUNA and 1.6 MB/s from Aliyun
+        # (TUNA RTT 425 ms; the 1 Gbps port is the datacenter link,
+        # the VPS's international transit is ~2-8 MB/s). PyPI is
+        # also the origin, so it never lags a fresh release the way
+        # mirrors do (filelock 4.2.10 lagged on Aliyun). The extra
+        # stays Aliyun for both — a mirror that can serve wheels.
+        case "${RUNNER_NAME:-}" in
+          nexus-*)
+            export UV_DEFAULT_INDEX="https://pypi.org/simple/"
+            export UV_INDEX_URL="https://pypi.org/simple/"
+            export UV_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+            export PIP_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+            echo "Dubai runner (${RUNNER_NAME}): PyPI primary (measured fastest, 2026-11-10)"
+            ;;
+        esac
+        # Self-hosted runners persist $HOME across jobs, but
+        # actions/checkout wipes the workspace (clean: true) on every job —
+        # so a workspace venv was rebuilt from the lock on EVERY lane
+        # (a full torch reinstall per lane, twice per run, over a tethered
+        # uplink). On self-hosted tiers the venv lives in a
+        # runner-persistent location keyed by repo + Python ONLY, and
+        # `uv pip sync` makes it match requirements.lock EXACTLY on every
+        # run (installs what changed, removes what left the lock) — so a
+        # one-package lock change (2026-11-10: pyinstaller-hooks-contrib
+        # 2026.9 -> 2026.10) installs one package instead of rebuilding
+        # all 94 (torch + nvidia wheels, ~2.5 GB) from scratch. Ad-hoc
+        # installs into this venv (e.g. the cmake wheel in quality-tests)
+        # are removed by sync and re-installed by their own step each run
+        # — by design, not a bug. The old
+        # hash-bound design minted a new directory per lock hash, which is
+        # why every lock regen re-downloaded everything. A stale
+        # environment is impossible by construction: sync is exact, and
+        # the prune script removes venvs unused for >30 days. A runner
+        # executes one job at a time, so no lock is needed around
+        # creation. Hosted runners are ephemeral, so the workspace venv is
+        # unchanged there (still hash-keyed; the GitHub uv cache covers
+        # it). Automatic pruning of venvs older than 30 days runs at the
+        # top of this step (scripts/ci/prune_runner_state.bash).
+        if [ "${{ inputs.runner-class }}" = "self-hosted" ]; then
+          REPO_SLUG="$(echo "${GITHUB_REPOSITORY:-local}" | tr '/' '-')"
+          VENV_DIR="$HOME/.cache/nse-venvs/${REPO_SLUG}-.venv-ci-${{ inputs.python-version }}"
+          mkdir -p "$HOME/.cache/nse-venvs"
+          if [ ! -x "${VENV_DIR}/bin/python" ]; then
+            uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
+          fi
+        else
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
+          VENV_DIR=".venv-ci-${VENV_KEY}"
+          uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
+          VENV_DIR="$PWD/${VENV_DIR}"
+        fi
+        # Retry PLAIN, without a cache refresh (2026-11-10): the old
+        # retry re-fetched every index and re-downloaded ALL 94
+        # packages on ANY failure — that is how the uv cache grew to
+        # 16 GB and filled the Dubai disk. A plain retry reuses the
+        # warm cache and the warm venv, so only packages missing from
+        # the venv download: a one-package lock change downloads one
+        # package, never all 94. The retry only runs on failure, so
+        # warm runs pay nothing. A stale index cache is a rare,
+        # diagnosable failure — it fails the lane visibly with the
+        # real error instead of silently re-downloading everything.
+        if ! VIRTUAL_ENV="${VENV_DIR}" uv pip sync requirements.lock; then
+          echo "::warning::lock sync failed; retrying once (plain, cache intact)"
+          VIRTUAL_ENV="${VENV_DIR}" uv pip sync requirements.lock
+        fi
+        # Always re-install the editable root: the .pth records the
+        # workspace path, which must track the current checkout.
+        VIRTUAL_ENV="${VENV_DIR}" uv pip install --no-deps -e .
+        echo "${VENV_DIR}/bin" >> "$GITHUB_PATH"
+        echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
+        echo "venv_dir=${VENV_DIR}" >> "$GITHUB_OUTPUT"
+        echo "venv_python=$("${VENV_DIR}/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        echo "VENV_PYTHON=$("${VENV_DIR}/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_ENV"

@@ -43,6 +43,7 @@ from nexus_scalp.experience.models import (
 )
 from nexus_scalp.research.models import CandidateLifecycle, StrategyRegistryEntry, StrategyScore
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo) -> None:
@@ -50,15 +51,18 @@ def _flush(repo) -> None:
 
 
 @pytest.fixture
-def wired_engine(tmp_path):
+def wired_engine(tmp_path, verified_test_model_bundle):
     """A full LiveEngine wired against a paper adapter and temp DB."""
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'research_api.db'}")
+    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
             "mode": "PAPER",
         },
-        model={"model_artifact_path": str(tmp_path / "model.pt")},
+        model={"model_artifact_path": str(model_path)},
     )
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
 
@@ -137,7 +141,7 @@ class TestResearchAPI:
         _repo, engine = wired_engine
         engine._start_research_worker()
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/research/summary")
         assert resp.status_code == 200
         body = resp.json()
@@ -149,7 +153,7 @@ class TestResearchAPI:
         repo, engine = wired_engine
         seed_strategy_experiences(engine.experience_ledger, repo, count=40)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
 
         # Discovery: build dataset + candidates.
         disc = client.post("/api/research/discover")
@@ -172,7 +176,7 @@ class TestResearchAPI:
         repo, engine = wired_engine
         seed_strategy_experiences(engine.experience_ledger, repo, count=40)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/research/registry")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -203,7 +207,7 @@ class TestResearchAPI:
         """TASK-4: /api/research/health explains WHY the registry is empty."""
         _repo, engine = wired_engine
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/research/health")
         assert resp.status_code == 200
         body = resp.json()
@@ -235,7 +239,7 @@ class TestResearchAPI:
         monkeypatch.setattr(research_store, "research_health_summary", _boom)
         _repo, engine = wired_engine
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/research/health")
         assert resp.status_code == 200
         body_text = resp.text
@@ -246,7 +250,7 @@ class TestResearchAPI:
     def test_self_heal_endpoint(self, wired_engine):
         _repo, engine = wired_engine
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.post("/api/research/self-heal")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -313,7 +317,7 @@ class TestStrategyPromotionAPI:
 
     def _client(self, engine):
         app = create_app(engine)
-        return TestClient(app)
+        return authenticated_test_client(app)
 
     def _seed_validated(self, repo, engine, strategy_id="strat_promo"):
         from nexus_scalp.research.models import CandidateLifecycle

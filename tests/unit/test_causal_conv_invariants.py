@@ -514,6 +514,13 @@ class TestLatencyAcrossReceptiveFields:
     @pytest.mark.parametrize("schedule", SCHEDULES)
     def test_latency_bound_across_rf_depths(self, schedule: str) -> None:
         torch.manual_seed(0)
+        # CPU time is summed across ALL worker threads; torch defaults to one
+        # per core (4 here), so on the co-tenant-loaded 2-core self-hosted
+        # runner the threads oversubscribe the box, the context switching is
+        # billed as CPU time, and a ~2-3 ms forward pass reports 10-60x that
+        # (observed 464ms per pass vs the 50ms budget). Pin one thread, which
+        # is the execution shape the CPU-time clock is for.
+        torch.set_num_threads(1)
         seq_len, feature_dim = 64, 16
         timings: dict[int, float] = {}
         for blocks in BLOCK_COUNTS:

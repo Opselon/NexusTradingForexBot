@@ -38,6 +38,27 @@ LINUX_SELF_HOSTED_LABELS: tuple[str, ...] = ("self-hosted", "Linux", "X64")
 WINDOWS_SELF_HOSTED_LABELS: tuple[str, ...] = ("self-hosted", "Windows", "X64")
 MACOS_SELF_HOSTED_LABELS: tuple[str, ...] = ("self-hosted", "macOS", "ARM64")
 
+# Linux tiering (2026-11-07). The repository runs TWO self-hosted Linux
+# runners; jobs take the fastest available one and only fall downward:
+#   tier-1 "opselon-docker-runner": 8-thread Docker runner, 12 GB RAM cap —
+#           the preferred target for every Linux job.
+#   tier-2 "nexus-runner":          secondary 2-core box.
+# GitHub-hosted remains the last resort. ``LINUX_SELF_HOSTED_LABELS`` stays
+# the base set shared by both tiers (used for generic "any self-hosted"
+# matching); tier selection lives in scripts/ci/runner_select.py.
+LINUX_SELF_HOSTED_TIER1_LABELS: tuple[str, ...] = (
+    "self-hosted",
+    "Linux",
+    "X64",
+    "opselon-vm",
+)
+LINUX_SELF_HOSTED_TIER2_LABELS: tuple[str, ...] = (
+    "self-hosted",
+    "Linux",
+    "X64",
+    "nexus-2core",
+)
+
 # GitHub-hosted fallback images.
 LINUX_HOSTED: str = "ubuntu-latest"
 WINDOWS_HOSTED: str = "windows-latest"
@@ -72,6 +93,8 @@ def snippet() -> str:
     return "\n".join(
         [
             f"  NSE_RUNNER_LINUX_SELF_HOSTED_LABELS: '{','.join(LINUX_SELF_HOSTED_LABELS)}'",
+            f"  NSE_RUNNER_LINUX_TIER1_LABELS: '{','.join(LINUX_SELF_HOSTED_TIER1_LABELS)}'",
+            f"  NSE_RUNNER_LINUX_TIER2_LABELS: '{','.join(LINUX_SELF_HOSTED_TIER2_LABELS)}'",
             f"  NSE_RUNNER_WINDOWS_SELF_HOSTED_LABELS: '{','.join(WINDOWS_SELF_HOSTED_LABELS)}'",
             f"  NSE_RUNNER_MACOS_SELF_HOSTED_LABELS: '{','.join(MACOS_SELF_HOSTED_LABELS)}'",
             f"  NSE_RUNNER_LINUX_HOSTED: '{LINUX_HOSTED}'",
@@ -91,6 +114,8 @@ def as_dict() -> dict[str, Any]:
     """
     return {
         "linux_self_hosted_labels": list(LINUX_SELF_HOSTED_LABELS),
+        "linux_self_hosted_tier1_labels": list(LINUX_SELF_HOSTED_TIER1_LABELS),
+        "linux_self_hosted_tier2_labels": list(LINUX_SELF_HOSTED_TIER2_LABELS),
         "windows_self_hosted_labels": list(WINDOWS_SELF_HOSTED_LABELS),
         "macos_self_hosted_labels": list(MACOS_SELF_HOSTED_LABELS),
         "linux_hosted": LINUX_HOSTED,
@@ -125,6 +150,7 @@ def main(argv: list[str] | None = None) -> int:
         assert snippet()
         assert as_dict()
         assert LINUX_SELF_HOSTED_LABELS and WINDOWS_SELF_HOSTED_LABELS and MACOS_SELF_HOSTED_LABELS
+        assert LINUX_SELF_HOSTED_TIER1_LABELS and LINUX_SELF_HOSTED_TIER2_LABELS
         assert LINUX_HOSTED and WINDOWS_HOSTED and MACOS_HOSTED
         assert CACHE_NAMESPACE
     return 0

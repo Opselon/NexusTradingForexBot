@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sys
 import threading
 import time
 from datetime import UTC, datetime, timedelta
@@ -952,4 +953,15 @@ def test_round_trip_through_local_bridge_is_bounded(gateway):
             adapter.get_last_tick(SYMBOL)
 
     # 100 loopback RPC calls should consume minimal CPU (typically < 100ms)
-    assert sw.consumed_ms < 500.0, f"loopback RPC CPU {sw.consumed_ms:.3f}ms exceeds 500ms budget"
+    # — but only when no tracer is installed. Under coverage.py
+    # (sys.settrace) this pure-Python hot path (urllib + HMAC + JSON, client
+    # and in-process server) reads ~20x its real CPU time: d31149fb measured
+    # 2005ms under --cov on the 2-core self-hosted runner while the same
+    # calls pass the budget in the coverage-free OS lane on the same box.
+    # A CPU budget under a tracer measures the tracer, not the adapter, so
+    # the calls above still prove liveness and the budget is enforced only
+    # when untraced.
+    if sys.gettrace() is None:
+        assert sw.consumed_ms < 500.0, (
+            f"loopback RPC CPU {sw.consumed_ms:.3f}ms exceeds 500ms budget"
+        )

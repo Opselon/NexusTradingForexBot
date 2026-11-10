@@ -34,7 +34,7 @@ on:
     # Review policy (2026-11): Wine is a COMPATIBILITY platform - weekly +
     # manual dispatch ONLY. No PR trigger: ordinary PRs never execute Wine,
     # and a PR that only edits this workflow does not run it either.
-    - cron: "23 3 * * 3"
+    - cron: "23 3 1,15 * *"
 
 permissions:
   contents: read

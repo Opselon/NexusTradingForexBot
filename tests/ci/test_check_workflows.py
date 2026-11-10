@@ -514,3 +514,127 @@ jobs:
         models, ec = c.run(d)
         assert ec == 0
         assert not any(f.check.startswith("action-pin") for m in models for f in m.findings)
+
+
+def test_runner_temp_in_job_env_fails():
+    """Regression (f488c48): `${{ runner.temp }}` in job-level env made
+    GitHub reject ci.yml + tests-os.yml at parse time — zero jobs ran on
+    three pushes while every other check stayed green. The analyzer must
+    flag it as an ERROR so this class can never ship again."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "bad.yml",
+            """
+name: bad
+on: [push]
+jobs:
+  quality-tests:
+    runs-on: ubuntu-latest
+    env:
+      NSE_DATABASE__PROVIDER: sqlite
+      NEXUS_AUDIT_DB: ${{ runner.temp }}/nse-ci-audit.db
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - run: echo hi
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 1
+        hits = [f for m in models for f in m.findings if f.check == "job-env-step-only-context"]
+        assert len(hits) == 1, [f.as_line() for m in models for f in m.findings]
+        assert "runner" in hits[0].message
+
+
+def test_runner_temp_in_step_env_passes():
+    """The same expressions are LEGAL inside steps (step env, run, with):
+    the check must not fire there, or every workflow using runner.temp
+    in a step would false-positive."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "good.yml",
+            """
+name: good
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      NSE_DATABASE__PROVIDER: sqlite
+      RUN_ID: ${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - id: pin
+        env:
+          TMP: ${{ runner.temp }}
+        run: echo "$TMP"
+      - run: echo "${{ steps.pin.outputs.v }}"
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 0, [f.as_line() for m in models for f in m.findings]
+        assert not any(f.check == "job-env-step-only-context" for m in models for f in m.findings)
+
+
+def test_comment_inside_continuation_fails():
+    """Regression (2026-11-09): ci.yml quality-tests put rationale
+    comments INSIDE the `python run_test_plan.py \\` continuation, so
+    `#` swallowed the rest of the logical line and --pytest-extra ran
+    as a stray command (exit 127). The analyzer must flag it."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "bad.yml",
+            """
+name: bad
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - name: run it
+        run: |
+          python foo.py \\
+            --bar baz \\
+            # why baz is needed
+            --qux 1
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 1
+        hits = [f for m in models for f in m.findings if f.check == "continuation-comment"]
+        assert len(hits) == 1, [f.as_line() for m in models for f in m.findings]
+
+
+def test_comment_above_command_passes():
+    """The same comment ABOVE the command is fine — the check must only
+    fire for comments that a backslash continuation actually joins."""
+    with tempfile.TemporaryDirectory() as td:
+        d = Path(td)
+        _write(
+            d,
+            "good.yml",
+            """
+name: good
+on: [push]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@0000000000000000000000000000000000000000
+      - name: run it
+        run: |
+          # why baz is needed
+          python foo.py \\
+            --bar baz \\
+            --qux 1
+""",
+        )
+        models, ec = c.run(d)
+        assert ec == 0, [f.as_line() for m in models for f in m.findings]
+        assert not any(f.check == "continuation-comment" for m in models for f in m.findings)

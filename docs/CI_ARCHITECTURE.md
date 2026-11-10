@@ -12,19 +12,32 @@ this file is the CI-specific companion.
 
 | Workflow | Trigger | Purpose | Lanes touched |
 | :--- | :--- | :--- | :--- |
-| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gates (lint/types ∥ tests, split 2026-11 under one required verdict) + runtime provider matrix + DB fabric + **CI self-integrity** + review-status | python, web, ci |
+| `ci.yml` | push/PR main·develop·ci-tests; weekly cron; dispatch | Quality gates (lint/types ∥ tests, split 2026-11 under one required verdict) + wall-clock perf-budget step + runtime provider matrix + DB fabric + **CI self-integrity** + review-status | python, web, ci |
 | `mt5-native-windows.yml` | `workflow_call` (from ci.yml); dispatch | **Native Windows MT5 certification** (primary runtime platform): Authenticode-verified installer + real `mt5.initialize()` IPC + `DirectMT5Adapter` connect; demo (Level 2/3) legs are dispatch-only | python/runtime |
 | `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
-| `tests-os.yml` | push/PR main·develop·ci-tests; Monday cron; dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
+| `tests-os.yml` | semi-monthly cron (1st & 15th); dispatch only — no PR/push triggers (2026-11-10 centralization: Quality owns all PR/push execution) | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
-| `tests-windows.yml` | `workflow_dispatch` ONLY | **Manual Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`) | python (Windows) |
-| `tests-macos.yml` | `workflow_dispatch` ONLY | **Manual macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`) | python (macOS) |
+| `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + stable lock-synced venv (one definition, no per-job copy) | ci |
+| `tests-windows.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`); never on PRs (Quality owns PR execution) | python (Windows) |
+| `tests-macos.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`); never on PRs (same treatment as Windows) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
-| `lockfile-diff.yml` | PR main·develop; dispatch | Dependency manifest diff report (advisory) | deps |
 | `docker.yml` | push `docker` branch; dispatch | Build + publish GHCR image | docker |
 | `release.yml` | `v*` tags; dispatch | validate → quality gates → windows build/installer → publish | release/python |
+| `perf-benchmark.yml` | semi-monthly cron (1st & 15th); dispatch only — no PR/push triggers (2026-11-10) | Bench units, exit non-zero on >15% regression vs baseline; PR comment | perf |
+| `qa-deep-assurance.yml` | semi-monthly cron; dispatch | Deep QA (mutation proof optional via input) | qa |
+| `nightly-qa.yml` | semi-monthly cron; dispatch | Nightly deep-QA sweep | qa |
+| `nightly-ml-benchmark.yml` | semi-monthly cron; dispatch | Nightly ML benchmark sweep | ml/perf |
+| `nightly-e2e.yml` | dispatch ONLY | Full Docker E2E soak (manual evidence pass) | e2e |
+| `mt5-wine-compat.yml` | semi-monthly cron; dispatch ONLY | Wine compatibility soak (advisory, never gates) | python/compat |
+| `dependency-lock.yml` | push/PR main·develop; dispatch | Lockfile drift + migration safety | deps |
+| `dependency-autoregen.yml` | push/PR on manifest paths; daily cron; dispatch | Lock self-heal (regenerates compiled artifacts) | deps |
+| `docs.yml` | push main/tags; PR main; release; semi-monthly cron; dispatch | Docs validation + Pages deploy | docs |
+| `go-api.yml` | push/PR on go-api/frontend/web paths; dispatch | Go API build + contract probe | go/web |
+| `pr-evidence.yml` | `workflow_run` (completed) on the PR workflows | Merge verdict + security-detail aggregation, PR comment | ci |
+| `drift-debug.yml` | dispatch ONLY | Manual drift diagnosis | ci |
+| `official-model.yml` | dispatch ONLY | Promote a candidate model to official | ml/release |
 
 ## Lane architecture (canonical)
 
@@ -47,6 +60,27 @@ A file may map to multiple lanes. `docs_only` is derived so a doc-only PR does
 not trigger the heavy Python gate. Unknown/missing file types are **fail-safe**:
 they do NOT map to nothing that would let a gate think "docs_only", so the
 workflow default (run Python) still fires.
+
+### Test selection — hub-bounded reachability
+
+The planner is the native C17 engine (`scripts/ci/native/nse-ci-engine`)
+and it is the **sole** selection engine: there is no Python planner and no
+parity twin. `scripts/ci/run_test_plan.py` only builds/verifies the engine,
+runs its plan (SHA-256 digest-checked), and executes the selected tests with
+pytest. A missing or failed engine fails the lane — nothing falls back to
+Python selection. The engine selects tests by reverse reachability over the
+static import graph. A module imported by more than **25** nodes is a
+selection **hub**
+(composition root / god module: `live_engine`, `web.server`, …) and the
+traversal never expands through it — otherwise one leaf change selected
+most of the suite (measured 2026-11-09: changing `research/worker.py`,
+8 direct importers, selected 779/860 tests via `live_engine`). With the
+boundary the same change selects 7 tests. A hub that is itself changed
+still selects its direct test importers; a changed module whose only
+importers are hubs is reported uncovered and falls back to the critical
+suite (fail-safe). Unchanged: global invalidation (`tests/conftest.py`,
+dependency manifests, `configs/`), mandatory safety expansion, and
+schedule/full runs, which still execute everything.
 
 ## CI self-integrity (new)
 
@@ -90,7 +124,7 @@ branch on is validated on every run.
 * `ci.yml :: ci-integrity` — workflow wiring must stay valid.
 * `ci.yml :: quality` — ruff lint/format, mypy, pytest critical suite, coverage.
 * `js-tests.yml :: js-tests` — Web JS syntax + unit tests.
-* `tests-os.yml :: tests-linux-*` — Linux critical suite (self-hosted first).
+* `tests-os.yml :: tests-linux-*` — Linux critical suite, semi-monthly sweep + dispatch only (self-hosted first; no PR/push triggers since 2026-11-10).
 * `security.yml :: codeql` + `trivy` — advisory, but should be green.
 
 > **Branch-protection migration (administrator action, section below).**
@@ -102,6 +136,228 @@ branch on is validated on every run.
 > end state is to remove both names from protection and rely on the manual
 > lane evidence in `scripts/release/release_auth_gate.py`, which already
 > refuses a release whose SHA carries no green Windows lane.
+
+## PR policy classification — what runs where (2026-11 audit)
+
+Policy decided 2026-11-09 (area 4 of the PR #731 forensic audit): every PR
+runs the cheap, fast, safety-relevant checks; expensive or timing-sensitive
+work runs where it still blocks, but not on the PR lane. Nothing below
+silently drops a required check: a check that leaves the PR lane names
+exactly where it runs instead and stays blocking there. The table is the
+classification — a workflow change that moves a row must update this table
+in the same commit, with its risk note.
+
+Legend: ✓ = runs and blocks on that event; — = does not run; ◐ = runs in a
+reduced / advisory form.
+
+| Check | PR | Main push | Schedule | Manual / dispatch | Risk note (only rows that moved off PRs) |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| CI integrity + change classification (`ci-integrity`) | ✓ | ✓ | ✓ | ✓ | — |
+| Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
+| C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Matrix no longer runs on PR/push at all (2026-11-10) — its Linux legs run FULL on the semi-monthly schedule or FULL/SKEW on dispatch only. |
+| Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
+| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans — and whenever coverage is skipped (TEMPORARY 2026-11-10: coverage is manual-only, no --cov except a manual full dispatch, so the suite fits the cap on tier-1) — the gate records N/A explicitly, never a silent skip. |
+| Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
+| JS tests (`js-tests.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
+| Go API (`go-api.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
+| Security: CodeQL + Trivy (`security.yml`, path-filtered) | ✓ | ✓ | ✓ | ✓ | — |
+| OSV dependency scan (advisory SARIF) | ✓ | ✓ | ✓ | ✓ | — |
+| Dependency lock + migration safety | ✓ | ✓ | — | ✓ | — |
+| Docs validation (`docs.yml`) | ✓ | ✓ | ✓ | ✓ | — |
+| PR evidence aggregator (`pr-evidence.yml`) | ✓ | ✓ | — | — | — |
+| Perf benchmarks (`perf-benchmark.yml`) | — | — | ✓ | ✓ | Moved off PRs (2026-11-10): semi-monthly regression watch only; path-triggered PR regressions are caught by the Quality wall-clock budget step. |
+| Full critical suite on GLOBAL-IMPACT changes | ✓ | ✓ | ✓ | ✓ | See the global-impact rule below: the expanded plan IS the full-suite gate on PRs. |
+| Extended validation, tier 2 (`extended`) | — | ✓ | — | ✓ | A regression in these slow production-truth tests (bug276 ~1252 s, perf_deadletter ~730 s) is caught post-merge, not pre-merge. Mitigation: runs on every main push, blocking there; main-branch status shows it before the next release. |
+| Heavy CI: integration / e2e / research-backtest / model-validation (`heavy-ci`) | — | — | — | ✓ (`ci-tests` branch or `full=true`) | Integration regressions can merge. Mitigation: the PR lanes cover the critical suite + smoke chain + layered smoke; run heavy-ci via full dispatch before a release. |
+| Full runtime soak, SQLite + PostgreSQL (`full-runtime-provider`) | — | — | ✓ | ✓ (`full=true`) | Provider-specific runtime regressions (e.g. a PostgreSQL-only query failure) can merge. Mitigation: the soak runs on the semi-monthly schedule and on full dispatch, blocking there; PR lanes pin sqlite isolation and fail closed on the DB assert step. The PostgreSQL arms never ran on PRs — they need a migrated server, not a throwaway container. |
+| DB fabric certification, SQLite ↔ PostgreSQL (`db-fabric-certification`) | — | — | ✓ | ✓ (`full=true`) | Same as the runtime soak it follows: migration/facility regressions surface on the schedule or full dispatch, not on the PR. |
+| MT5 native Windows IPC (`mt5-native`) | — | — | ✓ | ✓ | Windows MT5 regressions can merge. Mitigation: the release gate refuses a release SHA with no green Windows lane; Windows is manual-only by design (the primary runtime is the Windows EXE). |
+| Windows / macOS test suites (`tests-windows.yml`, `tests-macos.yml`) | — | — | ✓ (semi-monthly FULL sweep) | ✓ | Platform-specific regressions (paths / CRLF / encoding) can merge. Mitigation: a semi-monthly FULL sweep (1st & 15th, 07:17 UTC) + manual dispatch; the release gate requires Windows lane evidence for the release SHA. macOS has no release-gate requirement — that gap is explicit, not hidden. Neither lane runs on PRs: Quality owns PR execution, and the `Py Tests (windows-latest)` / `Py Tests (macos-latest)` checks on a PR are routing notices from tests-os.yml's ctx jobs on ubuntu-latest (3 s, no test execution) — no Windows/macOS runner is borrowed on a PR. |
+| QA deep assurance (`qa-deep-assurance.yml`, `nightly-qa.yml`) | — | — | ✓ | ✓ | Deep-QA / mutation findings land after merge by design; advisory, never a PR gate. |
+| Nightly ML benchmark (`nightly-ml-benchmark.yml`) | — | — | ✓ | ✓ | Perf drift is watched on the schedule, not per PR (path-triggered PR regressions are caught by the Quality wall-clock budget step; the perf-benchmark regression table runs semi-monthly). |
+| Wine compatibility soak (`mt5-wine-compat.yml`) | — | — | ✓ | ✓ | Advisory only; a Wine failure can never block a PR, the runtime verdict, or a release. |
+| Nightly E2E (`nightly-e2e.yml`) | — | — | — | ✓ | Full E2E evidence waits for an explicit dispatch. Mitigation: the PR smoke chain + layered smoke cover the fast E2E heartbeat on every PR. |
+| Docker build / publish | — | — | — | ✓ (`docker` branch, tags) | Not a PR gate by design. |
+| Release / official model | — | — | — | ✓ (tags) | Tag/dispatch only; the release gate reads the main CI checks + Windows lane evidence. |
+
+### Global-impact rule
+
+A change that touches `pyproject.toml`, `requirements.lock`,
+`requirements.txt`, `uv.lock`, `tests/conftest.py`, `pytest.ini`,
+`setup.cfg`, `tox.ini`, or anything under `configs/` triggers **global
+invalidation**: the C17 planner runs the expanded plan as the blocking PR
+gate (the expanded plan is the full critical set — 324 files — plus the
+tests the changed files pull in; on PR #731's full diff that was 351 of
+866 test files, 5607 tests), and the critical-file coverage gate
+enforces its per-file floors on that plan. The full critical suite
+therefore still gates global-impact PRs; the targeted fast shape applies
+only to leaf changes. A leaf change (e.g. one line in
+`src/nexus_scalp/research/worker.py`) selects 9 test files via the AST
+metadata path (7 via the line scanner).
+
+Note: the lane classifier (`scripts/ci/classify_changes.py`) is
+section-blind for `pyproject.toml` — any change to the file adds the
+`deps` and `python` lanes even for a mypy-only or lint-only change that
+the C17 planner treats as a non-global tooling scope. No gating decision
+depends on that distinction today, so it is a documented follow-up, not
+a blocker (see the comment in `classify_changes.py`).
+
+### Wall-clock budget rule (timing assertions vs coverage)
+
+A test that asserts a **wall-clock** budget (`time.perf_counter_ns`,
+`time.time`) must never run under coverage instrumentation in parallel
+with other tests. Two such assertions live in the critical suite: the
+payload value-gate cost test and the model-promotion transaction SLA
+(both pinned in `tests/ci/test_pr_policy_benchmark_lane.py`). Measured
+2026-11-09 (leaf-change benchmark, local VM) with the pre-optimization
+gate:
+
+| measurement | gate cost |
+| :--- | ---: |
+| isolated, no coverage | ~23–29 us/call |
+| isolated, with `--cov=src` | ~23 us/call |
+| with `--cov=src`, parallel suite running alongside | ~72 us/call |
+| without coverage, parallel suite running alongside | ~22 us/call |
+| CI Quality lane, 2-core tier-2, `--cov` + xdist `-n 2` | **158 us/call — FAIL vs the 100 us floor** |
+
+The gate itself was later optimized to ~0.6 us/call isolated (~2.8 us
+under the tracer), so the isolated number is now far below the floor —
+but the measurement distortion under coverage + parallelism remains,
+which is why the rule is structural, not a test-code tweak. Under
+coverage + parallelism a wall-clock assertion measures the scheduler,
+not the code — the same tracer pattern as the MT5 CPU budget. So both
+budget tests are deselected from every coverage-instrumented pytest
+invocation and run in a dedicated step in the same lane —
+uninstrumented, single-process, blocking on every PR. The other four
+tests in the gate file are pure correctness assertions (byte reduction,
+production projection, losslessness) and stay in the coverage run; the
+promotion node's functional assertions travel with it into the dedicated
+step. CPU-time budgets (e.g. the `budget_cpu_ms` / `process_time` seam
+used by the ML QA 018 suite) are not affected by this rule: CPU time
+removes scheduler noise, so those assertions stay in the coverage run.
+
+Enforcement is structural, not conventional: the deselect + dedicated
+step are pinned by `tests/ci/test_pr_policy_benchmark_lane.py`. If the
+dedicated step were ever removed, the deselect would silently drop the
+assertion — the test fails the run if either half goes missing. The
+step fails the job directly on a tripped budget; its `perf_budget`
+record feeds the step summary and `review-status.json` but is outside
+the `ci_final_gate.py` CHECKS vocabulary, so the final gate cannot
+verdict it (that tuple is frozen by contract).
+
+## PR speed budget (10-minute cap, 1–2 minute target, 2026-11-09)
+
+Hard user requirement: no PR-feedback job runs longer than 10 minutes;
+target **1–2 minutes end-to-end for a leaf PR** (it was 10 minutes
+before this PR, and at 10 minutes nobody would have touched it). The
+mechanism has exactly one job — the C engine finds the related tests,
+Python runs them — so a leaf PR selects ~7 files and runs them in
+~1–2 minutes. Pinned by `tests/ci/test_pr_policy_speed_cap.py`
+(`timeout-minutes: 10` on ci.yml quality-lint / quality-tests and the
+tests-os.yml Linux legs) and by
+`tests/ci/test_pr_policy_single_execution.py` (one execution per PR).
+The cap lands WITH the tier-1 speedup, never alone — it is a
+fail-closed guard, not a speedup by itself. Timings are reported
+against the 1–2 minute target, not against the 10-minute cap.
+
+This PR's own diff (pyproject.toml + tests/conftest.py) forces the
+expanded suite ONCE — that is a one-time cost of this PR, not the
+steady state. The 1–2 minute shape is proven by a real leaf-change run
+(see the leaf-change benchmark below), not by this PR's expanded run.
+
+Measured breakdown, Quality lane, run 42678149634 (head 7d2fa45d,
+tier-2 nexus-runner, 2 vCPU, expanded plan, 353 files, 5630 tests):
+
+| phase | wall time |
+| :--- | ---: |
+| checkout + Python env + caches | ~30 s |
+| AST metadata extraction + C17 plan | ~16 s (1681 files) |
+| planner-driven pytest (`--cov`, `-n 2`) | **1449.8 s** |
+| performance-budget step (uninstrumented) | ~18 s |
+| smoke chain | ~26 s |
+| plan report + review-status + final gate | ~60 s |
+| **job total** | **~1640 s (~27 min)** |
+
+Same head, OS Linux lane (no coverage, `-n 2`): 1028 s total — that
+lane no longer runs on PRs (2026-11-09: it re-ran the same selection,
+so it was removed from the PR path; dispatch-only now).
+Lint lane: 115 s. The pytest step is 92% of the Quality job — the
+20-30 minute lanes are the 4-core box + coverage overhead, not one
+slow test. Coverage overhead on tier-2: ~483 s (1449.8 s with `--cov`
+vs 966.4 s without, same expanded set). Slowest single tests: four
+`test_dependency_intelligence.py` setups at ~110 s each (module-scoped
+graph build under coverage) — a ~110 s floor on any lane, not the wall.
+
+Why tier-1 fits the cap: pytest runs with ONE worker on self-hosted
+tiers (2026-11-10 user directive — `-n 4` measured no speedup on
+Dubai, only memory pressure and swap thrash), and the same
+full suite measured ~8 minutes on a GitHub-hosted runner. Expected
+tier-1 Quality job: ~8-9 minutes (leaf PRs, targeted ~7 files: ~1-2
+min). The next run after tier-1 came back online is the live proof.
+
+Deliberate non-goals: the cap covers the PR-feedback path ONLY.
+Schedule/manual-only heavy jobs (extended, heavy-ci, full-runtime,
+db-fabric) and the dispatch-only macOS/Windows FULL lanes keep their
+longer budgets — capping them would kill legitimate long runs every
+time. No test is removed, skipped, or moved to nightly to hit the
+number; the expanded suite stays the blocking gate for global-impact
+PRs.
+
+## Fresh-machine bootstrap (2026-11-09)
+
+Hard user requirement: a fresh runner must take a job and go green with
+zero manual steps — tomorrow we add 100 servers and this must not error
+differently on each one. Everything is automatic IN THE CI CODE, never
+a per-machine setup step. Pinned by
+`tests/ci/test_pr_policy_fresh_bootstrap.py`.
+
+What broke on tier-1's first jobs (head fe1fe521, all three self-hosted
+jobs failed while hosted macOS/Windows passed):
+
+| job | failure | root cause | fix (in CI code) |
+| :--- | :--- | :--- | :--- |
+| Quality 129395787680 | depth-1 checkout + blobless SHA fetch printed "blobless history fetched" but `git merge-base` failed; job dead in 31 s | On a virgin shallow clone the SHA fetch can exit 0 yet bring nothing (the server excludes objects reachable from the shallow merge commit's parents). It worked on tier-2 only because that machine had accumulated deep history. The failure does NOT reproduce on a local virgin clone with the same commands and git version, so the step cannot trust the fetch's exit code. | `scripts/ci/fetch_planner_history.bash` (shared by Quality + both OS SKEW steps): blobless fetch, VERIFY merge-base, escalate to `--unshallow` (blobless) if unreachable, fail closed only if that also fails. Unshallowing is the guarantee; it is a one-time cost per runner because `_work` persists. |
+| Lint 129395787984 | `uv pip install -r requirements.lock` failed: "no version of typer==0.29.0"; the venv was created empty and every check reported "missing" | The Aliyun mirror (PIP_INDEX_URL) lags PyPI for fresh releases; a fresh machine could not install the lock. | `PIP_EXTRA_INDEX_URL: https://pypi.org/simple/` (setup-python-env action + tests-os.yml top-level env): uv queries the mirror (fast) first and PyPI for any version the mirror lacks — fast AND correct. |
+| OS Linux 129395775112 | Same install failure in the inline venv step; the lane-decision step never ran, so mode was empty and the lane report failed closed | Same mirror lag (its inline venv step) | Same extra index (tests-os.yml env) + the shared fetch script. |
+
+Related, same day: the Dependency Lock & Migration Safety workflow
+failed on 7d2fa45d and fe1fe521 with "requirements.lock is STALE"
+— cause was a freshly published `filelock` 4.2.10 (the only differing
+pin; typer had already been fixed by the 4dae9b58 regen). The
+Dependency Lock Self-Heal workflow regenerated the lock and pushed
+2eb09ea7 (`filelock==4.2.9` → `4.2.10`, `[skip ci]`). No code change
+was needed; the self-heal is the mechanism for upstream-release drift.
+
+Also automatic now (same commit):
+
+* **cmake bootstraps itself** — `run_test_plan.py::_ensure_cmake()`
+  installs the `cmake` wheel via `uv pip install --python
+  sys.executable` when cmake is absent (the OS lane already did this
+  inline; the Quality lane did not). A missing C compiler fails fast
+  with the exact install command (`apt-get install -y
+  build-essential`) instead of a confusing cmake-configure error.
+* **Automatic prune** — `scripts/ci/prune_runner_state.bash`, run at
+  the start of every lane (via the setup action — the OS legs use it too
+  since 2026-11-10): obsolete hash-bound venvs (any age — no job
+  references them since the stable-venv switch) and nse-ci caches older
+  than 30 days, /tmp test
+  artifacts (`tmp*`, `pytest-*`, pytest session subdirs) older than 24h,
+  plus `uv cache prune` for the wheel cache and a disk-space guard
+  (`uv cache clean` if free < 5 GB — the venv stays intact, so the
+  next sync is a delta). Age-gated and
+  failure-proof; it never touches the current venv or anything a live
+  job could own. (The Dubai box held 107 tmp* dirs,
+  1687 model.pt files, 3.5G of pytest sessions on 2026-11-09 — and a
+  16 GB uv cache that filled the disk on 2026-11-10, because the prune
+  never touched the cache before; the cache is managed with uv's own
+  prune tool, never by rm.)
+
+Acceptance test: a fresh runner (or a wiped `_work` dir + empty
+`~/.cache`) takes a job and goes green with zero manual steps. The
+policy test `test_fetch_script_actually_unshallows` is the miniature
+version (virgin depth-1 checkout of the PR merge commit → the script
+makes merge-base reachable); the full acceptance is the first real job
+on a fresh runner after this lands.
 
 ## Runner routing architecture (2026-11)
 
@@ -137,7 +393,7 @@ GitHub event (push / PR / schedule / dispatch)
 | `scripts/ci/runner_config.py` | Centralized labels, hosted fallbacks, enablement-flag defaults, cache namespace (import-only; `--verify` self-check). |
 | `scripts/ci/runner_select.py` | Availability preflight + runner-class decision. Pure `select()` function; fail-open to github-hosted on ANY error. |
 | `.github/actions/runner-select` | Composite action: availability preflight + class decision, used by every lane's preflight job. (A reusable *workflow* cannot declare workflow-level `outputs:` in this repository — verified by experiment — so the shared component is an action.) |
-| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both manual platform workflows. |
+| `scripts/ci/decide_os_lane.bash` | Shared FULL / SKEW / SKIP-REPORT lane logic used by both Linux legs and both platform workflows. Linux: SKIP-REPORT on PR/push/schedule (Quality owns execution, one run per PR); FULL/SKEW on dispatch only. Windows/macOS: SKIP-REPORT on PR/push, FULL on schedule (their semi-monthly sweep — no Quality lane exists for those platforms), FULL/SKEW on dispatch. |
 | `.github/workflows/tests-windows.yml` | Manual Windows suite (full coverage preserved) + `ENABLE_WINDOWS_SELF_HOSTED` flag. |
 | `.github/workflows/tests-macos.yml` | Manual macOS suite (full coverage preserved) + `ENABLE_MACOS_SELF_HOSTED` flag. |
 
@@ -163,12 +419,32 @@ GitHub event (push / PR / schedule / dispatch)
   fallback. The workflow's own `GITHUB_TOKEN` has no Administration
   permission and cannot read runner state.
 
-### Windows — manual-only, self-hosted-ready
+### Windows / macOS — schedule + dispatch only, never on PRs
 
 * **Automatic PR/push execution: removed.** `tests-os.yml` no longer
   schedules a Windows test leg; `ci.yml :: mt5-native` runs only on
   schedule/dispatch; `go-api.yml :: go-api-windows` runs only on
-  schedule/dispatch.
+  schedule/dispatch. `tests-windows.yml` and `tests-macos.yml` have no
+  push/pull_request trigger at all.
+* **Correction (2026-11-09, verified on the fe1fe521 run):** no
+  Windows/macOS runner was being borrowed on PRs in the first place.
+  The `Py Tests (windows-latest)` / `Py Tests (macos-latest)` checks
+  on a PR are `tests-os.yml`'s ctx jobs: they run on **ubuntu-latest**,
+  take ~3 s, and only emit a "NOT EXECUTED — manual-only" routing
+  notice (fe1fe521: both completed success in 3 s on hosted runners
+  `GitHub Actions 1000082307/1000082308`). The check *names* are the
+  required-context names; the *runner* is Linux. What was actually
+  missing was any automatic Windows/macOS coverage at all — the lanes
+  were dispatch-only, so they never ran unless someone remembered.
+* **Semi-monthly sweep (2026-11-09):** `tests-windows.yml` and
+  `tests-macos.yml` now run the FULL suite on a schedule — 1st & 15th,
+  07:17 UTC, the same cadence as `tests-os.yml` (at most twice a month,
+  like the MT5-native line). `decide_os_lane.bash` returns FULL for
+  windows/macos on schedule (unconditional — a periodic health sweep,
+  not a change-driven run, so the classifier does not downgrade it);
+  Linux still SKIP-REPORTs on schedule because Quality runs the FULL
+  suite once there. macOS gets the identical treatment as Windows:
+  schedule + dispatch only, never on PRs.
 * **Nothing was deleted.** The full Windows critical suite, the
   Windows-skew fast lane, the MT5 native IPC certification and the Go
   Windows leg are all intact and executable on demand.
@@ -181,11 +457,12 @@ GitHub event (push / PR / schedule / dispatch)
   automatically prefers an eligible `self-hosted,Windows,X64` runner with a
   `windows-latest` fallback — **no workflow edit, no redesign**.
 
-### macOS — manual-only, self-hosted-ready
+### macOS — schedule + dispatch only, self-hosted-ready
 
 * Same architecture as Windows, flag **`ENABLE_MACOS_SELF_HOSTED`**
   (default **disabled**), labels `(self-hosted, macOS, ARM64)`, fallback
-  `macos-latest`.
+  `macos-latest`. Same schedule as Windows: semi-monthly FULL sweep
+  (1st & 15th, 07:17 UTC) + dispatch, never on PRs.
 * **Architecture note (ARM64 vs x64).** `macos-latest` is Apple Silicon
   (ARM64). The self-hosted label set is deliberately ARM64 so both runner
   classes share ONE architecture — a verdict means the same thing on
@@ -253,11 +530,44 @@ identical lock):
 on warm runs. Each run emits its venv key, Python version and `UV_CACHE_DIR`
 to the step summary as cache-reuse evidence.
 
+The canonical environment action (`.github/actions/setup-python-env`, used
+by the `ci.yml` quality lanes) goes one step further on self-hosted tiers:
+the venv itself lives in `~/.cache/nse-venvs/<repo>-<python>` instead of
+the workspace, so the second lane reuses the first lane's warm venv
+instead of rebuilding it after checkout wipes the workspace — and `uv
+pip sync` makes it match requirements.lock EXACTLY on every run, so a
+one-package lock change installs one package instead of rebuilding all
+94 (2026-11-10: the old hash-bound design minted a new directory per
+lock hash, which is why every lock regen re-downloaded everything;
+obsolete hash-bound venvs are deleted by the prune script at any age,
+since no job references them — that unblocked Dubai's full disk on
+2026-11-10). The same
+section pins the type/lint caches (`MYPY_CACHE_DIR` /
+`RUFF_CACHE_DIR` under `~/.cache/nse-ci/`) so mypy no longer runs cold on
+every job. Since 2026-11-10 the `tests-os.yml` Linux legs use this same
+canonical action (centralization) — the old workspace-venv exception is
+gone: the `setup-python` trap it documented does not apply to the action,
+which provisions the exact Python via uv.
+
+### Test-database isolation
+
+The PR test lanes never talk to a real/shared database. The self-hosted
+runners are persistent machines, so a previous run may have left a
+persisted `app_settings.db` pointing at PostgreSQL — and the audit
+test-isolation seam plus the persisted provider would otherwise resolve
+the test DB from that machine state. The jobs therefore pin
+`NSE_DATABASE__PROVIDER=sqlite` with per-run temp paths
+(`NEXUS_AUDIT_DB`, `NEXUS_SETTINGS_DB`, `NEXUS_DATA_ROOT` under
+`RUNNER_TEMP`) at job level, and a fail-closed step
+(`scripts/ci/assert_test_db_isolation.py`) proves the pinning through the
+repo's own resolver before any test or smoke step runs. PostgreSQL arms
+do not run on the runner at all; they run in the local gate.
+
 ## Caching
 
 | Lane | Cache | Notes |
 | :--- | :--- | :--- |
-| Self-hosted legs | uv cache only (`enable-cache: true`, `cache-dependency-glob: requirements.lock`) | Persistent `UV_CACHE_DIR` in the runner user's home; no `setup-python` pip cache (it would key on the system Python the lane does not use). |
+| Self-hosted legs | local uv cache in the runner user's home (`~/.cache/uv`), managed by `uv cache prune` at the start of every lane | No GitHub Actions cache (`enable-cache: false` on self-hosted — uploading a multi-GB cache from a tethered box burns Post time); no `setup-python` pip cache (it would key on the system Python the lane does not use). Per-runner primary index (2026-11-10, measured on Dubai): Dubai (RUNNER_NAME nexus-*) uses PyPI (3.4 MB/s vs TUNA/Aliyun 1.6 MB/s for the same 14 MB wheel); tier-1 keeps TUNA (files.pythonhosted.org unreachable there). Disk guard: `uv cache clean` if free < 5 GB (venv intact, next sync is a delta). |
 | GitHub-hosted legs | none | Ephemeral runners; any Actions cache is inert there and would alias the self-hosted machine's key. |
 
 Cleanup/invalidation stays bounded by `requirements.lock`
@@ -274,7 +584,11 @@ the decision is visible in the PR Checks UI without opening the log.
 
 ## Optional / advisory checks
 
-* `osv-scanner`, `lockfile-diff` — dependency visibility, never blocking.
+The authoritative per-check placement is the [PR policy classification
+table](#pr-policy-classification--what-runs-where-2026-11-audit) above;
+this list is only the short version.
+
+* `osv-scanner` — dependency visibility, never blocking.
 * `security.yml` scheduled run — weekly drift.
 * `docker.yml` — only on the `docker` branch, never on normal dev.
 * `tests-windows.yml` / `tests-macos.yml` — manual platform lanes.

@@ -18,7 +18,7 @@ lang: en
 
 ## Scanning (CI)
 
-CodeQL (SAST), Trivy (containers/FS), OSV dependency scanning, lockfile-diff,
+CodeQL (SAST), Trivy (containers/FS), OSV dependency scanning,
 secret scan — see [CI architecture](ci.md).
 
 ## Trust boundaries

@@ -56,6 +56,7 @@ CHECKS = (
     "runtime_gate",
     "runtime_deps",
     "layered_smoke",
+    "perf_budget",
 )
 
 
@@ -864,22 +865,48 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(root_str)
     info_dir = root / "run-info"
     statuses: dict[str, str] = {}
+    payloads: dict[str, dict] = {}
     missing: list[str] = []
 
     for name in verdict_checks:
         path = info_dir / f"{name}.json"
         try:
             with open(path, encoding="utf-8") as fh:
-                statuses[name] = json.load(fh).get("status", "skipped")
+                payload = json.load(fh)
+            if not isinstance(payload, dict):
+                raise ValueError("check result must be a JSON object")
+            status = payload.get("status")
+            if not isinstance(status, str) or not status:
+                raise ValueError("check result has no valid string status")
+            payloads[name] = payload
+            # A status string alone is not proof of success. The recorder's
+            # successful contract always includes the real zero exit code.
+            if status == "passed" and type(payload.get("exit_code")) is not int:
+                raise ValueError("passed check has no integer exit_code")
+            if status == "passed" and payload["exit_code"] != 0:
+                raise ValueError(f"passed check has non-zero exit_code={payload['exit_code']}")
+            statuses[name] = status
         except FileNotFoundError:
             statuses[name] = "missing"
             missing.append(name)
         except Exception as e:
             statuses[name] = "errored"
-            print(f"UNREADABLE CHECK JSON: {path} -> {e}")
+            print(f"UNREADABLE/INVALID CHECK JSON: {path} -> {e}")
 
     failed = [k for k, v in statuses.items() if v in ("failed", "errored")]
     blocked = [k for k, v in statuses.items() if v == "blocked"]
+    # Unknown states are never interpreted as success. In particular, a
+    # skipped/cancelled/not-executed check is not evidence that it passed.
+    accepted_states = {"passed", "blocked", "failed", "errored"}
+    unaccepted = [k for k, v in statuses.items() if v not in accepted_states]
+    root_failures = {k for k, v in statuses.items() if v in ("failed", "errored")}
+    blocked_without_root: list[str] = []
+    for name in blocked:
+        detail = str(payloads.get(name, {}).get("detail", ""))
+        match = re.match(r"^BLOCKED_BY_([A-Z0-9_]+)\b", detail)
+        root_name = match.group(1).lower() if match else ""
+        if not root_name or root_name not in root_failures:
+            blocked_without_root.append(name)
     repair = os.environ.get("RUFF_REPAIR_STATUS", "")
 
     # Preserve exact status line for CI parsers and legacy tests
@@ -891,8 +918,18 @@ def main(argv: list[str] | None = None) -> int:
         )
     if blocked:
         print(f"BLOCKED (never ran - upstream root failure): {', '.join(blocked)}")
+    if blocked_without_root:
+        print(
+            "BLOCKED WITHOUT A FAILED ROOT (not an acceptable non-run): "
+            + ", ".join(blocked_without_root)
+        )
     if failed:
         print(f"FAILING CHECKS: {', '.join(failed)}")
+    if unaccepted:
+        print(
+            "UNACCEPTED CHECK STATES (skipped/cancelled/not-executed/unknown): "
+            + ", ".join(f"{k}={statuses[k]}" for k in unaccepted)
+        )
     if missing:
         print("MISSING RESULTS (never ran, never classified blocked): " + ", ".join(missing))
 
@@ -900,12 +937,12 @@ def main(argv: list[str] | None = None) -> int:
         collect_diagnostics(root, name, statuses.get(name, "missing")) for name in verdict_checks
     ]
 
-    if failed:
+    if failed or unaccepted or blocked_without_root:
         render_rich_report(statuses, diagnostics, blocked, failed, missing)
         emit_github_annotations(diagnostics)
         write_step_summary(root, diagnostics)
 
-    failing = failed + missing
+    failing = failed + missing + unaccepted + blocked_without_root
     if failing:
         print(
             f"::error::CI gate failed on: {', '.join(failing)} | "

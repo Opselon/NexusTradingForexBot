@@ -65,8 +65,29 @@ def _clone_ws(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     (userroot / "NexusScalpEngine").mkdir(parents=True, exist_ok=True)
     monkeypatch.setenv("LOCALAPPDATA", str(userroot))
     monkeypatch.setenv("APPDATA", str(userroot))
+    # Linux: release.paths.app_data_root() IGNORES LOCALAPPDATA/APPDATA and
+    # resolves from Path.home() — so a runner-persistent
+    # ~/.nexusscalpengine/configs/nexus.yaml (written by any earlier engine
+    # boot on the persistent self-hosted runner, e.g. via the first-run
+    # persist or _sync_user_config_file) was still visible here, and its
+    # absolute model_artifact_path diverted every `repair --model` mint to
+    # a SHARED path: the clone had no bundle (d31149fb: all 7 repair tests
+    # failed) and later repairs saw the shared VERIFIED starter and
+    # SKIPPED. Redirect HOME too so the user config is not found and the
+    # mint anchors to the clone workspace (the isolation this harness
+    # already promises in its docstring).
+    monkeypatch.setenv("HOME", str(userroot))
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(userroot / "app_settings.db"))
     monkeypatch.setenv("NEXUS_AUDIT_DB", str(ws / "artifacts" / "audit.db"))
+    # The audit seam has TWO keys and load_database_config() lets an
+    # explicit NSE_DATABASE__SQLITE_PATH win over NEXUS_AUDIT_DB — and the
+    # conftest autouse fixture sets that key to a per-run tmp file (bbf1f7de
+    # cross-test-leak fix). Without this line, _champion_binding reads THAT
+    # DB (no CHAMPION row) instead of the clone's audit.db where the
+    # governed-champion test seeds its row, so the refusal lookup is
+    # blind and repair --model --force MINTs instead of REFUSED (4d80ce05:
+    # the last remaining failure on both Linux lanes).
+    monkeypatch.setenv("NSE_DATABASE__SQLITE_PATH", str(ws / "artifacts" / "audit.db"))
     monkeypatch.setenv("NEXUS_DATA_ROOT", str(tmp_path / "data"))
     monkeypatch.setenv("NSE_NO_TELEGRAM", "1")
     monkeypatch.chdir(ws)
@@ -448,3 +469,23 @@ def test_sidecar_note_marker_written_by_repair_model(tmp_path, monkeypatch) -> N
     record = json.loads((_artifact(ws).parent / "manifest.json").read_text(encoding="utf-8"))
     assert record["provisioner"] == model_bootstrap.PROVISIONER_MARKER
     assert "nexus repair --model" in record["note"]
+
+
+def test_clone_ws_redirects_user_config_away_from_runner_home(tmp_path, monkeypatch) -> None:
+    """Regression pin for the d31149fb shared-path diversion (7 failures):
+    on Linux, release.paths.app_data_root() ignores LOCALAPPDATA/APPDATA
+    and resolves from Path.home(), so a runner-persistent
+    ~/.nexusscalpengine/configs/nexus.yaml with an absolute
+    model_artifact_path diverted every `repair --model` mint to a SHARED
+    path (the clone had no bundle; later repairs saw the shared VERIFIED
+    starter and SKIPPED). _clone_ws must redirect HOME into the throwaway
+    userroot so the user config is not found and the mint anchors to the
+    clone workspace."""
+    _clone_ws(tmp_path, monkeypatch)
+    from nexus_scalp.release.paths import get_user_config_path
+
+    cfg_path = get_user_config_path()
+    assert str(cfg_path).startswith(str(tmp_path)), (
+        f"user config must resolve inside the throwaway workspace, got {cfg_path}"
+    )
+    assert not cfg_path.exists(), "no user config may exist inside the throwaway clone"

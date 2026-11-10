@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def test_market_radar_live_state_integration():
@@ -82,7 +83,7 @@ def test_market_radar_live_state_integration():
             }
 
     app.state.engine = _FakeEngine()
-    client = TestClient(app)
+    client = authenticated_test_client(app)
 
     r = client.get("/api/live/state")
     assert r.status_code == 200
@@ -97,7 +98,7 @@ def test_market_radar_live_state_integration():
     print("Market Radar integration test PASSED successfully.")
 
 
-def test_radar_on_new_bar_no_mslie_engine():
+def test_radar_on_new_bar_no_mslie_engine(tmp_path, verified_test_model_bundle):
     """BUG-139 regression: LiveEngine._on_new_bar must run Market Radar successfully
     even when mslie_engine is None (without raising NameError on `rec`)."""
     from nexus_scalp.application.live_engine import LiveEngine
@@ -108,7 +109,10 @@ def test_radar_on_new_bar_no_mslie_engine():
     class _MockAdapter:
         pass
 
-    config = AppConfig()
+    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
+    config = AppConfig(model={"model_artifact_path": str(model_path)})
     engine = LiveEngine(config=config, adapter=_MockAdapter())
     engine.mslie_engine = None  # force None to test the fallback path
 
@@ -148,8 +152,6 @@ def test_radar_carried_by_sse_snapshot_contract():
     matching the repo's established SSE-contract test pattern (see
     test_liquidity_runtime_integration_phase18.py TEST-70D-16/17). Regression guard
     so REST, SSE and /api/status never diverge on the radar section (single source)."""
-    from fastapi.testclient import TestClient
-
     app = create_app()
 
     class _FakeAggregator:
@@ -209,7 +211,7 @@ def test_radar_carried_by_sse_snapshot_contract():
             }
 
     app.state.engine = _FakeEngine()
-    client = TestClient(app)
+    client = authenticated_test_client(app)
 
     # /api/live/state unpacks get_system_state() including radar.
     live = client.get("/api/live/state").json()

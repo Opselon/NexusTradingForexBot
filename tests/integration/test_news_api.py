@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from nexus_scalp.news import NewsConfig, NewsDatabase, NewsEngine, seed_news_database
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 @pytest.fixture
@@ -75,7 +76,7 @@ class TestNewsApiEndpoints:
 
         app = create_app()
         app.state.engine = _FakeEngine(news_engine)
-        return app, TestClient(app)
+        return app, authenticated_test_client(app)
 
     def test_api_news_feed_real_data(self, news_engine):
         _insert_sample_article(news_engine, "Fed Decision Moves Gold", "news_feed1")
@@ -229,7 +230,7 @@ class TestNewsApiEndpoints:
 
         app = create_app()
         app.state.engine = _NoNewsEngine()
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/news")
         assert resp.json()["available"] is False  # honest, not synthetic
 

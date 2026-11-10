@@ -21,7 +21,7 @@ name: QA Deep Assurance
 on:
   schedule:
     # weekly, Sundays 03:30 UTC (off-peak; Iran local ~07:00)
-    - cron: "30 3 * * 0"
+    - cron: "30 3 1,15 * *"
   workflow_dispatch:
     inputs:
       run_mutations:

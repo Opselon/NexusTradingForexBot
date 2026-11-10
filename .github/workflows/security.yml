@@ -3,10 +3,35 @@ name: Security
 on:
   pull_request:
     branches: [main, develop]
+    # CI quota diet (2026-11): CodeQL+Trivy only when code/dependency
+    # surfaces actually changed. Docs-only PRs do not pay for security.
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "go-api/**"
+      - "frontend/**"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - "Dockerfile"
+      - "docker/**"
+      - ".github/workflows/security.yml"
   push:
     branches: [main, ci-tests]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "scripts/**"
+      - "go-api/**"
+      - "frontend/**"
+      - "requirements*.lock"
+      - "pyproject.toml"
+      - "Dockerfile"
+      - "docker/**"
+      - ".github/workflows/security.yml"
   schedule:
-    - cron: "0 6 * * 1"   # Every Monday at 06:00 UTC
+    # CI quota diet (2026-11): weekly -> semi-monthly full sweep.
+    - cron: "0 6 1,15 * *"   # 1st & 15th, 06:00 UTC
   workflow_dispatch:
 
 # All third-party actions are pinned to immutable commit SHAs

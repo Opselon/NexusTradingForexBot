@@ -134,6 +134,7 @@ def _engine_and_client(
     """
     from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.web.server import create_app
+    from tests.helpers.authenticated_client import authenticated_test_client
 
     cfg = _app_config_paper()
     if tmp_path is not None:
@@ -148,7 +149,7 @@ def _engine_and_client(
     engine = LiveEngine(config=cfg, adapter=adapter, force_fresh_model=True)
     app = create_app(engine_ref=engine)
     engine.server_state = app.state.server_state  # type: ignore[attr-defined]
-    client = TestClient(app, raise_server_exceptions=False)
+    client = authenticated_test_client(app, raise_server_exceptions=False)
     return engine, client, cfg
 
 

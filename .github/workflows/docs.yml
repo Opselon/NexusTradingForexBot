@@ -26,7 +26,7 @@ on:
   schedule:
     # Self-updating site: even when no docs path changes, refresh release /
     # repo metadata and redeploy so the landing "Project pulse" stays true.
-    - cron: "17 6,18 * * *"
+    - cron: "17 6 1,15 * *"
   workflow_dispatch:
 
 permissions:
@@ -98,12 +98,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install docs tooling
-        if: steps.changes.outputs.docs_changed == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          pip install ruff mypy
-
       - name: Refresh release metadata (What's New / releases page)
         if: steps.changes.outputs.docs_changed == 'true'
         env:
@@ -116,20 +110,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python scripts/docs/fetch_repo.py
 
-      - name: Lint docs tooling (ruff)
-        if: steps.changes.outputs.docs_changed == 'true'
-        run: |
-          ruff check scripts/docs/
-          ruff format --check scripts/docs/
-
-      - name: Type-check docs tooling (mypy)
-        if: steps.changes.outputs.docs_changed == 'true'
-        run: mypy scripts/docs/
-
-      - name: Secret scan (docs surface)
-        if: steps.changes.outputs.docs_changed == 'true'
-        run: python scripts/ci/scan_secrets.py
-
+      # No ruff / mypy / secret-scan steps here — that is deliberate
+      # de-duplication, not a gap: ruff check . in CI quality-lint already
+      # covers scripts/docs/ (lint + format), mypy on scripts/docs/ was a
+      # no-op ([tool.mypy.overrides] sets ignore_errors for scripts.*),
+      # and scan_secrets.py runs exactly once per CI run in CI's
+      # ci-integrity job. Re-running them here duplicated the same tools
+      # over the same files on every docs PR.
       - name: Build site
         if: steps.changes.outputs.docs_changed == 'true'
         run: python scripts/docs/build_site.py

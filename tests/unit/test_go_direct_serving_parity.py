@@ -39,16 +39,18 @@ GO_API_DIR = REPO_ROOT / "go-api"
 
 
 def _find_go_binary() -> str | None:
-    """Locate go.exe from toolchain or environment."""
+    """Locate the host-native Go compiler without machine-specific paths."""
+    executable = "go.exe" if os.name == "nt" else "go"
+    goroot = os.environ.get("GOROOT", "").strip()
     candidates = [
-        os.environ.get("GOROOT", "") + "/bin/go.exe",
-        "C:/Users/Capsizer/go-toolchain/go/bin/go.exe",
-        shutil.which("go.exe") or "",
+        str(Path(goroot) / "bin" / executable) if goroot else "",
+        shutil.which(executable) or "",
         shutil.which("go") or "",
+        shutil.which("go.exe") or "",
     ]
-    for c in candidates:
-        if c and Path(c).is_file():
-            return str(Path(c).resolve())
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return str(Path(candidate).resolve())
     return None
 
 
@@ -112,20 +114,16 @@ def go_direct_server() -> Generator[str, None, None]:
 
     port = _get_free_port()
     tmp_dir = Path(tempfile.gettempdir())
-    tmp_exe = tmp_dir / f"wave4_direct_parity_{port}.exe"
+    tmp_exe = tmp_dir / f"wave4_direct_parity_{port}{'.exe' if os.name == 'nt' else ''}"
     src_file = GO_API_DIR / f"parity_server_{port}.go"
 
     src_file.write_text(GO_SERVER_SOURCE, encoding="utf-8")
     env = os.environ.copy()
-    env.update(
-        {
-            "GOROOT": "C:/Users/Capsizer/go-toolchain/go",
-            "GOPATH": "C:/Users/Capsizer/go",
-            "GOMODCACHE": "C:/Users/Capsizer/go/pkg/mod",
-            "GOFLAGS": "-mod=mod",
-            "GOOS": "windows",
-        }
-    )
+    # Build and execute for the current runner OS. Never hard-code a developer
+    # Windows toolchain or cross-compile a Windows .exe on Linux/macOS.
+    env.pop("GOOS", None)
+    env.pop("GOARCH", None)
+    env["GOFLAGS"] = "-mod=mod"
 
     build_res = subprocess.run(
         [go_bin, "build", "-o", str(tmp_exe), src_file.name],

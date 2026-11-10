@@ -85,6 +85,24 @@ def _real_db_unchanged() -> object:
 # ---------------------------------------------------------------------------
 
 
+def _expected_audit_version() -> int:
+    from nexus_scalp.database.models import DatabaseDomain
+    from nexus_scalp.database.registry import expected_version_for_domain
+
+    return expected_version_for_domain(DatabaseDomain.AUDIT)
+
+
+def _latest_two_audit_migrations():
+    from nexus_scalp.database.models import DatabaseDomain
+    from nexus_scalp.database.registry import migrations_for
+
+    migrations = sorted(
+        migrations_for(DatabaseDomain.AUDIT), key=lambda migration: migration.to_version
+    )
+    assert len(migrations) >= 2, "audit migration registry must contain at least two migrations"
+    return migrations[-2:]
+
+
 def _migrate_to_full(db_path: Path) -> int:
     """Run the canonical engine to the expected schema version."""
     from nexus_scalp.database.engine import DatabaseMigrationEngine
@@ -96,19 +114,14 @@ def _migrate_to_full(db_path: Path) -> int:
     return engine.current_version()
 
 
-def _rewind_to_schema_7(db_path: Path) -> None:
-    """Roll a full-schema tmp DB back to schema 7 with 8/9 pending.
+def _rewind_to_two_pending_migrations(db_path: Path) -> None:
+    """Rewind the latest two registered migrations in an isolated DB.
 
-    Uses the engine's OWN migration ids/names (queried from the registry) and
-    rewinds BOTH the recorded version and the objects the two pending
-    migrations create, so the DB genuinely looks like the probe's artifact:
-    schema 7, integrity ok, 2 pending additive migrations.
+    The test follows the registry tail, so adding future migrations cannot
+    leave this contract pinned to a stale schema number.
     """
-    from nexus_scalp.database.models import DatabaseDomain
-    from nexus_scalp.database.registry import migrations_for
-
-    pending = [m for m in migrations_for(DatabaseDomain.AUDIT) if m.to_version in (8, 9)]
-    assert len(pending) == 2, f"expected exactly 2 pending migrations, got {len(pending)}"
+    pending = _latest_two_audit_migrations()
+    baseline_version = pending[0].from_version
 
     con = sqlite3.connect(str(db_path))
     try:
@@ -116,9 +129,12 @@ def _rewind_to_schema_7(db_path: Path) -> None:
         # delete the engine's own records, keeping the rest authoritative).
         for mig in pending:
             con.execute("DELETE FROM schema_migrations WHERE migration_id = ?", (mig.migration_id,))
-        con.execute("INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', '7')")
+        con.execute(
+            "INSERT OR REPLACE INTO schema_meta(key, value) VALUES('schema_version', ?)",
+            (str(baseline_version),),
+        )
         # Revert the objects so `apply` has real work and `verify` is honest.
-        for mig in pending:
+        for mig in reversed(pending):
             if mig.rollback is not None:
                 mig.rollback(con, db_path)
         con.commit()
@@ -134,18 +150,19 @@ def _schema_version(db_path: Path) -> int:
     return engine.current_version()
 
 
-def _build_schema_7_db(db_path: Path) -> Path:
-    """A faithful replica of the probe's artifact: schema 7, 8/9 pending.
+def _build_two_pending_migrations_db(db_path: Path) -> Path:
+    """Build an isolated DB one migration-version pair behind current.
 
     ``db_path`` is the caller's handle (tests may overwrite it to corrupt the
     file), so the DB is assembled in a private sibling path and copied into
     place — destroying ``db_path`` never destroys the fixture's source.
     """
-    src = db_path.parent / "_schema7_src.db"
+    src = db_path.parent / "_two_pending_src.db"
     full = _migrate_to_full(src)
-    assert full == 9, f"expected the fresh DB to reach schema 9, got {full}"
-    _rewind_to_schema_7(src)
-    assert _schema_version(src) == 7
+    expected = _expected_audit_version()
+    assert full == expected, f"expected schema {expected}, got {full}"
+    _rewind_to_two_pending_migrations(src)
+    assert _schema_version(src) == expected - 2
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.write_bytes(src.read_bytes())
     return db_path
@@ -157,15 +174,15 @@ def _build_schema_7_db(db_path: Path) -> Path:
 
 
 class TestAppliesPendingMigrations:
-    def test_schema_7_reaches_9(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
-        assert _schema_version(db) == 7
+    def test_latest_two_migrations_reach_current_version(self, tmp_path: Path) -> None:
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+        assert _schema_version(db) == _expected_audit_version() - 2
 
         status, detail = apply_pending_audit_migrations(db)
 
         assert status == "OK", detail
         assert "applied 2" in detail or "8" in detail
-        assert _schema_version(db) == 9
+        assert _schema_version(db) == _expected_audit_version()
         # The two pending migrations are now recorded as applied by the engine.
         con = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=2)
         try:
@@ -175,11 +192,11 @@ class TestAppliesPendingMigrations:
             ids = {r[0] for r in rows}
         finally:
             con.close()
-        assert any("AUDIT-0008" in i for i in ids), ids
-        assert any("AUDIT-0009" in i for i in ids), ids
+        expected_ids = {migration.migration_id for migration in _latest_two_audit_migrations()}
+        assert expected_ids <= ids, (expected_ids, ids)
 
     def test_integrity_is_ok_after_applying(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
         status, detail = apply_pending_audit_migrations(db)
         assert status == "OK", detail
 
@@ -197,22 +214,22 @@ class TestAppliesPendingMigrations:
 
 class TestIdempotent:
     def test_second_call_is_skipped(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
 
         first_status, first_detail = apply_pending_audit_migrations(db)
         assert first_status == "OK", first_detail
-        assert _schema_version(db) == 9
+        assert _schema_version(db) == _expected_audit_version()
 
         second_status, second_detail = apply_pending_audit_migrations(db)
 
         assert second_status == "SKIPPED", second_detail
         assert "no pending migrations" in second_detail
         # Still at 9 — the second call changed nothing.
-        assert _schema_version(db) == 9
+        assert _schema_version(db) == _expected_audit_version()
 
     def test_freshly_migrated_db_needs_no_step(self, tmp_path: Path) -> None:
         db = tmp_path / "audit.db"
-        assert _migrate_to_full(db) == 9
+        assert _migrate_to_full(db) == _expected_audit_version()
 
         status, detail = apply_pending_audit_migrations(db)
 
@@ -226,8 +243,8 @@ class TestIdempotent:
 
 class TestCorruptionAborts:
     def test_garbage_bytes_abort_before_applying(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
-        assert _schema_version(db) == 7
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+        assert _schema_version(db) == _expected_audit_version() - 2
 
         # Overwrite with garbage: not a database at all.
         db.write_bytes(b"\x00" * 4096 + b"NOT A DATABASE" * 32)
@@ -252,8 +269,8 @@ class TestCorruptionAborts:
         assert rows is None, "a corrupt DB must never gain a schema_migrations table"
 
     def test_truncated_db_aborts_without_applying(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
-        assert _schema_version(db) == 7
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+        assert _schema_version(db) == _expected_audit_version() - 2
 
         # Truncate to a header-ish fragment: SQLite reports a corruption, and
         # the read-only probe must refuse to proceed.
@@ -263,10 +280,10 @@ class TestCorruptionAborts:
         status, detail = apply_pending_audit_migrations(db)
 
         assert status in ("SKIPPED", "FAILED"), detail
-        assert _schema_version(db) != 9 or status != "OK"
+        assert _schema_version(db) != _expected_audit_version() or status != "OK"
 
     def test_corruption_after_a_valid_header_is_caught(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
         raw = bytearray(db.read_bytes())
         # Keep the 16-byte SQLite header, corrupt the page map area.
         if len(raw) > 128:
@@ -280,7 +297,7 @@ class TestCorruptionAborts:
         if status == "OK":
             # Only acceptable when SQLite still reports the file healthy AND
             # the step genuinely reached 9 (corruption landed in dead space).
-            assert _schema_version(db) == 9
+            assert _schema_version(db) == _expected_audit_version()
         else:
             assert "integrity" in detail.lower()
 
@@ -317,8 +334,8 @@ class TestMissingDatabase:
 
 class TestLiveDatabaseNotRaced:
     def test_held_write_lock_reports_skipped(self, tmp_path: Path) -> None:
-        db = _build_schema_7_db(tmp_path / "audit.db")
-        assert _schema_version(db) == 7
+        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+        assert _schema_version(db) == _expected_audit_version() - 2
 
         holder = sqlite3.connect(str(db), timeout=2)
         holder.execute("BEGIN IMMEDIATE")
@@ -327,7 +344,7 @@ class TestLiveDatabaseNotRaced:
             assert status == "SKIPPED", detail
             assert "locked" in detail.lower()
             # While the engine held the lock, nothing was applied.
-            assert _schema_version(db) == 7
+            assert _schema_version(db) == _expected_audit_version() - 2
         finally:
             holder.rollback()
             holder.close()
@@ -335,7 +352,7 @@ class TestLiveDatabaseNotRaced:
         # Once released, the same step completes.
         status, detail = apply_pending_audit_migrations(db)
         assert status == "OK", detail
-        assert _schema_version(db) == 9
+        assert _schema_version(db) == _expected_audit_version()
 
 
 # ---------------------------------------------------------------------------

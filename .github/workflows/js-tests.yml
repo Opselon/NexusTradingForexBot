@@ -13,8 +13,14 @@ on:
   push:
     branches: [main, ci-tests]
     tags-ignore: ["v*"]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/js-tests.yml"
   pull_request:
     branches: [main, develop]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/js-tests.yml"
   workflow_dispatch:
 
 # One JS run per ref; a new push supersedes the old.

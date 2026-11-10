@@ -34,6 +34,15 @@ name: Tests (macOS, manual)
 # ---------------------------------------------------------------------------
 
 on:
+  schedule:
+    # Semi-monthly cross-platform sweep (1st & 15th, 07:17 UTC) — the
+    # same cadence as tests-os.yml and tests-windows.yml. macOS runs the
+    # FULL suite here, never on PRs: Quality owns PR test execution, and
+    # this workflow has no push/pull_request trigger (the
+    # `Py Tests (macos-latest)` check on a PR is a routing notice from
+    # tests-os.yml, not a test run — no macOS runner is borrowed on a
+    # PR). Same treatment as Windows: schedule + dispatch only.
+    - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
       full_suite:
@@ -190,8 +199,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -204,12 +213,47 @@ jobs:
           NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
         run: scripts/ci/decide_os_lane.bash macos
 
-      - name: Run Windows-skewed subset (default dispatch lane)
+      - name: Run C-planned targeted subset (default dispatch lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; fetch base
+          # + head explicitly, bloblessly (commits+trees only, ~5 MiB).
+          # A bare `git fetch origin` only brings the default branch, and
+          # the engine's three-dot diff needs both SHAs as objects.
+          # HEAD is the REAL PR head, not github.sha: on pull_request
+          # github.sha is the ephemeral merge commit, which the depth-1
+          # checkout leaves shallow-grafted, so the diff finds no merge
+          # base and the planner fails rc=3 (2026-11-09).
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
+          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
+          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc
@@ -336,8 +380,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -350,12 +394,47 @@ jobs:
           NSE_FORCE_FULL_SUITE: ${{ inputs.full_suite }}
         run: scripts/ci/decide_os_lane.bash macos
 
-      - name: Run Windows-skewed subset (default dispatch lane)
+      - name: Run C-planned targeted subset (default dispatch lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; fetch base
+          # + head explicitly, bloblessly (commits+trees only, ~5 MiB).
+          # A bare `git fetch origin` only brings the default branch, and
+          # the engine's three-dot diff needs both SHAs as objects.
+          # HEAD is the REAL PR head, not github.sha: on pull_request
+          # github.sha is the ephemeral merge commit, which the depth-1
+          # checkout leaves shallow-grafted, so the diff finds no merge
+          # base and the planner fails rc=3 (2026-11-09).
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
+          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
+          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc

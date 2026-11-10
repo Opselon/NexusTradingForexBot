@@ -6,11 +6,16 @@ name: Tests (OS Matrix)
 # ROUTING (centralized; see .github/workflows/runner-select.yml and
 # scripts/ci/runner_select.py):
 #
-#   * LINUX is the only OS still scheduled automatically. It routes
-#     SELF-HOSTED FIRST (repository runner labels: self-hosted,Linux,X64)
-#     with an ubuntu-latest fallback when the runner is offline, busy,
-#     disabled, unconfigured, or the request comes from an untrusted fork
-#     PR. Fork PRs NEVER execute on the persistent self-hosted machine.
+#   * LINUX no longer runs on PR/push at all (2026-11-10 centralization:
+#     Quality owns ALL PR/push test execution — one execution per PR).
+#     It routes SELF-HOSTED FIRST through a TWO-TIER self-hosted pool,
+#     with an ubuntu-latest last resort when no tier has an online+idle
+#     runner, or the request comes from an untrusted fork PR. Fork PRs
+#     NEVER execute on the persistent self-hosted machines. The Linux leg
+#     runs only the semi-monthly FULL-suite health sweep (schedule) and
+#     manual dispatch (full-platform check).
+#       tier-1: self-hosted,Linux,X64,opselon-vm   (8-thread Docker runner — preferred)
+#       tier-2: self-hosted,Linux,X64,nexus-2core  (secondary 2-core box)
 #   * WINDOWS is no longer scheduled on ordinary PR/push events. The full
 #     Windows test coverage moved to .github/workflows/tests-windows.yml
 #     (workflow_dispatch, ENABLE_WINDOWS_SELF_HOSTED feature flag). The
@@ -31,21 +36,24 @@ name: Tests (OS Matrix)
 #
 # BEFORE (measured 2026-11-06, main push):
 #   windows-latest FULL 1086s + macOS SKIP-REPORT 22s on EVERY main push.
-# AFTER: PR/push pays only the Linux leg; Windows/macOS run on demand.
+# AFTER (2026-11-10): this workflow does not run on PR/push at all.
+#   Quality owns PR/push execution; this matrix runs the FULL suite on
+#   the semi-monthly schedule + manual dispatch only. Windows/macOS run
+#   on demand.
 # ---------------------------------------------------------------------------
 
 on:
-  push:
-    branches: [main, develop, ci-tests]
-    tags-ignore: ["v*"]
-  pull_request:
-    branches: [main, develop]
+  # CENTRALIZATION (2026-11-10, user directive): no push/pull_request
+  # triggers. Quality (ci.yml) owns ALL PR/push test execution — one
+  # execution per PR. This matrix ran its Linux leg on every PR: it
+  # installed a full workspace venv BEFORE the decide step, then
+  # SKIP-REPORTed — racing Quality for the single online runner and
+  # falling back to hosted. The matrix now runs only the semi-monthly
+  # FULL-suite health sweep + manual dispatch (full-platform check).
   schedule:
-    # Monday 07:17 UTC — Linux self-hosted health sweep. Windows/macOS
-    # platform-drift catch-up is dispatch-only now; this schedule exists to
-    # prove the self-hosted Linux runner can still accept a job and the
-    # Linux full suite still passes on it.
-    - cron: "17 7 * * 1"
+    # CI quota diet (2026-11): was weekly (Monday 07:17). Now SEMI-MONTHLY —
+    # the only automatic FULL-suite health sweep (1st & 15th, 07:17 UTC).
+    - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
       full_suite:
@@ -62,9 +70,42 @@ permissions:
 
 env:
   PYTHON_VERSION: "3.11"
+  # PyPI as a FALLBACK index (2026-11-09): the self-hosted tiers' effective
+  # index lags PyPI for fresh releases (typer 0.29.0, then filelock 4.2.10
+  # missing -> `uv pip install` unresolvable on a fresh machine, tier-1).
+  # uv queries the primary first and the extra for any version it lacks,
+  # Primary index is the TUNA mirror and the extra is Aliyun
+  # (2026-11-09): files.pythonhosted.org is unreachable from tier-1, so
+  # PyPI can resolve but never deliver a wheel, and the Aliyun node
+  # serving tier-1 lags fresh releases (filelock 4.2.10 missing). TUNA's
+  # node serving tier-1 IS synced (proven by the proof/leaf-timing
+  # diagnostic). These indexes also cover the legs' non-action uv/pip
+  # calls (e.g. the cmake wheel install); the venv install itself uses
+  # the shared setup-python-env action, which pins the same indexes.
+  # The explicit primary here keeps any other uv/pip call from falling
+  # back to the runner machine's config (Aliyun) — hence the explicit
+  # primary here. UV_INDEX_STRATEGY
+  # is load-bearing: uv's default first-index strategy uses the FIRST
+  # index that has a package and never consults the others for it —
+  # without unsafe-best-match the extra index is a no-op for packages the
+  # primary already carries (proven by the proof/leaf-timing run).
+  PIP_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+  PIP_EXTRA_INDEX_URL: "https://mirrors.aliyun.com/pypi/simple/"
+  # uv reads UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so the
+  # primary above is a no-op unless both are pinned: the tier-1 runner image
+  # exports them pointing at Aliyun (5e50710d: "no version of typer==0.29.0"
+  # although TUNA listed it).
+  UV_DEFAULT_INDEX: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+  UV_INDEX_URL: "https://pypi.tuna.tsinghua.edu.cn/simple/"
+  UV_INDEX_STRATEGY: "unsafe-best-match"
   # Centralized runner configuration (scripts/ci/runner_config.py is the
   # single source of truth; these values mirror it at workflow level).
   NSE_RUNNER_LINUX_SELF_HOSTED_LABELS: "self-hosted,Linux,X64"
+  # Two-tier self-hosted pool (scripts/ci/runner_config.py mirrors these).
+  # Tier-1 is preferred for every Linux job; tier-2 takes over only when no
+  # tier-1 runner is online+idle; GitHub-hosted is the last resort.
+  NSE_RUNNER_LINUX_TIER1_LABELS: "self-hosted,Linux,X64,opselon-vm"
+  NSE_RUNNER_LINUX_TIER2_LABELS: "self-hosted,Linux,X64,nexus-2core"
   NSE_RUNNER_LINUX_HOSTED: "ubuntu-latest"
   # Platform enablement flags. Windows/macOS default to manual-only; their
   # own dispatch workflows read these (absent => disabled => hosted).
@@ -90,6 +131,7 @@ jobs:
       runner_class: ${{ steps.select.outputs.runner_class }}
       self_hosted_eligible: ${{ steps.select.outputs.self_hosted_eligible }}
       selection_reason: ${{ steps.select.outputs.selection_reason }}
+      self_hosted_labels: ${{ steps.select.outputs.self_hosted_labels }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,75 +143,77 @@ jobs:
           NSE_RUNNER_STATUS_TOKEN: ${{ secrets.NSE_RUNNER_STATUS_TOKEN }}
         with:
           platform: linux
+          labels: ${{ env.NSE_RUNNER_LINUX_TIER1_LABELS }}
+          fallback_labels: ${{ env.NSE_RUNNER_LINUX_TIER2_LABELS }}
           # A fork PR (head repo != this repo) is untrusted: never
           # self-hosted, never exposed to runner credentials.
           untrusted: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
 
   # -------------------------------------------------------------------------
   # LINUX, SELF-HOSTED leg — used only when the preflight found an
-  # online+idle runner matching (self-hosted, Linux, X64). Mutually
-  # exclusive with tests-linux-hosted: exactly one Linux leg reports.
+  # online+idle runner in one of the two tiers (tier-1 opselon-vm preferred,
+  # tier-2 nexus-2core fallback). The exact label set of the winning tier
+  # arrives as a JSON array in self_hosted_labels. Mutually exclusive with
+  # tests-linux-hosted: exactly one Linux leg reports.
   # -------------------------------------------------------------------------
   tests-linux-self-hosted:
     name: Py Tests (linux, self-hosted)
     needs: runner-select
     if: ${{ always() && needs.runner-select.outputs.runner_class == 'self-hosted' }}
-    runs-on: [self-hosted, Linux, X64]
-    timeout-minutes: 45
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.self_hosted_labels) }}
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes. Lands WITH the tier-1 speedup (pytest
+    # -n 8); on the 2-core tier-2 box this lane measured 1028s (run
+    # 42678150060), so tier-2 cannot fit it — routing must prefer tier-1.
+    timeout-minutes: 10
     env:
       NSE_RUNNER_CLASS: "self-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
+      NSE_RUNNER_TIER_LABELS: ${{ needs.runner-select.outputs.self_hosted_labels }}
+      # Test-database isolation (fail-closed): same pinning as ci.yml
+      # quality-tests — this lane never talks to a real/shared database.
+      # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      # The provider pin is a literal (job level is fine); the four temp
+      # paths live in the "Pin test DB" step below, because
+      # ${{ runner.temp }} is step-only — job-level env with it makes
+      # GitHub reject the whole workflow at parse time (zero jobs ran).
+      NSE_DATABASE__PROVIDER: sqlite
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Per-run temp paths for the test DBs (see the job-level env comment).
+      # Must run before the assert step and before any pytest step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
+        run: |
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
+
       - name: Runner selection record
         shell: bash
         run: |
-          echo "::notice::Py Tests (linux) on SELF-HOSTED (labels: self-hosted,Linux,X64) runner. Reason: $NSE_SELECTION_REASON"
+          echo "::notice::Py Tests (linux) on SELF-HOSTED (labels: $NSE_RUNNER_TIER_LABELS) runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=self-hosted" >> "$GITHUB_ENV"
 
-      # No actions/setup-python here. On the self-hosted runner it cannot
-      # install 3.11 (no toolcache, no hosted image) and its silent fallback
-      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
-      # trap this lane hit on its first self-hosted run (2026-11-07).
-      # astral-sh/setup-uv provisions the exact pinned Python into
-      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
-      # below builds the project venv from it.
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          enable-cache: true
-          cache-dependency-glob: requirements.lock
-
-      - name: Install via lock (hash-verified requirements.lock)
+      # CENTRALIZATION (2026-11-10): the venv comes from the shared
+      # setup-python-env action — ONE venv logic for every lane (the
+      # inline install here drifted: it still used the old hash-bound
+      # workspace venv + `uv pip install` while the action moved to a
+      # stable venv + `uv pip sync`). The old "no actions/setup-python"
+      # trap does not apply to the action: setup-python's silent fallback
+      # to the system interpreter is harmless here because the action
+      # provisions the exact Python via uv (UV_PYTHON_INSTALL_DIR) and
+      # builds the venv from it — proven on these same runners by the
+      # ci.yml quality lanes.
+      - name: Set up Python environment (shared action)
         id: env
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Deterministic environment: uv provisions the EXACT Python and
-          # installs into a project venv. `--system` is deliberately NOT used:
-          # a self-hosted runner's system Python is PEP-668 externally
-          # managed (uv refuses to write there), and its version is not
-          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
-          # (the runner user's persistent home, survives jobs and restarts),
-          # so warm runs pay nothing.
-          # The venv name binds to the LOCKFILE HASH + Python version: a
-          # branch with different deps or a different interpreter can never
-          # reuse a stale environment (the workspace is wiped anyway; this
-          # guard also fails closed on a mid-job lock switch).
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
-          VENV_DIR=".venv-$VENV_KEY"
-          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
-          # Put the venv first on PATH so every later `python`/`pytest` call
-          # resolves into it, and record it for the report below.
-          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
-          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
-          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          runner-class: self-hosted
 
       - name: Report environment (cache-reuse evidence)
         if: ${{ always() }}
@@ -179,22 +223,66 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prove the DB pinning (provider at job level, paths from the pin
+      # step above) through the repo's own resolver, before any test step
+      # can open a database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
 
       - name: Decide lane (classifier + event policy)
         id: lane
         shell: bash
         run: scripts/ci/decide_os_lane.bash linux
 
-      - name: Run OS-skewed Linux subset (PR fast lane)
+      - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "${{ steps.env.outputs.venv_dir }}/bin" "${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; the shared
+          # script fetches base+head bloblessly, verifies merge-base, and
+          # escalates to unshallow on a virgin clone (see
+          # scripts/ci/fetch_planner_history.bash). HEAD is the REAL PR
+          # head, not github.sha: on pull_request github.sha is the
+          # ephemeral merge commit, which the depth-1 checkout leaves
+          # shallow-grafted, so the diff finds no merge base and the
+          # planner fails rc=3 (2026-11-09). An empty base (dispatch)
+          # falls back to HEAD~1 inside the script.
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
+          # 2026-11-10 (user directive, revised ~08:57): FOUR workers on
+          # this box (Dubai, 4 cores / 8 GB) — the -n 1 serial run on the
+          # expanded suite crept at ~1% at a time. The hosted leg keeps
+          # the core-sized count.
+          XDIST=4
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc
@@ -204,12 +292,39 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+          # Wall-clock budget tests deselected from this coverage run (see
+          # the dedicated perf-budget step below): coverage + xdist inflates
+          # perf_counter measurements past their floors on the 2-core box.
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '--deselect', 'tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark', '-q']).returncode)" \
                  > "pytest-linux.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           cat "pytest-linux.txt" | tail -60
           exit $rc
+
+      - name: Performance budget — wall-clock budgets (uninstrumented)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          # FULL mode runs the critical suite WITH coverage, so the
+          # wall-clock budget tests are deselected there (coverage + xdist
+          # inflates perf_counter measurements past their floors on the
+          # 2-core runner; measured 2026-11-09) and run here instead —
+          # uninstrumented, single-process, blocking. SKEW mode needs no
+          # step: its planner run carries no --cov, so the tests already
+          # run uninstrumented there.
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark \
+            -q --tb=short -p no:cacheprovider \
+            --junitxml=pytest-perf-budget.xml \
+            2>&1 | tee pytest-perf-budget.txt
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::wall-clock budget tripped while UNINSTRUMENTED — the code itself got slower (see pytest-perf-budget.xml)"
+            exit "$rc"
+          fi
+          grep -h "gate cost" pytest-perf-budget.txt || true
+          echo "perf-budget: PASS (wall-clock budgets hold, uninstrumented)"
 
       - name: Lane report (always — required-context honesty contract)
         if: always()
@@ -217,7 +332,7 @@ jobs:
         run: |
           MODE="${{ steps.lane.outputs.mode }}"
           if [ "$MODE" = "SKIP-REPORT" ]; then
-            echo "## Py Tests (linux, self-hosted): GREEN — lane classifier decided no execution required (this leg executes the FULL suite on main push, Monday schedule, and dispatch)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "## Py Tests (linux, self-hosted): GREEN — Quality owns test execution on PR/push/schedule (one execution per PR); this leg runs the FULL suite on explicit dispatch only" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ -z "${CRIT_RC+set}" ]; then
@@ -247,13 +362,34 @@ jobs:
     # fallback value is inlined. scripts/ci/runner_config.py is the single
     # source of truth for this literal.
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
+    # runs longer than 10 minutes. The hosted fallback runs the same full
+    # suite in ~8 min (measured), so 10 min is the fail-closed guard.
+    timeout-minutes: 10
     env:
       NSE_RUNNER_CLASS: "github-hosted"
       NSE_SELECTION_REASON: ${{ needs.runner-select.outputs.selection_reason }}
+      # Test-database isolation (fail-closed): same pinning as ci.yml
+      # quality-tests — this lane never talks to a real/shared database.
+      # Proven by the assert step below (scripts/ci/assert_test_db_isolation.py).
+      # The provider pin is a literal (job level is fine); the four temp
+      # paths live in the "Pin test DB" step below, because
+      # ${{ runner.temp }} is step-only — job-level env with it makes
+      # GitHub reject the whole workflow at parse time (zero jobs ran).
+      NSE_DATABASE__PROVIDER: sqlite
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Per-run temp paths for the test DBs (see the job-level env comment).
+      # Must run before the assert step and before any pytest step.
+      - name: Pin test DB to ephemeral sqlite paths
+        shell: bash
+        run: |
+          echo "NSE_DATABASE__SQLITE_PATH=$RUNNER_TEMP/nse-ci-audit.sqlite" >> "$GITHUB_ENV"
+          echo "NEXUS_AUDIT_DB=$RUNNER_TEMP/nse-ci-audit.db" >> "$GITHUB_ENV"
+          echo "NEXUS_SETTINGS_DB=$RUNNER_TEMP/nse-ci-settings.db" >> "$GITHUB_ENV"
+          echo "NEXUS_DATA_ROOT=$RUNNER_TEMP/nse-ci-data" >> "$GITHUB_ENV"
 
       - name: Runner selection record
         shell: bash
@@ -261,45 +397,18 @@ jobs:
           echo "::notice::Py Tests (linux) on GITHUB-HOSTED runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=github-hosted" >> "$GITHUB_ENV"
 
-      # No actions/setup-python here. On the self-hosted runner it cannot
-      # install 3.11 (no toolcache, no hosted image) and its silent fallback
-      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
-      # trap this lane hit on its first self-hosted run (2026-11-07).
-      # astral-sh/setup-uv provisions the exact pinned Python into
-      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
-      # below builds the project venv from it.
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-
-      - name: Install via lock (hash-verified requirements.lock)
+      # CENTRALIZATION (2026-11-10): the venv comes from the shared
+      # setup-python-env action — ONE venv logic for every lane (the
+      # inline install here drifted: it still used the old hash-bound
+      # workspace venv + `uv pip install` while the action moved to a
+      # stable venv + `uv pip sync`). On hosted runners the action uses
+      # a workspace venv + the GitHub uv cache, as before.
+      - name: Set up Python environment (shared action)
         id: env
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Deterministic environment: uv provisions the EXACT Python and
-          # installs into a project venv. `--system` is deliberately NOT used:
-          # a self-hosted runner's system Python is PEP-668 externally
-          # managed (uv refuses to write there), and its version is not
-          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
-          # (the runner user's persistent home, survives jobs and restarts),
-          # so warm runs pay nothing.
-          # The venv name binds to the LOCKFILE HASH + Python version: a
-          # branch with different deps or a different interpreter can never
-          # reuse a stale environment (the workspace is wiped anyway; this
-          # guard also fails closed on a mid-job lock switch).
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
-          VENV_DIR=".venv-$VENV_KEY"
-          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
-          # Put the venv first on PATH so every later `python`/`pytest` call
-          # resolves into it, and record it for the report below.
-          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
-          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
-          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          runner-class: github-hosted
 
       - name: Report environment (cache-reuse evidence)
         if: ${{ always() }}
@@ -309,22 +418,63 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      # Prove the DB pinning (provider at job level, paths from the pin
+      # step above) through the repo's own resolver, before any test step
+      # can open a database.
+      - name: Assert test-database isolation (fail-closed)
+        run: python scripts/ci/assert_test_db_isolation.py
 
       - name: Decide lane (classifier + event policy)
         id: lane
         shell: bash
         run: scripts/ci/decide_os_lane.bash linux
 
-      - name: Run OS-skewed Linux subset (PR fast lane)
+      - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
+          # Change-based selection only: the C17 engine plans, Python
+          # executes. No fixed list runs anymore (windows_skew_suite.txt
+          # stays only as the T3 tier manifest for the protection ledger).
+          # cmake is preinstalled on hosted runners; on self-hosted tiers
+          # the portable wheel from the venv (already first on PATH)
+          # covers it. run_test_plan.py builds + verifies the engine.
+          if ! command -v cmake >/dev/null 2>&1; then
+            uv pip install --quiet cmake || true
+            for d in "${{ steps.env.outputs.venv_dir }}/bin" "${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+              if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
+            done
+          fi
+          # Shallow checkouts cannot compute the PR merge-base; the shared
+          # script fetches base+head bloblessly, verifies merge-base, and
+          # escalates to unshallow on a virgin clone (see
+          # scripts/ci/fetch_planner_history.bash). HEAD is the REAL PR
+          # head, not github.sha: on pull_request github.sha is the
+          # ephemeral merge commit, which the depth-1 checkout leaves
+          # shallow-grafted, so the diff finds no merge base and the
+          # planner fails rc=3 (2026-11-09). An empty base (dispatch)
+          # falls back to HEAD~1 inside the script.
+          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
+          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
+          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          python scripts/ci/run_test_plan.py \
+            --repo-root . \
+            --base "$BASE" \
+            --head "$HEAD" \
+            --event "${{ github.event_name }}" \
+            --mode targeted \
+            --native-binary scripts/ci/native/build/nse-ci-engine \
+            --xdist "$XDIST" \
+            --pytest-extra "-q --tb=short --junitxml=pytest-os-skew.txt.xml" \
+            --out-dir test-plan-os
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           exit $rc
@@ -334,12 +484,39 @@ jobs:
         shell: bash
         run: |
           set +e
-          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '-q']).returncode)" \
+          # Wall-clock budget tests deselected from this coverage run (see
+          # the dedicated perf-budget step below): coverage + xdist inflates
+          # perf_counter measurements past their floors on the 2-core box.
+          python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/critical_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '--cov=src', '--cov-report=term-missing', '--deselect', 'tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents', '--deselect', 'tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark', '-q']).returncode)" \
                  > "pytest-linux.txt" 2>&1
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
           cat "pytest-linux.txt" | tail -60
           exit $rc
+
+      - name: Performance budget — wall-clock budgets (uninstrumented)
+        if: steps.lane.outputs.mode == 'FULL'
+        shell: bash
+        run: |
+          set +e
+          # FULL mode runs the critical suite WITH coverage, so the
+          # wall-clock budget tests are deselected there (coverage + xdist
+          # inflates perf_counter measurements past their floors on the
+          # 2-core runner; measured 2026-11-09) and run here instead —
+          # uninstrumented, single-process, blocking. SKEW mode needs no
+          # step: its planner run carries no --cov, so the tests already
+          # run uninstrumented there.
+          pytest tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark \
+            -q --tb=short -p no:cacheprovider \
+            --junitxml=pytest-perf-budget.xml \
+            2>&1 | tee pytest-perf-budget.txt
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::wall-clock budget tripped while UNINSTRUMENTED — the code itself got slower (see pytest-perf-budget.xml)"
+            exit "$rc"
+          fi
+          grep -h "gate cost" pytest-perf-budget.txt || true
+          echo "perf-budget: PASS (wall-clock budgets hold, uninstrumented)"
 
       - name: Lane report (always — required-context honesty contract)
         if: always()
@@ -347,7 +524,7 @@ jobs:
         run: |
           MODE="${{ steps.lane.outputs.mode }}"
           if [ "$MODE" = "SKIP-REPORT" ]; then
-            echo "## Py Tests (linux, github-hosted): GREEN — lane classifier decided no execution required (this leg executes the FULL suite on main push, Monday schedule, and dispatch)" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "## Py Tests (linux, github-hosted): GREEN — Quality owns test execution on PR/push/schedule (one execution per PR); this leg runs the FULL suite on explicit dispatch only" | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           if [ -z "${CRIT_RC+set}" ]; then

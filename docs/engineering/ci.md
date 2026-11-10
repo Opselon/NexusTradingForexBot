@@ -14,7 +14,7 @@ lang: en
 | `tests-os.yml` | matrix OS runs | cross-platform unit sanity |
 | `security.yml` | PR + weekly schedule | CodeQL + Trivy |
 | `osv-scanner.yml` | schedule | dependency vulnerabilities |
-| `lockfile-diff.yml` | dependency file changes | lockfile drift |
+| `dependency-lock.yml` | dependency file changes | lockfile drift (required) |
 | `js-tests.yml` | Web/ changes | `node --check` + JS tests |
 | `release.yml` | `v*` tags **only** | build + verify + publish release artifacts |
 | `docker.yml` | Docker surface changes | image build gates |

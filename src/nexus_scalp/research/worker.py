@@ -357,11 +357,19 @@ class ResearchWorker:
         if not candidates:
             return False
         validated = 0
+        # Same idiom as _refresh_discovery: resolve the dataset once, with
+        # an explicit local, so validate_candidate always receives a
+        # ResearchDataset (a bare getattr() default widens the argument to
+        # Any | bool under mypy and fails the type gate).
+        dataset = getattr(self, "_dataset", None)
+        if dataset is None:
+            dataset = self.pipeline.dataset_builder.build()
+            self._dataset = dataset
         for candidate in candidates[: self.max_validations_per_cycle]:
             try:
                 self.pipeline.validate_candidate(
                     candidate,
-                    getattr(self, "_dataset", self.pipeline.dataset_builder.build()),
+                    dataset,
                     n_trials=self._n_trials or None,
                     family_r_lists=self._family_r_lists or None,
                 )

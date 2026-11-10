@@ -35,6 +35,7 @@ from __future__ import annotations
 # ---------------------------------------------------------------------------
 import os
 import sys
+from pathlib import Path
 
 _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if os.path.isdir(os.path.join(_ROOT, "src", "nexus_scalp")):
@@ -48,6 +49,7 @@ if os.path.isdir(os.path.join(_ROOT, "src", "nexus_scalp")):
 
 import contextlib  # noqa: E402
 import logging  # noqa: E402
+import tempfile  # noqa: E402
 
 import pytest  # noqa: E402
 
@@ -81,6 +83,84 @@ pytest_plugins = ["tests.helpers.shadow70_fixtures"]
 
 
 @pytest.fixture(autouse=True)
+def _isolate_runner_home_and_tmpdir(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+):
+    """Redirect HOME (+ the Windows user-data roots) and TMPDIR per test.
+
+    RUNNER-ISOLATION (forensic audit, 2026-11-09): the self-hosted runner is
+    a persistent machine whose real HOME holds
+    ``~/.nexusscalpengine/config/nexus.yaml``. On Linux
+    ``release.paths.app_data_root()`` resolves from ``Path.home()``, so ANY
+    test that boots the engine, applies a runtime config, or loads the user
+    config reads — and ``_sync_user_config_file`` rewrites — that shared
+    file. The bug296 fix redirected HOME only inside that one test file's
+    ``_clone_ws``; every other engine-booting test (first-run bootstrap,
+    doctor/repair, forensics, wizard, update orchestration) still saw the
+    runner's file. This fixture closes the general case: every test gets a
+    fresh, empty HOME and TMPDIR under pytest's basetemp, so a poisoned
+    ``nexus.yaml`` (e.g. an absolute ``model_artifact_path`` pointing at a
+    stale ``/tmp`` bundle) is invisible and nothing a test writes can divert
+    the next test — or the next CI run on the same runner.
+
+    The TMPDIR half closes the second leak class: ``tempfile.mkdtemp()``
+    never cleans up, and ~25 call sites in the suite (plus the shared
+    ``tests/helpers/shadow70_fixtures.py`` helper) left a directory per call
+    in the runner's real ``/tmp`` (107 ``tmp*`` dirs, 1687 ``model.pt``
+    files on the Dubai box). Pointing ``tempfile`` at a per-test dir under
+    pytest's basetemp puts those dirs under pytest's numbered-run retention
+    instead of leaking them forever. Literal ``/tmp/...`` paths in test
+    code are NOT redirected (only ``tempfile`` honors TMPDIR) — those
+    remain individually auditable.
+
+    Blast radius, checked before landing (see reports/area3.md):
+      * No module-level ``Path.home()`` / ``app_data_root()`` captures exist
+        in ``src/`` or ``tests/`` — every call site resolves per call, so a
+        per-test redirect takes effect everywhere.
+      * Every test that commits via git sets repo-local config (``-c
+        user.*`` or in-repo ``git config``); none depends on ``~/.gitconfig``.
+      * Tests that set HOME themselves (``test_health_data_check``,
+        ``test_lifecycle_chaos``) override this fixture inside the test via
+        their own monkeypatch; teardown restores in reverse order.
+      * ``test_cli_subprocess`` passes ``dict(os.environ)`` to the CLI
+        subprocess, which inherits the redirected HOME — more isolated, not
+        less. ``test_cli_end_to_end`` already assumes a fresh HOME on CI.
+      * Per-test (not per-session): a session HOME would still be shared
+        across tests, so one test's config projection would be visible to
+        the next — the exact failure this fixture removes.
+      * ``tmp_path_factory`` basetemp is fixed at session start, so changing
+        TMPDIR mid-session cannot move it; only ``tempfile.*`` follows.
+      * ``tempfile.tempdir`` is cached process-wide on first use, so the env
+        vars alone are not enough — it is set explicitly here and restored
+        in the ``finally``.
+
+    Residual risks (CI is the oracle for the full 5.6k-test suite — torch
+    is unavailable locally): a test that spawns a subprocess needing the
+    REAL home (none found by grep), and Windows, where ``Path.home()``
+    reads USERPROFILE — covered here by redirecting USERPROFILE,
+    LOCALAPPDATA and APPDATA as well.
+    """
+    run_dir = tmp_path_factory.mktemp("runner_home")
+    home_dir = run_dir / "home"
+    tmp_dir = run_dir / "tmp"
+    home_dir.mkdir()
+    tmp_dir.mkdir()
+    monkeypatch.setenv("HOME", str(home_dir))
+    monkeypatch.setenv("USERPROFILE", str(home_dir))
+    monkeypatch.setenv("LOCALAPPDATA", str(home_dir))
+    monkeypatch.setenv("APPDATA", str(home_dir))
+    monkeypatch.setenv("TMPDIR", str(tmp_dir))
+    monkeypatch.setenv("TEMP", str(tmp_dir))
+    monkeypatch.setenv("TMP", str(tmp_dir))
+    previous_tempdir = tempfile.tempdir
+    tempfile.tempdir = str(tmp_dir)
+    try:
+        yield
+    finally:
+        tempfile.tempdir = previous_tempdir
+
+
+@pytest.fixture(autouse=True)
 def _isolate_settings_db(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
     """Isolate NEXUS_SETTINGS_DB per pytest run (never touch the user's real
     %LOCALAPPDATA%\\NexusScalpEngine\\databases\\app_settings.db)."""
@@ -99,9 +179,24 @@ def _isolate_implicit_audit_db(
     so unit tests constructing OrderLifecycleManager without audit_repo
     appended test_req rows to the live trading ledger (957 rows found
     2026-08-31..09-02). Point the implicit default at a per-run temp file;
-    explicit db_url/config callers are unaffected by construction."""
+    explicit db_url/config callers are unaffected by construction.
+
+    BUG-296/cross-test champion leakage (2026-11-09): the CI lane also pins
+    NSE_DATABASE__SQLITE_PATH (assert_test_db_isolation.py), and that key
+    sits ABOVE the NEXUS_AUDIT_DB seam in load_database_config's precedence
+    (NSE_DATABASE__SQLITE_PATH > NEXUS_AUDIT_DB > persisted provider). Every
+    champion-registry-writing test in the run therefore shared one job-level
+    audit DB even though this fixture redirected NEXUS_AUDIT_DB per run:
+    model_bootstrap._champion_binding resolved the job DB, found a CHAMPION
+    row another test had just written, and bug296's repair-mint came back
+    CHAMPION_GOVERNED (or, in test_market_radar_integration, the trust anchor
+    reported HASH_MISMATCH against a Champion fingerprint from a different
+    test's artifact). Monkeypatch the path key too so the whole audit seam
+    resolves to THIS run's temp file and no cross-test state can leak in.
+    """
     run_dir = tmp_path_factory.mktemp("audit_db")
     monkeypatch.setenv("NEXUS_AUDIT_DB", str(run_dir / "audit.db"))
+    monkeypatch.setenv("NSE_DATABASE__SQLITE_PATH", str(run_dir / "audit.db"))
     yield
 
 
@@ -283,3 +378,12 @@ def _isolate_web_auth_secret_store(tmp_path_factory: pytest.TempPathFactory):
         yield
     finally:
         _secret_store_mod.app_data_root = _real_app_data_root
+
+
+@pytest.fixture(scope="session")
+def verified_test_model_bundle(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """One trusted synthetic 70D model per pytest worker, never in artifacts/."""
+    from tests.helpers.synthetic_checkpoint import write_verified_trained_bundle
+
+    root = tmp_path_factory.mktemp("verified_model_bundle")
+    return write_verified_trained_bundle(root / "model.pt", num_features=70, steps=30)

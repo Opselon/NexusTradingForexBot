@@ -18,7 +18,7 @@ Every push passes `beforePush.sh` / `beforePush.ps1` (5 stages):
 5. Forensic **deploy gate** writing `artifacts/forensics/deploy_gate_result.json`
 
 `-FullSuite` runs the whole ~1931-test unit corpus. CI mirrors the gate
-(`.github/workflows/ci.yml`) and adds CodeQL, Trivy, OSV, lockfile-diff and JS
+(`.github/workflows/ci.yml`) and adds CodeQL, Trivy, OSV and JS
 tests on separate workflows.
 
 ## Test architecture

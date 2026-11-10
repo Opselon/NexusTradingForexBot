@@ -149,6 +149,10 @@ warn_unused_configs = true
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
 check_untyped_defs = false
+# Untyped function bodies are not checked by policy (see check_untyped_defs
+# above), so the annotation-unchecked notes mypy emits for annotated locals
+# inside them are pure noise in the CI gate report — silence the code.
+disable_error_code = "annotation-unchecked"
 disallow_untyped_decorators = false
 no_implicit_optional = true
 strict_optional = false
@@ -193,3 +197,14 @@ filterwarnings = [
     # the pinned fastapi ships the migration itself.
     "ignore:Using `httpx` with `starlette\\.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
 ]
+[tool.uv]
+# TEMPORARY pins (2026-11-09): filelock 4.2.10 was released 2026-11-09T18:57:59Z
+# and playwright 1.65.0 at 2026-11-09T21:09:30Z, and the mirrors the
+# self-hosted runners install from (TUNA, Aliyun) had not synced either
+# ~2.5 h later, so `uv pip install -r requirements.lock` failed on
+# tier-1 with "no version of filelock==4.2.10" (files.pythonhosted.org
+# is unreachable from tier-1, so PyPI cannot be a fallback). Constrain
+# to the versions the mirrors serve (filelock 4.2.9, playwright 1.64.1)
+# until they sync the new releases, then drop these pins and let the
+# self-heal regenerate the lock to the latest.
+constraint-dependencies = ["filelock==4.2.9", "playwright==1.64.1"]

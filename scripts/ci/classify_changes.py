@@ -98,6 +98,16 @@ def classify_file(path: str) -> set[str]:
         lanes.add("docker")
 
     # ---- Dependency manifests ------------------------------------------
+    # KNOWN LIMITATION (review 2026-11-09): this classifier is
+    # section-blind for pyproject.toml — ANY change to the file adds the
+    # "deps" and "python" lanes, even a mypy-only or lint-only change
+    # that the C17 planner (run_test_plan.py / test_selector.c) classifies
+    # as a non-global tooling scope. The distinction is not plumbed here
+    # because no gating decision depends on it today (decide_os_lane.bash
+    # only uses the "python" lane for SKIP; quality-tests runs
+    # unconditionally), and the classifier is filename-only by design
+    # (invoked from bash). Fixing it means parsing pyproject.toml
+    # sections in this script — a documented follow-up, not a blocker.
     if p in (
         "pyproject.toml",
         "requirements.txt",

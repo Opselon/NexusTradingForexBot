@@ -44,10 +44,12 @@ from nexus_scalp.experience.models import (
 )
 from nexus_scalp.experience.quality import compute_behavior_metrics
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
-def _flush() -> None:
-    time.sleep(0.6)
+def _flush(repo: AuditRepository) -> None:
+    """Drain the audit write queue; a sleep is not a durability barrier."""
+    repo._queue.join()
 
 
 def _seed_closed_trade(
@@ -108,7 +110,7 @@ def _seed_closed_trade(
             ),
         )
     )
-    _flush()
+    _flush(repo)
     repo.log_ledger_closed(
         ticket=ticket,
         symbol="XAUUSD",
@@ -133,8 +135,18 @@ def _seed_closed_trade(
         was_sl_modified=0,
         mae_usd=-50.0,
         mfe_usd=150.0,
+        # BUG-226 provenance: the engine boot-tags ledger writes with the
+        # runtime execution mode, and this suite wires a PAPER-mode engine,
+        # so untagged rows land as account_source='PAPER' — which
+        # AccountingCore.load_trades deliberately EXCLUDES from performance
+        # metrics (paper-simulator contamination guard). But these seeds are
+        # the test's *historical real-broker* fixtures (the exact thing the
+        # filter is designed to KEEP), so tag them explicitly as LIVE.
+        # Without this the endpoint reports closed_trades=0 and every
+        # totals assertion in this file fails.
+        account_source="LIVE",
     )
-    _flush()
+    _flush(repo)
 
 
 def _snapshot(repo: AuditRepository, ts: datetime, balance: float, equity: float) -> None:
@@ -145,7 +157,7 @@ def _snapshot(repo: AuditRepository, ts: datetime, balance: float, equity: float
             (ts.strftime("%Y-%m-%d %H:%M:%S"), balance, equity, balance, max(balance, equity)),
         )
     )
-    _flush()
+    _flush(repo)
 
 
 @pytest.fixture()
@@ -156,7 +168,6 @@ def wired_app(tmp_path, monkeypatch):
     # accounting endpoints, not the auth layer — disable the web-auth gate
     # explicitly (the documented local/PAPER override) instead of scattering
     # Bearer headers across 13 TestClient call sites.
-    monkeypatch.setenv("NSE_WEB_AUTH_DISABLE", "1")
     db_url = f"sqlite:///{tmp_path / 'accounting_api.db'}"
     repo = AuditRepository(db_url=db_url, flush_interval_sec=0.05)
     adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
@@ -216,7 +227,7 @@ def wired_app(tmp_path, monkeypatch):
 class TestAccountingApi:
     def test_performance_overview(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/performance")
         assert res.status_code == 200
         data = res.json()
@@ -233,7 +244,7 @@ class TestAccountingApi:
 
     def test_period_endpoints_all_granularities(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             for kind in ("DAY", "WEEK", "MONTH", "YEAR"):
                 res = client.get(f"/api/account/performance/{kind}")
                 assert res.status_code == 200
@@ -246,13 +257,13 @@ class TestAccountingApi:
 
     def test_unknown_period_returns_400(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/performance/FORTNIGHT")
         assert res.status_code == 400
 
     def test_period_series_endpoint(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/performance/DAY/series?count=7")
         assert res.status_code == 200
         data = res.json()
@@ -266,7 +277,7 @@ class TestAccountingApi:
         with the same money truth as the canonical period report (trades and
         net PnL must match exactly)."""
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/performance/intelligence")
         assert res.status_code == 200
         data = res.json()
@@ -323,7 +334,7 @@ class TestAccountingApi:
 
     def test_equity_curve_real_data(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/equity-curve")
         assert res.status_code == 200
         data = res.json()
@@ -335,7 +346,7 @@ class TestAccountingApi:
 
     def test_drawdown_endpoint(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/drawdown")
         assert res.status_code == 200
         data = res.json()
@@ -345,7 +356,7 @@ class TestAccountingApi:
 
     def test_trade_forensics_endpoint(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/trades/1001")
         assert res.status_code == 200
         data = res.json()
@@ -369,14 +380,14 @@ class TestAccountingApi:
 
     def test_trade_forensics_unknown(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/trades/999999")
         assert res.status_code == 200
         assert res.json()["available"] is False
 
     def test_strategies_endpoint_linked(self, wired_app) -> None:
         _, _, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/strategies")
         assert res.status_code == 200
         data = res.json()
@@ -419,7 +430,7 @@ class TestAccountingApi:
             )
             app = create_app(engine_ref=None)
             app.state.engine = engine
-            with TestClient(app) as client:
+            with authenticated_test_client(app) as client:
                 res = client.get("/api/account/performance")
                 assert res.status_code == 200
                 data = res.json()
@@ -462,7 +473,7 @@ class TestWorkerWithEngine:
         see agents/bugs.md BUG-020).
         """
         _, engine, app = wired_app
-        with TestClient(app) as client:
+        with authenticated_test_client(app) as client:
             res = client.get("/api/account/summary")
         assert res.status_code == 200
         data = res.json()
@@ -481,7 +492,7 @@ class TestWorkerWithEngine:
         with mock.patch.object(
             engine.adapter, "get_account_info", side_effect=RuntimeError("broker down")
         ):
-            with TestClient(app) as client:
+            with authenticated_test_client(app) as client:
                 res2 = client.get("/api/account/summary")
         assert res2.status_code == 200
         data2 = res2.json()

@@ -34,6 +34,33 @@ Checks (each is a finding with a severity; CI fails on any ERROR):
      well-formed SHA is the *correct commit for its advertised tag*
      (via `git ls-remote ... refs/tags/<v>*` + peeling `^{}`) stays the
      mandatory manual audit step for any pin change.
+  9. Step-only contexts in workflow/job-level `env:` (ERROR): `${{ runner.* }}`
+     and `${{ steps.* }}` are NOT available outside steps — GitHub rejects
+     the whole workflow at parse time (zero jobs run) if they appear in
+     workflow- or job-level `env:`. Regression: f488c48 put
+     `${{ runner.temp }}` in job-level env of ci.yml + tests-os.yml and
+     killed both workflows on three consecutive pushes (f488c48, bcb5902,
+     fa10eed) while every other check stayed green, so nothing looked
+     wrong. The fix pattern is a step that exports the paths via the
+     $RUNNER_TEMP shell variable into $GITHUB_ENV (see "Pin test DB" steps).
+ 10. Comment lines inside a backslash-continued shell command (ERROR, raw
+     text scan): a `#` line following a line that ends with `\` gets joined
+     into the command, and the `#` swallows the rest of the logical line —
+     the following arguments become stray commands (exit 127). Regression:
+     ci.yml quality-tests put the --pytest-extra rationale comments inside
+     the `python run_test_plan.py \` continuation and the step died with
+     "--pytest-extra: command not found" (2026-11-09). Comments belong
+     ABOVE the command, never inside its continuation.
+ 11. A `uv` job whose index config is only `PIP_INDEX_URL` (ERROR): uv reads
+     UV_INDEX_URL / UV_DEFAULT_INDEX BEFORE PIP_INDEX_URL, so a runner image
+     that exports them (tier-1's opselon/gh-runner hard-codes the Aliyun
+     mirror) silently overrides the workflow's primary index. Regression:
+     5e50710d's regenerated lock pinned typer 0.29.0 (published
+     2026-11-09T18:48Z); Aliyun did not carry it yet while TUNA did, and
+     every self-hosted lane died in ~2 s with "no version of
+     typer==0.29.0" even though `curl $PIP_INDEX_URL/simple/typer/` listed
+     it. Set UV_DEFAULT_INDEX (+ UV_INDEX_URL) wherever PIP_INDEX_URL is
+     set for a lane that runs uv.
 
 Lane vocabulary is DERIVED FROM THE ACTUAL REPO, not hard-coded to a foreign
 reference. The classifier (classify_changes.py) is the canonical lane list;
@@ -77,6 +104,12 @@ _LANE_REF_RE = re.compile(r"needs\.(?P<job>[A-Za-z0-9_\-]+)\.outputs\.(?P<lane>[
 # full ref string; the `@<commit-ish>` tail decides pin vs. tag.
 _USES_RE = re.compile(r"^\s*(?:-\s*)?uses:\s*(?P<ref>[^\s#]+)", re.MULTILINE)
 _SHA40_RE = re.compile(r"^[0-9a-f]{40}$")
+
+# 9. Step-only contexts in workflow/job-level `env:` — `${{ runner.* }}`
+# and `${{ steps.* }}` are unavailable outside steps (GitHub rejects the
+# whole workflow at parse time; zero jobs run). `github`/`needs`/`matrix`/
+# `vars`/`inputs`/`secrets` ARE available at job level and must NOT match.
+_JOB_ENV_FORBIDDEN_RE = re.compile(r"\$\{\{\s*(runner|steps)\s*[.\[]")
 
 # 8b. Phantom-pin ledger (regression pins). An annotated-tag *object* SHA is
 # 40-hex and passes the shape rule, yet GitHub Actions cannot resolve it to a
@@ -528,6 +561,141 @@ def check_action_pins(wf: WorkflowModel) -> None:
             )
 
 
+def check_job_env_contexts(wf: WorkflowModel) -> None:
+    """Step-only contexts in workflow/job-level `env:` are a parse-time kill.
+
+    `${{ runner.* }}` (and `${{ steps.* }}`) are only available inside
+    steps. In workflow- or job-level `env:` GitHub rejects the ENTIRE
+    workflow at parse time — zero jobs, zero logs — while every other
+    workflow stays green, so the breakage looks like "CI is fine, the
+    quality lanes just didn't run". The legitimate pattern is a step that
+    exports the value via a shell variable into $GITHUB_ENV.
+    """
+    raw = wf.raw
+    if not isinstance(raw, dict):
+        return
+    scopes: list[tuple[str, dict]] = []
+    top_env = raw.get("env")
+    if isinstance(top_env, dict):
+        scopes.append(("(workflow-level)", top_env))
+    jobs = raw.get("jobs") or {}
+    for jname, jbody in jobs.items():
+        if not isinstance(jbody, dict):
+            continue
+        job_env = jbody.get("env")
+        if isinstance(job_env, dict):
+            scopes.append((jname, job_env))
+    for scope, env in scopes:
+        for key, value in env.items():
+            if not isinstance(value, str):
+                continue
+            m = _JOB_ENV_FORBIDDEN_RE.search(value)
+            if m is None:
+                continue
+            ctx = m.group(1)
+            wf.error(
+                scope if scope != "(workflow-level)" else "",
+                "job-env-step-only-context",
+                f"`{key}` uses ${{{{ {ctx}.* }}}} in "
+                f"{'workflow-level' if scope == '(workflow-level)' else 'job-level'} "
+                f"`env:` — the `{ctx}` context is only available inside "
+                f"steps; GitHub rejects the whole workflow at parse time "
+                f"(zero jobs run). Move the value into a step that exports "
+                f"it via $GITHUB_ENV (e.g. $RUNNER_TEMP for temp paths).",
+            )
+
+
+_UV_RUN_RE = re.compile(r"\buv\s+(?:pip|sync|lock|export)\b")
+
+
+def check_uv_index_env(wf: WorkflowModel) -> None:
+    """`uv` lanes must pin UV_INDEX_URL, not only PIP_INDEX_URL.
+
+    uv resolves UV_INDEX_URL / UV_DEFAULT_INDEX ahead of PIP_INDEX_URL, so a
+    runner image that exports them (tier-1's opselon/gh-runner image
+    hard-codes the Aliyun mirror) silently overrides the workflow's primary
+    index: uv then answers "no version of <pkg>==<ver>" while the primary
+    simple API lists it. Regression: 5e50710d's regenerated lock pinned
+    typer 0.29.0 (published 2026-11-09T18:48Z); Aliyun lacked it, TUNA
+    carried it, and every self-hosted lane failed in ~2 s during install.
+    """
+    raw = wf.raw
+    if not isinstance(raw, dict):
+        return
+    wf_env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
+    for jname, jbody in (raw.get("jobs") or {}).items():
+        if not isinstance(jbody, dict):
+            continue
+        scopes: list[dict] = [wf_env]
+        if isinstance(jbody.get("env"), dict):
+            scopes.append(jbody["env"])
+        runs_uv = False
+        for step in _gather_steps(jbody):
+            if isinstance(step.get("env"), dict):
+                scopes.append(step["env"])
+            run_cmd = step.get("run")
+            if isinstance(run_cmd, str) and _UV_RUN_RE.search(run_cmd):
+                runs_uv = True
+        if not runs_uv:
+            continue
+        keys = {key for env in scopes for key in env}
+        if "PIP_INDEX_URL" not in keys:
+            continue
+        if "UV_INDEX_URL" in keys or "UV_DEFAULT_INDEX" in keys:
+            continue
+        wf.error(
+            jname,
+            "uv-index-env-override",
+            "this job runs `uv` and sets PIP_INDEX_URL but neither "
+            "UV_INDEX_URL nor UV_DEFAULT_INDEX. uv reads the UV_* variables "
+            "FIRST, so a runner image that exports them (Aliyun on tier-1) "
+            "overrides the primary index and the install fails with "
+            "'no version of <pkg>==<ver>' even though the primary lists it. "
+            "Set UV_DEFAULT_INDEX (and UV_INDEX_URL) to the same primary.",
+        )
+
+
+def check_continuation_comments(wf: WorkflowModel) -> None:
+    """A `#` comment line inside a backslash-continued shell command.
+
+    Raw-text scan (YAML parsing drops comments): inside a `run: |` block,
+    a line ending in `\\` joins the NEXT line into the same logical shell
+    line — and if that next line starts with `#`, the comment swallows the
+    rest of the logical line, so the following arguments execute as stray
+    commands (exit 127). Comments belong ABOVE the command.
+    """
+    if wf.path is None or not wf.path.is_file():
+        return
+    try:
+        lines = wf.path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return
+    in_run = False
+    prev_cont = False
+    for lineno, line in enumerate(lines, start=1):
+        if re.match(r"\s*(?:-\s*)?run:\s*\|", line):
+            in_run = True
+            prev_cont = False
+            continue
+        if not in_run:
+            continue
+        if line.strip().startswith("#") and prev_cont:
+            wf.error(
+                "",
+                "continuation-comment",
+                f"line {lineno}: a `#` comment sits inside a "
+                f"backslash-continued shell command — the `\\` joins it "
+                f"into the command and the `#` swallows the rest of the "
+                f"logical line, so the following arguments run as stray "
+                f"commands (exit 127). Move the comment above the command.",
+            )
+        if line and not line[0].isspace():
+            in_run = False
+            prev_cont = False
+            continue
+        prev_cont = line.rstrip().endswith("\\")
+
+
 def analyze_workflow(wf: WorkflowModel) -> None:
     check_undefined_outputs(wf)
     check_local_action_checkout(wf)
@@ -535,6 +703,9 @@ def analyze_workflow(wf: WorkflowModel) -> None:
     check_silent_skip(wf)
     check_self_watch(wf)
     check_action_pins(wf)
+    check_job_env_contexts(wf)
+    check_continuation_comments(wf)
+    check_uv_index_env(wf)
 
 
 def run(workflows_dir: Path, strict: bool = False) -> tuple[list[WorkflowModel], int]:

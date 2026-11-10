@@ -1,24 +1,16 @@
 name: Performance Benchmark
 
 on:
-  pull_request:
-    branches: [main, develop]
-    paths:
-      - "src/nexus_scalp/web/**"
-      - "src/nexus_scalp/models/**"
-      - "src/nexus_scalp/experience/**"
-      - "tests/bench/**"
-      - ".github/workflows/perf-benchmark.yml"
-  push:
-    branches: [main]
-    paths:
-      - "src/nexus_scalp/web/**"
-      - "src/nexus_scalp/models/**"
-      - "tests/bench/**"
+  # Semi-monthly regression watch ONLY (2026-11-10, user directive):
+  # no PR/push triggers — the PR path is the Quality wall-clock budget
+  # step, and this hosted benchmark runs on the 1st & 15th (~15 days)
+  # plus manual dispatch. Was PR/push path-filtered + weekly; the
+  # hosted minutes and the PR noise are not worth a per-PR regression
+  # table.
   workflow_dispatch:
   schedule:
-    # Weekly regression watch, even without a PR touching the path filter.
-    - cron: "17 4 * * 1"
+    # Semi-monthly regression watch, even without a PR touching the paths.
+    - cron: "17 4 1,15 * *"
 
 permissions:
   contents: read

@@ -65,3 +65,63 @@ def write_trained_checkpoint(
     net.eval()
     torch.save(net.state_dict(), out)
     return out
+
+
+def write_verified_trained_bundle(
+    path: str | Path,
+    *,
+    num_features: int = 70,
+    num_classes: int | None = None,
+    seed: int = 999,
+    steps: int = 30,
+) -> Path:
+    """Write a trained, integrity-bound test bundle under a caller-owned temp path."""
+    import hashlib
+    import json
+
+    import torch
+
+    model_path = write_trained_checkpoint(
+        path,
+        num_features=num_features,
+        num_classes=num_classes,
+        seed=seed,
+        steps=steps,
+    )
+    state = torch.load(model_path, map_location="cpu", weights_only=True)
+    classes = int(state["classifier.weight"].shape[0])
+    schema_id = "scalp_v3" if num_features == 70 else "scalp_v1"
+    manifest = {
+        "manifest_version": "1.0.0",
+        "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
+        "feature_schema_id": schema_id,
+        "feature_schema_dimension": num_features,
+        "num_classes": classes,
+    }
+    metadata = {
+        "schema": "nexus_model_meta_v1",
+        "feature_schema_id": schema_id,
+        "feature_schema_dimension": num_features,
+        "num_features": num_features,
+        "num_classes": classes,
+        "model_head_classes": classes,
+    }
+    (model_path.parent / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    (model_path.parent / "model.meta.json").write_text(
+        json.dumps(metadata, indent=2), encoding="utf-8"
+    )
+    return model_path
+
+
+def copy_verified_trained_bundle(source_model: str | Path, target_model: str | Path) -> Path:
+    """Copy a verified test bundle to an isolated test-owned target directory."""
+    import shutil
+
+    source, target = Path(source_model), Path(target_model)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(source, target)
+    for sidecar in ("manifest.json", "model.meta.json"):
+        shutil.copy2(source.parent / sidecar, target.parent / sidecar)
+    return target

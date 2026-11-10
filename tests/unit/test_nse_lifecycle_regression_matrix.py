@@ -443,7 +443,7 @@ def _provision_model_artifact(cfg) -> None:
     )
 
 
-def test_matrix_5_promotion_restart_persistence(tmp_path):
+def test_matrix_5_promotion_restart_persistence(tmp_path, monkeypatch):
     """Promote VALIDATED->SHADOW->ACTIVE via API client, restart registry, verify persistence."""
     db_path = tmp_path / "mat5.db"
     repo = AuditRepository(db_url=f"sqlite:///{db_path}")
@@ -496,9 +496,16 @@ def test_matrix_5_promotion_restart_persistence(tmp_path):
     _flush(repo)
 
     # WEB-AUTH-P0: control-plane clients authenticate like production.
-    import os as _os
-
-    _os.environ.setdefault("NSE_WEB_AUTH_TOKEN", "matrix5-token")
+    # Deterministic token via monkeypatch (NOT setdefault): the shared
+    # tests.helpers.authenticated_client helper sets NSE_WEB_AUTH_TOKEN to
+    # a random per-session token with a direct os.environ assignment, so
+    # if any such test ran earlier in the same xdist worker, setdefault
+    # would be a no-op, the app would enforce the random token, and this
+    # test's hardcoded "matrix5-token" header would get 401 — an
+    # order-dependent failure (OS lane only, 7d2fa45d). monkeypatch sets
+    # the token before create_app resolves it and restores the previous
+    # value at teardown, exactly like the other token-setting tests.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "matrix5-token")
     client = TestClient(create_app(engine))
     client.headers.update({"Authorization": "Bearer matrix5-token"})
 

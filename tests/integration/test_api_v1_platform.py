@@ -24,6 +24,7 @@ from nexus_scalp.web.api_v1_wiring import (
     register_api_v1,
 )
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 # ---------------------------------------------------------------------------
 # deterministic audit DB fixture (real repository, real SQLite files)
@@ -36,8 +37,16 @@ def seeded_repo(tmp_path: Any) -> AuditRepository:
 
     cfg = DatabaseConfig(provider="sqlite", sqlite_path=str(tmp_path / "audit.db"))
     repo = AuditRepository(config=cfg)
-    # Seed audit_signals deterministically (12 rows, mixed actions/stages/symbols)
-    base = datetime(2026, 8, 30, 12, 0, tzinfo=UTC)
+    # Seed audit_signals deterministically (12 rows, mixed actions/stages/symbols).
+    # Timestamps are anchored to the CURRENT UTC time, not a fixed calendar
+    # date: both the signals-history and decisions endpoints apply a
+    # hours_back window (default 168h = 7 days, capped at 720h). Anchoring to
+    # a fixed past date silently broke every run after that date — the seeded
+    # rows fell outside the query window and every history/stats assertion
+    # returned 0 (the same date-anchoring defect already fixed in
+    # test_accounting_api.py). 15-min spacing x 12 rows = ~3h, safely inside
+    # the window on any runner, any day.
+    base = datetime.now(UTC)
     actions = ["BUY", "SELL", "NO_TRADE"]
     symbols = ["XAUUSD", "EURUSD"]
     for i in range(12):
@@ -422,7 +431,7 @@ def test_register_api_v1_on_legacy_app_additive(seeded_repo: AuditRepository) ->
     # legacy surface intact
     assert "/api/status" in effective
     assert "/health" in effective
-    client = TestClient(app)
+    client = authenticated_test_client(app)
     r = client.get("/api/v1/system/version")
     assert r.status_code == 200
     # legacy route unaffected by v1 handlers

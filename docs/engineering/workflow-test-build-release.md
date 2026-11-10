@@ -267,8 +267,8 @@ Dependabot (`.github/dependabot.yml`) opens **weekly, grouped** PRs for pip
 - Actions stay pinned to **immutable commit SHAs** in
   `release.yml`/`security.yml`/`docker.yml` (supply-chain hardening);
   `ci.yml` still has floating tags — open follow-up (§8).
-- Lockfile changes ride `lockfile-diff.yml` (PR-only review visibility) and
-  `dependency-lock.yml` (migration-safety probe on disposable DBs).
+- Lockfile changes ride `dependency-lock.yml` (drift gate + migration-safety
+  probe on disposable DBs).
 - Merge dependency PRs like any PR (contexts + approval); batch-merge
   grouped PRs in one go to keep the OS-matrix legs warm.
 

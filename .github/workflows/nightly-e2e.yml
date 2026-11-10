@@ -17,14 +17,9 @@ name: Nightly Client E2E (Docker)
 # POST toward LIVE and never place orders (README contract).
 
 on:
-  schedule:
-    # Every 15 days at 02:33 UTC (after the slow-suite nightly window).
-    # Changed from nightly (2026-11, runner-routing/cost mission): the Docker
-    # E2E soak is a heavy lane whose value is drift detection, not daily
-    # blocking; a fortnightly cadence keeps the evidence fresh at ~1/15th of
-    # the Actions minutes. Manual workflow_dispatch remains available for
-    # on-demand runs any time.
-    - cron: "33 2 1,16 * *"
+  # CI quota diet + mission policy (2026-11): E2E is MANUAL-ONLY. The Docker
+  # soak is heavy; scheduled sweeps no longer run it. Use workflow_dispatch
+  # whenever a full E2E evidence pass is explicitly wanted.
   workflow_dispatch:
 
 permissions:
@@ -66,7 +61,13 @@ jobs:
           # no operator .env — generate a throwaway PAPER-mode token here
           # (never echoed, single-run, torn down in the always() step).
           echo "NSE_WEB_AUTH_TOKEN=$(python -c 'import secrets; print(secrets.token_urlsafe(32))')" >> .env
-          echo "NSE_PG_PASSWORD=ci-nopg" >> .env
+          # Throwaway value: the E2E lane never starts the optional postgres
+          # service (it sits behind the `postgres` compose profile), but
+          # docker-compose still evaluates ${NSE_PG_PASSWORD:?...} at project
+          # load, so the variable must merely be *set*. Generate it per run
+          # instead of hardcoding a literal — a hardcoded password, even a
+          # useless one, fails the GitGuardian secret-scan gate.
+          echo "NSE_PG_PASSWORD=$(python -c 'import secrets; print(secrets.token_urlsafe(24))')" >> .env
           docker compose up -d --build core
           docker compose ps
 

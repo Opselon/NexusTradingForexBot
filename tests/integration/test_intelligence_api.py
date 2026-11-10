@@ -39,6 +39,7 @@ from nexus_scalp.experience.models import (
     StrategyContext,
 )
 from nexus_scalp.web.server import create_app
+from tests.helpers.authenticated_client import authenticated_test_client
 
 
 def _flush(repo) -> None:
@@ -46,15 +47,18 @@ def _flush(repo) -> None:
 
 
 @pytest.fixture
-def wired_engine(tmp_path):
+def wired_engine(tmp_path, verified_test_model_bundle):
     """A full LiveEngine wired against a paper adapter and temp DB."""
     repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
+    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
             "mode": "PAPER",
         },
-        model={"model_artifact_path": str(tmp_path / "model.pt")},
+        model={"model_artifact_path": str(model_path)},
     )
     # Use a lightweight adapter (paper) so no MT5 is required.
     from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
@@ -127,7 +131,7 @@ class TestIntelligenceAPI:
         repo, engine = wired_engine
         seed_lifecycle(repo, engine.intelligence_lifecycle)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/positions/501/timeline")
         assert resp.status_code == 200
         body = resp.json()
@@ -178,7 +182,7 @@ class TestIntelligenceAPI:
         engine.intelligence_autopsy.persist(autopsy)
         _flush(repo)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/autopsies")
         assert resp.status_code == 200
         body = resp.json()
@@ -191,7 +195,7 @@ class TestIntelligenceAPI:
     def test_summary_and_worker_status(self, wired_engine):
         _repo, engine = wired_engine
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/summary")
         assert resp.status_code == 200
         body = resp.json()
@@ -217,9 +221,9 @@ class TestIntelligenceAPI:
         """Evidence-based anomaly events are exposed over the API (TASK-2)."""
         repo, engine = wired_engine
         # Persist one anomaly event directly through the audit queue.
-        from nexus_scalp.intelligence.behavior import (
+        from nexus_scalp.intelligence.behavior_canonical import _persist_anomaly
+        from nexus_scalp.intelligence.behavior_detect import (
             ANOMALY_ALGORITHM_VERSION,
-            _persist_anomaly,
         )
         from nexus_scalp.intelligence.models import AnomalyEvent
 
@@ -235,7 +239,7 @@ class TestIntelligenceAPI:
         assert _persist_anomaly(repo, anomaly, ANOMALY_ALGORITHM_VERSION) is True
         _flush(repo)
         app = create_app(engine)
-        client = TestClient(app)
+        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/anomalies")
         assert resp.status_code == 200
         body = resp.json()

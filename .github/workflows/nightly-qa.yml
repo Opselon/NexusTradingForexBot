@@ -16,7 +16,7 @@ name: Nightly Deep QA
 on:
   schedule:
     # Nightly 01:17 UTC (off-peak; Iran local ~04:47)
-    - cron: "17 1 * * *"
+    - cron: "17 1 1,15 * *"
   workflow_dispatch:
 
 permissions:

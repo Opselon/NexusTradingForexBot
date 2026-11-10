@@ -31,6 +31,7 @@ persisting the data is a design failure".
 
 from __future__ import annotations
 
+import sys
 import time
 
 import pytest
@@ -163,17 +164,44 @@ def test_gate_cost_is_far_cheaper_than_the_write_it_prevents() -> None:
     bounded DB write (a 100 us floor is generous for a local write; network
     PG writes are orders of magnitude above it). The gate has to be CHEAPER
     than the write it prevents, or it has just moved the cost.
+
+    Measurement control (NOT a skipped budget): the timed window runs with
+    the line tracer suspended and restores it afterwards, so the number
+    measures the gate, not the tracer. Under coverage.py's ``sys.settrace``
+    the same 5,000 calls cost 158,003 ns/call on the 2-core self-hosted
+    runner (9715a4ae, Quality lane), while the coverage-free OS lane on
+    the same box passes (untraced cost below the floor); isolated local
+    measurement puts the gate at ~20,000 ns/call before the fast path and
+    ~600 ns/call after it. The tracer's per-line overhead, not the gate,
+    is what breached the floor. The assertion below stays UNCONDITIONAL
+    in every lane; only the instrument is quieted for the timed window,
+    and the lines the timed window executes are still executed under
+    coverage by the functional tests in this file. (If coverage ever
+    switches to the
+    ``sys.monitoring`` core, ``sys.gettrace()`` returns None and no
+    suspension happens -- the test then measures the traced cost, which
+    the exact-equality fast path keeps far below the floor.)
     """
     items = _batch(5_000)
-    t0 = time.perf_counter_ns()
-    for it in items:
-        _gate_duplicate_payload(it["summary"], it["body"])
-    gate_ns = (time.perf_counter_ns() - t0) / len(items)
+    tracer = sys.gettrace()
+    if tracer is not None:
+        sys.settrace(None)
+    try:
+        t0 = time.perf_counter_ns()
+        for it in items:
+            _gate_duplicate_payload(it["summary"], it["body"])
+        gate_ns = (time.perf_counter_ns() - t0) / len(items)
+    finally:
+        if tracer is not None:
+            sys.settrace(tracer)
     # A single bounded DB write costs at least ~100 us (10x that over the
     # network). The gate must sit far below it.
     write_floor_ns = 100_000
     assert gate_ns < write_floor_ns, f"gate cost {gate_ns:.0f} ns/call"
-    print(f"\n[DB-LIFECYCLE] gate cost = {gate_ns:.0f} ns/call (floor {write_floor_ns})")
+    print(
+        f"\n[DB-LIFECYCLE] gate cost = {gate_ns:.0f} ns/call "
+        f"(floor {write_floor_ns}, tracer_suspended={tracer is not None})"
+    )
 
 
 # ---------------------------------------------------------------------------

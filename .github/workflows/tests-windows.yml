@@ -30,6 +30,15 @@ name: Tests (Windows, manual)
 # ---------------------------------------------------------------------------
 
 on:
+  schedule:
+    # Semi-monthly cross-platform sweep (1st & 15th, 07:17 UTC) — the
+    # same cadence as tests-os.yml. Windows runs the FULL suite here,
+    # never on PRs: Quality owns PR test execution, and this workflow
+    # has no push/pull_request trigger (the `Py Tests (windows-latest)`
+    # check on a PR is a routing notice from tests-os.yml, not a test
+    # run — no Windows runner is borrowed on a PR). At most twice a
+    # month, like the MT5-native line.
+    - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
       full_suite:
@@ -189,8 +198,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -208,6 +217,10 @@ jobs:
         shell: bash
         run: |
           set +e
+          # Windows stays on the fixed skew list for now (step-by-step:
+          # Linux first). The C-planned lane lands here only after the
+          # Linux/macOS lanes prove the engine in CI and the Windows
+          # build of the engine is validated.
           python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
@@ -335,8 +348,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| field | value |" >> "$GITHUB_STEP_SUMMARY"
           echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| venv | `${{ steps.env.outputs.venv_dir }}` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| python | `${{ steps.env.outputs.venv_python }}` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| venv | ${{ steps.env.outputs.venv_dir }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| python | ${{ steps.env.outputs.venv_python }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_CACHE_DIR | \`$UV_CACHE_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| UV_PYTHON_INSTALL_DIR | \`$UV_PYTHON_INSTALL_DIR\` |" >> "$GITHUB_STEP_SUMMARY"
 
@@ -354,6 +367,10 @@ jobs:
         shell: bash
         run: |
           set +e
+          # Windows stays on the fixed skew list for now (step-by-step:
+          # Linux first). The C-planned lane lands here only after the
+          # Linux/macOS lanes prove the engine in CI and the Windows
+          # build of the engine is validated.
           python -c "import pathlib, subprocess, sys; p = pathlib.Path('tests/windows_skew_suite.txt'); lines = [l.strip() for l in p.read_text().splitlines() if l.strip() and not l.startswith('#')]; sys.exit(subprocess.run(['pytest'] + lines + ['-n', 'auto', '--dist', 'loadgroup', '-q', '--tb=short', '--junitxml=pytest-os-skew.txt.xml']).returncode)"
           rc=$?
           echo "CRIT_RC=$rc" >> "$GITHUB_ENV"
