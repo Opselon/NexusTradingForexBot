@@ -540,8 +540,8 @@ def register_diagnostics_state_routes(
     # diagnostic paths (explicit maintenance operations), while /health
     # serves the cached verdict.
     # =========================================================================
-    @app.get("/health")
-    def health_probe() -> dict[str, Any]:
+    @app.get("/health", response_model=None)
+    def health_probe() -> dict[str, Any] | JSONResponse:
         try:
             cached = getattr(app.state, "health_probe_cache", None)
             if isinstance(cached, tuple) and (time.monotonic() - cached[0]) < _HEALTH_TTL_SEC:
