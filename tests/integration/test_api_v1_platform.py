@@ -464,8 +464,6 @@ def test_health_block_concurrent_calls_run_single_sweep(monkeypatch: pytest.Monk
 
     from nexus_scalp.web.api_v1.system import _health_block
 
-    calls = {"n": 0}
-
     class _FakeEntry:
         def __init__(self, category: str) -> None:
             self.category = category
@@ -476,12 +474,34 @@ def test_health_block_concurrent_calls_run_single_sweep(monkeypatch: pytest.Monk
 
     class _FakeEngine:
         def overall(self) -> tuple[str, list[_FakeEntry]]:
-            calls["n"] += 1
             _time.sleep(0.05)  # overlap window: threads genuinely race without the lock
             return "READY", [_FakeEntry("SYSTEM")]
 
     class _State:
-        pass
+        """Counts v1_health_cache assignments — one per sweep for THIS app.
+
+        NOTE: do NOT count sweeps via a global HealthEngine-call counter.
+        The mock replaces the module-level HealthEngine, so ANY thread in
+        the process that calls HealthEngine().overall() increments it —
+        including a stray v1-health-prewarm daemon thread spawned by an
+        earlier test's app (api_v1_wiring spawns one per app creation).
+        Such a thread can fire mid-test and inflate the count to 2 even
+        though _health_block deduped this app's own callers perfectly
+        (flake on PR #740 run 42879764304, head b2757827: 'got 2').
+        Counting cache assignments on THIS app's state is immune: a
+        prewarm thread writes a different app's state, never ours.
+        Each sweep for this app populates the cache exactly once, so
+        cache_sets == 1 is exactly 'one sweep for my app'.
+        """
+
+        def __init__(self) -> None:
+            self.cache_sets = 0
+
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "v1_health_cache":
+                current = self.__dict__.get("cache_sets", 0)
+                object.__setattr__(self, "cache_sets", current + 1)
+            object.__setattr__(self, name, value)
 
     class _App:
         def __init__(self) -> None:
@@ -508,4 +528,4 @@ def test_health_block_concurrent_calls_run_single_sweep(monkeypatch: pytest.Monk
         t.join(timeout=10)
     assert len(results) == 8
     assert all(r[0] == "READY" for r in results)
-    assert calls["n"] == 1, f"expected exactly 1 sweep, got {calls['n']}"
+    assert app.state.cache_sets == 1, f"expected exactly 1 sweep, got {app.state.cache_sets}"
