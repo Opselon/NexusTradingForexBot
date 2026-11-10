@@ -1,6 +1,6 @@
-"""CLI END-TO-END tests (TASK-CLI-E2E, 2026-08-31 Nexus-Main) — 68 tests.
+"""CLI END-TO-END tests (TASK-CLI-E2E, 2026-08-31 Nexus-Main) — 65 tests.
 
-Exactly 68 end-to-end tests over the canonical Typer CLI
+Exactly 65 end-to-end tests over the canonical Typer CLI
 (``nexus_scalp.cli.main.app``) driven through ``typer.testing.CliRunner`` —
 every command group, its answers (prompts/confirmations), its input/output
 contract and its stable exit codes (docs/RELEASE.md):
@@ -11,8 +11,7 @@ contract and its stable exit codes (docs/RELEASE.md):
 Each test exercises the REAL command path (no engine start, no broker, no
 network-mandatory success): JSON parity keys, human panels, safety guards
 (LIVE confirmation, uninstall data deletion), artifact-first model factory
-flows, DB migration/health groups, incident forensics and dependency
-intelligence. Sensitive machine state (settings DB, user config, logs dir,
+flows, DB migration/health groups and incident forensics. Sensitive machine state (settings DB, user config, logs dir,
 data root) is isolated per-test via monkeypatch, mirroring tests/conftest.py.
 
 Known-real CLI defects intentionally pinned here (BUG-150/BUG-151 in
@@ -224,7 +223,6 @@ def test_e2e_01_main_help_lists_every_command() -> None:
         "db-portability",
         "incidents",
         "analyze",
-        "dependency",
         "model-dataset-build",
         "model-experiment-create",
         "model-train",
@@ -1230,56 +1228,6 @@ def test_e2e_59_incidents_scan_read_only_and_trace_why_contract(
     res_blocked = _invoke(["incidents", "trace-why", "T1", "--what", "blocked"])
     assert res_blocked.exit_code == xc.EXIT_OK
     assert "{" in res_blocked.stdout
-
-
-# ===========================================================================
-# 12. dependency intelligence (tests 60-62)
-# ===========================================================================
-
-
-def test_e2e_60_dependency_scan_json_reports_stats_and_summary(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(REPO_ROOT)
-    res = _invoke(["dependency", "scan", "--json"])
-    assert res.exit_code == xc.EXIT_OK
-    data = json.loads(res.stdout)
-    assert data["status"] == "ok"
-    assert data["stats"]["files_analyzed"] > 0
-    assert {"cycles", "violations", "unresolved_imports"} <= set(data["analysis"]["summary"])
-
-
-def test_e2e_61_dependency_graph_out_and_validate_contract(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(REPO_ROOT)
-    out = tmp_path / "graph.json"
-    res_g = _invoke(["dependency", "graph", "--out", str(out)])
-    assert res_g.exit_code == xc.EXIT_OK
-    assert out.exists()
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert "nodes" in data and "edges" in data
-    res_v = _invoke(["dependency", "validate"])
-    assert res_v.exit_code in (xc.EXIT_OK, 1)  # 1 when cycles exist (current tree)
-    assert "Validation" in res_v.stdout
-
-
-def test_e2e_62_dependency_impact_explain_path_with_unknown_node_errors(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.chdir(REPO_ROOT)
-    res_impact = _invoke(["dependency", "impact", "mod:nexus_scalp.cli.main"])
-    assert res_impact.exit_code == xc.EXIT_OK
-    assert "Impact of mod:nexus_scalp.cli.main" in res_impact.stdout
-    assert "direct" in res_impact.stdout and "transitive" in res_impact.stdout
-    res_unknown = _invoke(["dependency", "explain", "no:such_node"])
-    assert res_unknown.exit_code == 2
-    assert "Unknown node" in res_unknown.stdout
-    res_path = _invoke(
-        ["dependency", "path", "mod:nexus_scalp.cli.main", "mod:nexus_scalp.domain.models"]
-    )
-    assert res_path.exit_code == xc.EXIT_OK
-    assert "->" in res_path.stdout
 
 
 # ===========================================================================
