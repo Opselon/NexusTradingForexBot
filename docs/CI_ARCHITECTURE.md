@@ -16,7 +16,7 @@ this file is the CI-specific companion.
 | `mt5-native-windows.yml` | `workflow_call` (from ci.yml); dispatch | **Native Windows MT5 certification** (primary runtime platform): Authenticode-verified installer + real `mt5.initialize()` IPC + `DirectMT5Adapter` connect; demo (Level 2/3) legs are dispatch-only | python/runtime |
 | `mt5-wine-compat.yml` | weekly cron + dispatch ONLY | Wine compatibility soak (independent, advisory — never gates PRs, the runtime verdict, or releases) | python/compat |
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
-| `tests-os.yml` | push/PR main·develop·ci-tests; semi-monthly cron (1st & 15th); dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
+| `tests-os.yml` | semi-monthly cron (1st & 15th); dispatch only — no PR/push triggers (2026-11-10 centralization: Quality owns all PR/push execution) | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
 | `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + stable lock-synced venv (one definition, no per-job copy) | ci |
 | `tests-windows.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`); never on PRs (Quality owns PR execution) | python (Windows) |
@@ -124,7 +124,7 @@ branch on is validated on every run.
 * `ci.yml :: ci-integrity` — workflow wiring must stay valid.
 * `ci.yml :: quality` — ruff lint/format, mypy, pytest critical suite, coverage.
 * `js-tests.yml :: js-tests` — Web JS syntax + unit tests.
-* `tests-os.yml :: tests-linux-*` — Linux critical suite (self-hosted first).
+* `tests-os.yml :: tests-linux-*` — Linux critical suite, semi-monthly sweep + dispatch only (self-hosted first; no PR/push triggers since 2026-11-10).
 * `security.yml :: codeql` + `trivy` — advisory, but should be green.
 
 > **Branch-protection migration (administrator action, section below).**
@@ -154,7 +154,7 @@ reduced / advisory form.
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | CI integrity + change classification (`ci-integrity`) | ✓ | ✓ | ✓ | ✓ | — |
 | Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
-| C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Linux legs SKIP on PR/push/schedule and run FULL (dispatch) or SKEW (dispatch) only — they used to re-run the same selection back-to-back. |
+| C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Matrix no longer runs on PR/push at all (2026-11-10) — its Linux legs run FULL on the semi-monthly schedule or FULL/SKEW on dispatch only. |
 | Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
 | Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans — and whenever coverage is skipped (TEMPORARY 2026-11-10: coverage is manual-only, no --cov except a manual full dispatch, so the suite fits the cap on tier-1) — the gate records N/A explicitly, never a silent skip. |
 | Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
@@ -336,8 +336,10 @@ Also automatic now (same commit):
   with the exact install command (`apt-get install -y
   build-essential`) instead of a confusing cmake-configure error.
 * **Automatic prune** — `scripts/ci/prune_runner_state.bash`, run at
-  the start of every lane (setup action + both OS venv steps):
-  hash-bound venvs (from the pre-2026-11-10 design) and nse-ci caches older than 30 days, /tmp test
+  the start of every lane (via the setup action — the OS legs use it too
+  since 2026-11-10): obsolete hash-bound venvs (any age — no job
+  references them since the stable-venv switch) and nse-ci caches older
+  than 30 days, /tmp test
   artifacts (`tmp*`, `pytest-*`) older than 24h. Age-gated and
   failure-proof; it never touches the current venv, the uv wheel cache,
   or anything a live job could own. (The Dubai box held 107 tmp* dirs,
@@ -530,13 +532,15 @@ pip sync` makes it match requirements.lock EXACTLY on every run, so a
 one-package lock change installs one package instead of rebuilding all
 94 (2026-11-10: the old hash-bound design minted a new directory per
 lock hash, which is why every lock regen re-downloaded everything;
-old hash-bound venvs are pruned by the 30-day rule, never auto-deleted
-while in use). The same
+obsolete hash-bound venvs are deleted by the prune script at any age,
+since no job references them — that unblocked Dubai's full disk on
+2026-11-10). The same
 section pins the type/lint caches (`MYPY_CACHE_DIR` /
 `RUFF_CACHE_DIR` under `~/.cache/nse-ci/`) so mypy no longer runs cold on
-every job. `tests-os.yml` keeps its workspace venv deliberately (its lane
-documents a self-hosted `setup-python` trap the canonical action does not
-cover) — the duplication there is a documented exception, not an oversight.
+every job. Since 2026-11-10 the `tests-os.yml` Linux legs use this same
+canonical action (centralization) — the old workspace-venv exception is
+gone: the `setup-python` trap it documented does not apply to the action,
+which provisions the exact Python via uv.
 
 ### Test-database isolation
 

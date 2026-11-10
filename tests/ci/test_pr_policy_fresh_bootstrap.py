@@ -246,7 +246,12 @@ def test_os_workflow_has_mirror_indexes() -> None:
 
 
 def test_prune_script_is_invoked_by_setup_action_and_os_lanes() -> None:
-    """The prune script must run in every lane that installs a venv."""
+    """The prune script must run in every lane that installs a venv.
+
+    The OS legs install their venv through the shared setup-python-env
+    action (2026-11-10 centralization) — the prune runs inside the
+    action, so the legs must use the action, not an inline install.
+    """
     action = (REPO / ".github" / "actions" / "setup-python-env" / "action.yml").read_text(
         encoding="utf-8"
     )
@@ -254,19 +259,27 @@ def test_prune_script_is_invoked_by_setup_action_and_os_lanes() -> None:
     wf = _load("tests-os.yml")
     for leg in ("tests-linux-self-hosted", "tests-linux-hosted"):
         steps = _steps(wf["jobs"][leg])
-        venv = _named(steps, "Install via lock")
-        assert "prune_runner_state.bash" in _run(venv), (
-            f"{leg} venv step must call the prune script"
-        )
+        setup = [s for s in steps if "./.github/actions/setup-python-env" in str(s.get("uses", ""))]
+        assert setup, f"{leg} must install its venv through the shared setup-python-env action"
     assert PRUNE_SCRIPT.stat().st_mode & 0o111, "prune script must be executable"
 
 
 def test_prune_script_is_age_gated_and_never_fatal() -> None:
-    """The prune script must only delete old state and must not fail a lane."""
+    """The prune script must only delete old/obsolete state and must not fail a lane.
+
+    Everything is age-gated (mtime) EXCEPT obsolete hash-bound venv dirs:
+    since the 2026-11-10 stable-venv switch the action no longer creates
+    or uses them, so they are dead weight at any age — but the deletion
+    pattern must require the 16-hex lock hash, so the live stable venv
+    (`...-.venv-ci-3.11`) never matches.
+    """
     text = PRUNE_SCRIPT.read_text(encoding="utf-8")
     assert "-mtime" in text, "prune must be age-gated (mtime)"
     assert "nse-venvs" in text, "prune must cover hash-bound venvs"
     assert "/tmp" in text, "prune must cover /tmp test leftovers"
+    assert "[0-9a-f]" in text and "{16}" in text, (
+        "prune must delete obsolete hash-bound venvs by their 16-hex lock hash"
+    )
     # The callers guard with `|| true`; the script itself must also not
     # abort on a single failed deletion (set -uo pipefail, no -e, and
     # `|| true` on the find).

@@ -6,11 +6,14 @@ name: Tests (OS Matrix)
 # ROUTING (centralized; see .github/workflows/runner-select.yml and
 # scripts/ci/runner_select.py):
 #
-#   * LINUX is the only OS still scheduled automatically. It routes
-#     SELF-HOSTED FIRST through a TWO-TIER self-hosted pool, with an
-#     ubuntu-latest last resort when no tier has an online+idle runner, or
-#     the request comes from an untrusted fork PR. Fork PRs NEVER execute
-#     on the persistent self-hosted machines.
+#   * LINUX no longer runs on PR/push at all (2026-11-10 centralization:
+#     Quality owns ALL PR/push test execution — one execution per PR).
+#     It routes SELF-HOSTED FIRST through a TWO-TIER self-hosted pool,
+#     with an ubuntu-latest last resort when no tier has an online+idle
+#     runner, or the request comes from an untrusted fork PR. Fork PRs
+#     NEVER execute on the persistent self-hosted machines. The Linux leg
+#     runs only the semi-monthly FULL-suite health sweep (schedule) and
+#     manual dispatch (full-platform check).
 #       tier-1: self-hosted,Linux,X64,opselon-vm   (8-thread Docker runner — preferred)
 #       tier-2: self-hosted,Linux,X64,nexus-2core  (secondary 2-core box)
 #   * WINDOWS is no longer scheduled on ordinary PR/push events. The full
@@ -33,19 +36,23 @@ name: Tests (OS Matrix)
 #
 # BEFORE (measured 2026-11-06, main push):
 #   windows-latest FULL 1086s + macOS SKIP-REPORT 22s on EVERY main push.
-# AFTER: PR/push pays only the Linux leg; Windows/macOS run on demand.
+# AFTER (2026-11-10): this workflow does not run on PR/push at all.
+#   Quality owns PR/push execution; this matrix runs the FULL suite on
+#   the semi-monthly schedule + manual dispatch only. Windows/macOS run
+#   on demand.
 # ---------------------------------------------------------------------------
 
 on:
-  push:
-    branches: [main, develop, ci-tests]
-    tags-ignore: ["v*"]
-  pull_request:
-    branches: [main, develop]
+  # CENTRALIZATION (2026-11-10, user directive): no push/pull_request
+  # triggers. Quality (ci.yml) owns ALL PR/push test execution — one
+  # execution per PR. This matrix ran its Linux leg on every PR: it
+  # installed a full workspace venv BEFORE the decide step, then
+  # SKIP-REPORTed — racing Quality for the single online runner and
+  # falling back to hosted. The matrix now runs only the semi-monthly
+  # FULL-suite health sweep + manual dispatch (full-platform check).
   schedule:
     # CI quota diet (2026-11): was weekly (Monday 07:17). Now SEMI-MONTHLY —
     # the only automatic FULL-suite health sweep (1st & 15th, 07:17 UTC).
-    # PR/push take the fast skewed subset on the tiered self-hosted pool.
     - cron: "17 7 1,15 * *"
   workflow_dispatch:
     inputs:
@@ -72,9 +79,12 @@ env:
   # PyPI can resolve but never deliver a wheel, and the Aliyun node
   # serving tier-1 lags fresh releases (filelock 4.2.10 missing). TUNA's
   # node serving tier-1 IS synced (proven by the proof/leaf-timing
-  # diagnostic). This lane installs inline (no setup action) and sets no
-  # primary otherwise, so it would fall back to the runner machine's
-  # config (Aliyun) — hence the explicit primary here. UV_INDEX_STRATEGY
+  # diagnostic). These indexes also cover the legs' non-action uv/pip
+  # calls (e.g. the cmake wheel install); the venv install itself uses
+  # the shared setup-python-env action, which pins the same indexes.
+  # The explicit primary here keeps any other uv/pip call from falling
+  # back to the runner machine's config (Aliyun) — hence the explicit
+  # primary here. UV_INDEX_STRATEGY
   # is load-bearing: uv's default first-index strategy uses the FIRST
   # index that has a package and never consults the others for it —
   # without unsafe-best-match the extra index is a no-op for packages the
@@ -188,62 +198,22 @@ jobs:
           echo "::notice::Py Tests (linux) on SELF-HOSTED (labels: $NSE_RUNNER_TIER_LABELS) runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=self-hosted" >> "$GITHUB_ENV"
 
-      # No actions/setup-python here. On the self-hosted runner it cannot
-      # install 3.11 (no toolcache, no hosted image) and its silent fallback
-      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
-      # trap this lane hit on its first self-hosted run (2026-11-07).
-      # astral-sh/setup-uv provisions the exact pinned Python into
-      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
-      # below builds the project venv from it.
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-          # CI quota diet (2026-11): cache DISABLED on the self-hosted lane.
-          # The runner's persistent volumes already keep uv + python warm;
-          # the GitHub cache post-save of a multi-GB cache over a tethered
-          # uplink burned ~3 GB uploads (hours of Post time) for zero gain.
-          # The hosted lane (below) keeps its cache.
-          enable-cache: false
-          cache-dependency-glob: requirements.lock
-
-      - name: Install via lock (hash-verified requirements.lock)
+      # CENTRALIZATION (2026-11-10): the venv comes from the shared
+      # setup-python-env action — ONE venv logic for every lane (the
+      # inline install here drifted: it still used the old hash-bound
+      # workspace venv + `uv pip install` while the action moved to a
+      # stable venv + `uv pip sync`). The old "no actions/setup-python"
+      # trap does not apply to the action: setup-python's silent fallback
+      # to the system interpreter is harmless here because the action
+      # provisions the exact Python via uv (UV_PYTHON_INSTALL_DIR) and
+      # builds the venv from it — proven on these same runners by the
+      # ci.yml quality lanes.
+      - name: Set up Python environment (shared action)
         id: env
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Automatic runner hygiene (2026-11-09): prune stale state
-          # (venvs/caches >30d, /tmp artifacts >24h). Age-gated and
-          # failure-proof — a prune must never fail a lane.
-          bash scripts/ci/prune_runner_state.bash || true
-          # Deterministic environment: uv provisions the EXACT Python and
-          # installs into a project venv. `--system` is deliberately NOT used:
-          # a self-hosted runner's system Python is PEP-668 externally
-          # managed (uv refuses to write there), and its version is not
-          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
-          # (the runner user's persistent home, survives jobs and restarts),
-          # so warm runs pay nothing.
-          # The venv name binds to the LOCKFILE HASH + Python version: a
-          # branch with different deps or a different interpreter can never
-          # reuse a stale environment (the workspace is wiped anyway; this
-          # guard also fails closed on a mid-job lock switch).
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
-          VENV_DIR=".venv-$VENV_KEY"
-          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          # Retry with a cache refresh if the first resolution fails (see
-          # the setup-python-env action: stale index cache / lagging
-          # mirror can hide a freshly published pin; tier-1, 2026-11-09).
-          if ! VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock; then
-            echo "::warning::lock install failed; retrying with a cache refresh"
-            VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --refresh -r requirements.lock
-          fi
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
-          # Put the venv first on PATH so every later `python`/`pytest` call
-          # resolves into it, and record it for the report below.
-          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
-          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
-          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          runner-class: self-hosted
 
       - name: Report environment (cache-reuse evidence)
         if: ${{ always() }}
@@ -282,7 +252,7 @@ jobs:
           # covers it. run_test_plan.py builds + verifies the engine.
           if ! command -v cmake >/dev/null 2>&1; then
             uv pip install --quiet cmake || true
-            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+            for d in "${{ steps.env.outputs.venv_dir }}/bin" "${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
               if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
             done
           fi
@@ -424,55 +394,18 @@ jobs:
           echo "::notice::Py Tests (linux) on GITHUB-HOSTED runner. Reason: $NSE_SELECTION_REASON"
           echo "runner_class=github-hosted" >> "$GITHUB_ENV"
 
-      # No actions/setup-python here. On the self-hosted runner it cannot
-      # install 3.11 (no toolcache, no hosted image) and its silent fallback
-      # leaves the SYSTEM interpreter active — the PEP-668 externally-managed
-      # trap this lane hit on its first self-hosted run (2026-11-07).
-      # astral-sh/setup-uv provisions the exact pinned Python into
-      # UV_PYTHON_INSTALL_DIR (the runner user's persistent home) and the step
-      # below builds the project venv from it.
-
-      - name: Install uv (pinned — the canonical lock tool)
-        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version: "0.12.10"
-
-      - name: Install via lock (hash-verified requirements.lock)
+      # CENTRALIZATION (2026-11-10): the venv comes from the shared
+      # setup-python-env action — ONE venv logic for every lane (the
+      # inline install here drifted: it still used the old hash-bound
+      # workspace venv + `uv pip install` while the action moved to a
+      # stable venv + `uv pip sync`). On hosted runners the action uses
+      # a workspace venv + the GitHub uv cache, as before.
+      - name: Set up Python environment (shared action)
         id: env
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Automatic runner hygiene (2026-11-09): prune stale state
-          # (venvs/caches >30d, /tmp artifacts >24h). Age-gated and
-          # failure-proof — a prune must never fail a lane.
-          bash scripts/ci/prune_runner_state.bash || true
-          # Deterministic environment: uv provisions the EXACT Python and
-          # installs into a project venv. `--system` is deliberately NOT used:
-          # a self-hosted runner's system Python is PEP-668 externally
-          # managed (uv refuses to write there), and its version is not
-          # guaranteed. uv downloads 3.11 once into UV_PYTHON_INSTALL_DIR
-          # (the runner user's persistent home, survives jobs and restarts),
-          # so warm runs pay nothing.
-          # The venv name binds to the LOCKFILE HASH + Python version: a
-          # branch with different deps or a different interpreter can never
-          # reuse a stale environment (the workspace is wiped anyway; this
-          # guard also fails closed on a mid-job lock switch).
-          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-py${{ env.PYTHON_VERSION }}"
-          VENV_DIR=".venv-$VENV_KEY"
-          uv venv --python "${{ env.PYTHON_VERSION }}" "$VENV_DIR"
-          # Retry with a cache refresh if the first resolution fails (see
-          # the setup-python-env action: stale index cache / lagging
-          # mirror can hide a freshly published pin; tier-1, 2026-11-09).
-          if ! VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install -r requirements.lock; then
-            echo "::warning::lock install failed; retrying with a cache refresh"
-            VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --refresh -r requirements.lock
-          fi
-          VIRTUAL_ENV="$PWD/$VENV_DIR" uv pip install --no-deps -e .
-          # Put the venv first on PATH so every later `python`/`pytest` call
-          # resolves into it, and record it for the report below.
-          echo "$PWD/$VENV_DIR/bin" >> "$GITHUB_PATH"
-          echo "venv_dir=$VENV_DIR" >> "$GITHUB_OUTPUT"
-          echo "venv_python=$("$VENV_DIR/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        uses: ./.github/actions/setup-python-env
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          runner-class: github-hosted
 
       - name: Report environment (cache-reuse evidence)
         if: ${{ always() }}
@@ -511,7 +444,7 @@ jobs:
           # covers it. run_test_plan.py builds + verifies the engine.
           if ! command -v cmake >/dev/null 2>&1; then
             uv pip install --quiet cmake || true
-            for d in "$PWD/${{ steps.env.outputs.venv_dir }}/bin" "$PWD/${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
+            for d in "${{ steps.env.outputs.venv_dir }}/bin" "${{ steps.env.outputs.venv_dir }}/Scripts" "$HOME/.local/bin"; do
               if [ -x "$d/cmake" ] || [ -x "$d/cmake.exe" ]; then export PATH="$d:$PATH"; break; fi
             done
           fi

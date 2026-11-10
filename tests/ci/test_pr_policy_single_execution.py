@@ -192,6 +192,32 @@ def test_perf_benchmark_runs_on_schedule_never_on_prs() -> None:
     assert "workflow_dispatch" in on, "perf-benchmark.yml must keep the dispatch escape hatch"
 
 
+def test_os_matrix_runs_on_schedule_never_on_prs() -> None:
+    """OS matrix: semi-monthly schedule + dispatch, no PR/push trigger.
+
+    Quality (ci.yml) owns ALL PR/push test execution — one execution per
+    PR. The matrix ran its Linux leg on every PR: it installed a full
+    workspace venv BEFORE the decide step, then SKIP-REPORTed — racing
+    Quality for the single online runner and falling back to hosted
+    (2026-11-10: the OS Matrix fell to github-hosted because Dubai was
+    busy running Quality). The matrix now runs only the semi-monthly
+    FULL-suite health sweep (1st & 15th, 07:17 UTC) plus manual dispatch
+    (full-platform check). The decide script's SKIP-REPORT on PR/push
+    stays as the backstop if the triggers ever come back.
+    """
+    wf = _load("tests-os.yml")
+    on = _on(wf)
+    assert "push" not in on and "pull_request" not in on, (
+        "tests-os.yml must have no push/pull_request trigger (never on PRs)"
+    )
+    assert "schedule" in on, "tests-os.yml must have a schedule trigger"
+    crons = [s.get("cron", "") for s in on["schedule"]]
+    assert "17 7 1,15 * *" in crons, (
+        "tests-os.yml schedule must be semi-monthly (1st & 15th, 07:17 UTC)"
+    )
+    assert "workflow_dispatch" in on, "tests-os.yml must keep the dispatch escape hatch"
+
+
 def test_windows_and_macos_run_full_on_schedule() -> None:
     """decide_os_lane.bash: FULL for windows/macos on schedule, SKIP for linux.
 

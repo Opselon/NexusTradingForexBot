@@ -28,8 +28,11 @@ inputs:
 
 outputs:
   venv-dir:
-    description: "Relative path of the created venv (also exported as VENV_DIR)"
+    description: "Absolute path of the created venv (also exported as VENV_DIR)"
     value: ${{ steps.install.outputs.venv_dir }}
+  venv-python:
+    description: "Python version of the created venv (also exported as VENV_PYTHON)"
+    value: ${{ steps.install.outputs.venv_python }}
 
 runs:
   using: "composite"
@@ -140,3 +143,5 @@ runs:
         echo "${VENV_DIR}/bin" >> "$GITHUB_PATH"
         echo "VENV_DIR=${VENV_DIR}" >> "$GITHUB_ENV"
         echo "venv_dir=${VENV_DIR}" >> "$GITHUB_OUTPUT"
+        echo "venv_python=$("${VENV_DIR}/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_OUTPUT"
+        echo "VENV_PYTHON=$("${VENV_DIR}/bin/python" -c 'import sys; print(sys.version.split()[0])')" >> "$GITHUB_ENV"
