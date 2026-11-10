@@ -208,7 +208,11 @@ jobs:
     runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
     # Speed cap (2026-11-09, hard user requirement): no PR-feedback job
     # runs longer than 10 minutes; target 3-5 min. Lint measured 115s.
-    timeout-minutes: 10
+    # TEMPORARY (2026-11-10, user directive): raised to 20 — tier-1 is
+    # OFF, so the job falls back to Dubai (tier-2) and needs install time
+    # (cold venv + torch reinstall on the first run). Back to 10 when
+    # tier-1 returns / the venv is warm.
+    timeout-minutes: 20
 
     env:
       CI_RESULTS_DIR: ci-results-lint
@@ -523,9 +527,13 @@ jobs:
     # together. If tier-1 is offline the job times out at 10m on the
     # fallback instead of running 27m — that is the fail-closed guard
     # doing its job, not a bug: bring tier-1 back, do not raise the cap.
+    # TEMPORARY (2026-11-10, user directive): the user turned tier-1 OFF
+    # and raised the cap to 20 — the job now falls back to Dubai (tier-2)
+    # and needs install time (cold venv + torch reinstall on the first
+    # run). Back to 10 when tier-1 returns / the venv is warm.
     # Leaf PRs (targeted selection, ~7 files) run in ~1-2 min; the
     # expanded suite is the remaining wall — see docs/CI_ARCHITECTURE.md.
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
@@ -731,20 +739,21 @@ jobs:
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
-          # TEMPORARY (2026-11-10, user-approved): skip coverage
-          # measurement on PR/push runs (MODE=targeted) — the coverage
-          # tracer inflates pytest past the 10-min cap on the shared
-          # tier-1 box (expanded suite ~11m with coverage; the OS lane
-          # without --cov passed on the same box). Full validation runs
-          # (MODE=full: schedule / full dispatch) keep coverage, and the
-          # coverage gates below record N/A on PR runs instead of failing.
-          # Re-enable when the tier-1 suite fits the cap with coverage.
+          # TEMPORARY (2026-11-10, user-approved): coverage is MANUAL-ONLY
+          # — it runs only on a manual full dispatch (inputs.full=true).
+          # No coverage on PR/push runs (MODE=targeted) and NOT on the
+          # schedule either: the tracer inflates pytest past the cap on
+          # the shared tier-1 box (expanded suite ~11m with coverage; the
+          # OS lane without --cov passed on the same box). The coverage
+          # gates below record N/A instead of failing when coverage.xml
+          # is absent. Re-enable when the tier-1 suite fits the cap with
+          # coverage.
           COV_FLAGS=""
-          if [ "$MODE" = "full" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
+          if [ "${{ inputs.full }}" = "true" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
           # No HTML coverage report on this lane: it costs a full
           # render pass over 784 files and nobody reads htmlcov in CI.
-          # Coverage (COV_FLAGS) is TEMPORARILY skipped on PR/push runs
-          # (2026-11-10): the xml feeds the critical-file gate on full
+          # Coverage (COV_FLAGS) is TEMPORARILY manual-only (2026-11-10):
+          # the xml feeds the critical-file gate on manual full-dispatch
           # runs only, and the coverage gates record N/A when it is absent.
           #
           # NOTE: these comments must stay ABOVE the command, never inside
@@ -859,12 +868,12 @@ jobs:
           import json, os, re
           root = os.environ["CI_RESULTS_DIR"]
           pct = None
-          # TEMPORARY (2026-11-10): coverage is skipped on PR/push runs,
-          # so no coverage.xml is produced. That absence is intentional —
-          # record N/A (passing, explicit) instead of "errored". The
-          # pytest check itself still fails the job if pytest failed, so
-          # nothing is hidden. Full runs keep coverage and take the
-          # normal path below.
+          # TEMPORARY (2026-11-10): coverage is manual-only, so no
+          # coverage.xml is produced on PR/push/schedule runs. That
+          # absence is intentional — record N/A (passing, explicit)
+          # instead of "errored". The pytest check itself still fails the
+          # job if pytest failed, so nothing is hidden. Manual full
+          # dispatch runs keep coverage and take the normal path below.
           skipped = not os.path.isfile(os.path.join(root, "pytest", "coverage.xml"))
           log_path = os.path.join(root, "pytest", "pytest.txt")
           try:
@@ -877,7 +886,7 @@ jobs:
               pass
           if skipped:
               status = "passed"
-              detail = "coverage skipped on PR runs (temporary 2026-11-10) — enforced in full validation runs"
+              detail = "coverage is manual-only (temporary 2026-11-10) — run a full dispatch to measure it"
           else:
               status = "passed" if pct is not None else "errored"
               detail = f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log"
@@ -902,12 +911,12 @@ jobs:
         run: |
           set +e
           mkdir -p "$CI_RESULTS_DIR/coverage"
-          # TEMPORARY (2026-11-10): coverage is skipped on PR/push runs,
-          # so there is no coverage.xml to gate on. Record N/A (passing,
-          # explicit) — per-file floors are enforced in full validation
-          # runs (schedule / full dispatch), same as for targeted plans.
+          # TEMPORARY (2026-11-10): coverage is manual-only, so there is
+          # no coverage.xml to gate on. Record N/A (passing, explicit) —
+          # per-file floors are enforced on manual full-dispatch runs
+          # (schedule / full dispatch), same as for targeted plans.
           if [ ! -f "$CI_RESULTS_DIR/pytest/coverage.xml" ]; then
-            python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage 0 "coverage skipped on PR runs (temporary 2026-11-10) — per-file floors enforced in full validation runs" || true
+            python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage 0 "coverage is manual-only (temporary 2026-11-10) — per-file floors enforced on manual full-dispatch runs" || true
             echo "critical-file coverage gate: NOT APPLICABLE (no coverage data; floors enforced in full runs)"
             exit 0
           fi

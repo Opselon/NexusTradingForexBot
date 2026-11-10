@@ -18,14 +18,14 @@ this file is the CI-specific companion.
 | `js-tests.yml` | push/PR main·develop·ci-tests; dispatch | Vanilla-JS syntax gate + node unit tests | web/js |
 | `tests-os.yml` | push/PR main·develop·ci-tests; semi-monthly cron (1st & 15th); dispatch | **Linux critical suite, self-hosted-first with hosted fallback** (runner-routing architecture); emits the required Windows/macOS contexts as NOT-EXECUTED routing statuses | python (Linux) |
 | `runner-select` (composite action) | invoked from each lane's preflight job | Centralized runner-availability preflight and class selection | ci |
-| `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + hash-bound lock venv (one definition, no per-job copy) | ci |
+| `setup-python-env` (composite action) | invoked from the ci.yml quality lanes | Canonical Python env: setup-python + pinned uv + stable lock-synced venv (one definition, no per-job copy) | ci |
 | `tests-windows.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **Windows suite** — full critical suite + Windows-skew lane, self-hosted-ready (`ENABLE_WINDOWS_SELF_HOSTED`); never on PRs (Quality owns PR execution) | python (Windows) |
 | `tests-macos.yml` | schedule (semi-monthly, 1st & 15th) + `workflow_dispatch` | **macOS suite** — full critical suite, self-hosted-ready (`ENABLE_MACOS_SELF_HOSTED`); never on PRs (same treatment as Windows) | python (macOS) |
 | `security.yml` | PR main·develop; push ci-tests; weekly cron; dispatch | CodeQL (python) + Trivy fs scan | security |
 | `osv-scanner.yml` | PR main·develop; push main; weekly cron; dispatch | Python dependency CVE scan (advisory) | security/deps |
 | `docker.yml` | push `docker` branch; dispatch | Build + publish GHCR image | docker |
 | `release.yml` | `v*` tags; dispatch | validate → quality gates → windows build/installer → publish | release/python |
-| `perf-benchmark.yml` | PR (web/models/experience/bench paths); push main (same paths); semi-monthly cron; dispatch | Bench units, exit non-zero on >15% regression vs baseline; PR comment | perf |
+| `perf-benchmark.yml` | semi-monthly cron (1st & 15th); dispatch only — no PR/push triggers (2026-11-10) | Bench units, exit non-zero on >15% regression vs baseline; PR comment | perf |
 | `qa-deep-assurance.yml` | semi-monthly cron; dispatch | Deep QA (mutation proof optional via input) | qa |
 | `nightly-qa.yml` | semi-monthly cron; dispatch | Nightly deep-QA sweep | qa |
 | `nightly-ml-benchmark.yml` | semi-monthly cron; dispatch | Nightly ML benchmark sweep | ml/perf |
@@ -156,7 +156,7 @@ reduced / advisory form.
 | Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
 | C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Linux legs SKIP on PR/push/schedule and run FULL (dispatch) or SKEW (dispatch) only — they used to re-run the same selection back-to-back. |
 | Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
-| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans — and whenever coverage is skipped (TEMPORARY 2026-11-10: no --cov on PR runs, so the suite fits the 10-min cap on tier-1) — the gate records N/A explicitly, never a silent skip. |
+| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans — and whenever coverage is skipped (TEMPORARY 2026-11-10: coverage is manual-only, no --cov except a manual full dispatch, so the suite fits the cap on tier-1) — the gate records N/A explicitly, never a silent skip. |
 | Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
 | JS tests (`js-tests.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
 | Go API (`go-api.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
@@ -165,7 +165,7 @@ reduced / advisory form.
 | Dependency lock + migration safety | ✓ | ✓ | — | ✓ | — |
 | Docs validation (`docs.yml`) | ✓ | ✓ | ✓ | ✓ | — |
 | PR evidence aggregator (`pr-evidence.yml`) | ✓ | ✓ | — | — | — |
-| Perf benchmarks (`perf-benchmark.yml`, path-filtered) | ✓ | ✓ | ✓ | ✓ | — |
+| Perf benchmarks (`perf-benchmark.yml`) | — | — | ✓ | ✓ | Moved off PRs (2026-11-10): semi-monthly regression watch only; path-triggered PR regressions are caught by the Quality wall-clock budget step. |
 | Full critical suite on GLOBAL-IMPACT changes | ✓ | ✓ | ✓ | ✓ | See the global-impact rule below: the expanded plan IS the full-suite gate on PRs. |
 | Extended validation, tier 2 (`extended`) | — | ✓ | — | ✓ | A regression in these slow production-truth tests (bug276 ~1252 s, perf_deadletter ~730 s) is caught post-merge, not pre-merge. Mitigation: runs on every main push, blocking there; main-branch status shows it before the next release. |
 | Heavy CI: integration / e2e / research-backtest / model-validation (`heavy-ci`) | — | — | — | ✓ (`ci-tests` branch or `full=true`) | Integration regressions can merge. Mitigation: the PR lanes cover the critical suite + smoke chain + layered smoke; run heavy-ci via full dispatch before a release. |
@@ -174,7 +174,7 @@ reduced / advisory form.
 | MT5 native Windows IPC (`mt5-native`) | — | — | ✓ | ✓ | Windows MT5 regressions can merge. Mitigation: the release gate refuses a release SHA with no green Windows lane; Windows is manual-only by design (the primary runtime is the Windows EXE). |
 | Windows / macOS test suites (`tests-windows.yml`, `tests-macos.yml`) | — | — | ✓ (semi-monthly FULL sweep) | ✓ | Platform-specific regressions (paths / CRLF / encoding) can merge. Mitigation: a semi-monthly FULL sweep (1st & 15th, 07:17 UTC) + manual dispatch; the release gate requires Windows lane evidence for the release SHA. macOS has no release-gate requirement — that gap is explicit, not hidden. Neither lane runs on PRs: Quality owns PR execution, and the `Py Tests (windows-latest)` / `Py Tests (macos-latest)` checks on a PR are routing notices from tests-os.yml's ctx jobs on ubuntu-latest (3 s, no test execution) — no Windows/macOS runner is borrowed on a PR. |
 | QA deep assurance (`qa-deep-assurance.yml`, `nightly-qa.yml`) | — | — | ✓ | ✓ | Deep-QA / mutation findings land after merge by design; advisory, never a PR gate. |
-| Nightly ML benchmark (`nightly-ml-benchmark.yml`) | — | — | ✓ | ✓ | Perf drift is watched on the schedule, not per PR (the PR perf-benchmark workflow covers path-triggered regressions). |
+| Nightly ML benchmark (`nightly-ml-benchmark.yml`) | — | — | ✓ | ✓ | Perf drift is watched on the schedule, not per PR (path-triggered PR regressions are caught by the Quality wall-clock budget step; the perf-benchmark regression table runs semi-monthly). |
 | Wine compatibility soak (`mt5-wine-compat.yml`) | — | — | ✓ | ✓ | Advisory only; a Wine failure can never block a PR, the runtime verdict, or a release. |
 | Nightly E2E (`nightly-e2e.yml`) | — | — | — | ✓ | Full E2E evidence waits for an explicit dispatch. Mitigation: the PR smoke chain + layered smoke cover the fast E2E heartbeat on every PR. |
 | Docker build / publish | — | — | — | ✓ (`docker` branch, tags) | Not a PR gate by design. |
@@ -337,7 +337,7 @@ Also automatic now (same commit):
   build-essential`) instead of a confusing cmake-configure error.
 * **Automatic prune** — `scripts/ci/prune_runner_state.bash`, run at
   the start of every lane (setup action + both OS venv steps):
-  hash-bound venvs and nse-ci caches older than 30 days, /tmp test
+  hash-bound venvs (from the pre-2026-11-10 design) and nse-ci caches older than 30 days, /tmp test
   artifacts (`tmp*`, `pytest-*`) older than 24h. Age-gated and
   failure-proof; it never touches the current venv, the uv wheel cache,
   or anything a live job could own. (The Dubai box held 107 tmp* dirs,
@@ -523,11 +523,15 @@ to the step summary as cache-reuse evidence.
 
 The canonical environment action (`.github/actions/setup-python-env`, used
 by the `ci.yml` quality lanes) goes one step further on self-hosted tiers:
-the venv itself lives in `~/.cache/nse-venvs/<repo>-<lockhash>-<python>`
-instead of the workspace, so the second lane reuses the first lane's warm
-venv instead of rebuilding it after checkout wipes the workspace (a lock
-change still mints a new directory, so a stale environment is impossible;
-old hash-bound venvs are pruned by hand, never auto-deleted). The same
+the venv itself lives in `~/.cache/nse-venvs/<repo>-<python>` instead of
+the workspace, so the second lane reuses the first lane's warm venv
+instead of rebuilding it after checkout wipes the workspace — and `uv
+pip sync` makes it match requirements.lock EXACTLY on every run, so a
+one-package lock change installs one package instead of rebuilding all
+94 (2026-11-10: the old hash-bound design minted a new directory per
+lock hash, which is why every lock regen re-downloaded everything;
+old hash-bound venvs are pruned by the 30-day rule, never auto-deleted
+while in use). The same
 section pins the type/lint caches (`MYPY_CACHE_DIR` /
 `RUFF_CACHE_DIR` under `~/.cache/nse-ci/`) so mypy no longer runs cold on
 every job. `tests-os.yml` keeps its workspace venv deliberately (its lane

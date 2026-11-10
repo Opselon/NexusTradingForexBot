@@ -2,13 +2,15 @@ name: "NSE Python environment"
 
 description: >-
   Canonical Python environment for CI jobs: setup-python, pinned uv, and a
-  hash-bound venv installed from requirements.lock. ONE definition — the
+  stable venv synced exactly to requirements.lock. ONE definition — the
   quality lanes in ci.yml (and any future lane) use this instead of
   copy-pasting the setup-python / setup-uv / lock-install block per job.
-  The venv name binds to the lockfile hash + Python version, so a
-  dependency switch can never reuse a stale environment. Installs into a
-  project venv, never --system (PEP-668 externally-managed system Pythons
-  on the self-hosted tiers refuse bare system installs).
+  The venv is keyed by repo + Python version only and `uv pip sync`
+  makes it match the lock EXACTLY on every run, so a dependency switch
+  installs only the delta and can never reuse a stale environment.
+  Installs into a project venv, never --system (PEP-668
+  externally-managed system Pythons on the self-hosted tiers refuse
+  bare system installs).
 
   Checkout stays in the calling job (the workflow-integrity scan requires
   actions/checkout before any local composite action), and the results
@@ -81,49 +83,56 @@ runs:
         UV_INDEX_STRATEGY: "unsafe-best-match"
       run: |
         set -euo pipefail
-        # Automatic runner hygiene (2026-11-09): prune stale hash-bound
-        # venvs / caches (>30d) and /tmp test leftovers (>24h). Age-gated
-        # and failure-proof — a prune must never fail a lane.
+        # Automatic runner hygiene (2026-11-09): prune stale venvs /
+        # caches (>30d) and /tmp test leftovers (>24h). Age-gated and
+        # failure-proof — a prune must never fail a lane.
         bash scripts/ci/prune_runner_state.bash || true
-        VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
         # Self-hosted runners persist $HOME across jobs, but
         # actions/checkout wipes the workspace (clean: true) on every job —
         # so a workspace venv was rebuilt from the lock on EVERY lane
         # (a full torch reinstall per lane, twice per run, over a tethered
         # uplink). On self-hosted tiers the venv lives in a
-        # runner-persistent location keyed by repo + lock hash + python, so
-        # the second lane reuses the first lane's warm venv and `uv pip
-        # install` only reconciles drift. A lock change still mints a new
-        # directory, so a stale environment is impossible by construction.
-        # Old hash-bound venvs can be pruned by hand from
-        # ~/.cache/nse-venvs (never auto-deleted: another job may be
-        # using one). A runner executes one job at a time, so no lock is
-        # needed around creation. Hosted runners are ephemeral, so the
-        # workspace venv is unchanged there. Automatic pruning of venvs
-        # older than 30 days runs at the top of this step
-        # (scripts/ci/prune_runner_state.bash).
+        # runner-persistent location keyed by repo + Python ONLY, and
+        # `uv pip sync` makes it match requirements.lock EXACTLY on every
+        # run (installs what changed, removes what left the lock) — so a
+        # one-package lock change (2026-11-10: pyinstaller-hooks-contrib
+        # 2026.9 -> 2026.10) installs one package instead of rebuilding
+        # all 94 (torch + nvidia wheels, ~2.5 GB) from scratch. Ad-hoc
+        # installs into this venv (e.g. the cmake wheel in quality-tests)
+        # are removed by sync and re-installed by their own step each run
+        # — by design, not a bug. The old
+        # hash-bound design minted a new directory per lock hash, which is
+        # why every lock regen re-downloaded everything. A stale
+        # environment is impossible by construction: sync is exact, and
+        # the prune script removes venvs unused for >30 days. A runner
+        # executes one job at a time, so no lock is needed around
+        # creation. Hosted runners are ephemeral, so the workspace venv is
+        # unchanged there (still hash-keyed; the GitHub uv cache covers
+        # it). Automatic pruning of venvs older than 30 days runs at the
+        # top of this step (scripts/ci/prune_runner_state.bash).
         if [ "${{ inputs.runner-class }}" = "self-hosted" ]; then
           REPO_SLUG="$(echo "${GITHUB_REPOSITORY:-local}" | tr '/' '-')"
-          VENV_DIR="$HOME/.cache/nse-venvs/${REPO_SLUG}-.venv-ci-${VENV_KEY}"
+          VENV_DIR="$HOME/.cache/nse-venvs/${REPO_SLUG}-.venv-ci-${{ inputs.python-version }}"
           mkdir -p "$HOME/.cache/nse-venvs"
           if [ ! -x "${VENV_DIR}/bin/python" ]; then
             uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
           fi
         else
+          VENV_KEY="$(sha256sum requirements.lock | cut -c1-16)-${{ inputs.python-version }}"
           VENV_DIR=".venv-ci-${VENV_KEY}"
           uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
           VENV_DIR="$PWD/${VENV_DIR}"
         fi
-        # Retry with a cache refresh if the first resolution fails: a
-        # stale uv index cache (or a lagging mirror) can hold a version
-        # list without a freshly published pin, and the retry re-fetches
-        # the indexes (mirror + PyPI fallback) instead of failing the
-        # lane. (tier-1, 2026-11-09: the install failed on filelock
-        # 4.2.10 even with the PyPI fallback + best-match set.) The
-        # retry only runs on failure, so warm runs pay nothing.
-        if ! VIRTUAL_ENV="${VENV_DIR}" uv pip install -r requirements.lock; then
-          echo "::warning::lock install failed; retrying with a cache refresh"
-          VIRTUAL_ENV="${VENV_DIR}" uv pip install --refresh -r requirements.lock
+        # Retry with a cache refresh if the first sync fails: a stale uv
+        # index cache (or a lagging mirror) can hold a version list
+        # without a freshly published pin, and the retry re-fetches the
+        # indexes (mirror + PyPI fallback) instead of failing the lane.
+        # (tier-1, 2026-11-09: the install failed on filelock 4.2.10 even
+        # with the PyPI fallback + best-match set.) The retry only runs
+        # on failure, so warm runs pay nothing.
+        if ! VIRTUAL_ENV="${VENV_DIR}" uv pip sync requirements.lock; then
+          echo "::warning::lock sync failed; retrying with a cache refresh"
+          VIRTUAL_ENV="${VENV_DIR}" uv pip sync --refresh requirements.lock
         fi
         # Always re-install the editable root: the .pth records the
         # workspace path, which must track the current checkout.

@@ -1,4 +1,4 @@
-"""PR-policy regression: no PR-feedback job runs longer than 10 minutes.
+"""PR-policy regression: no PR-feedback job runs longer than its cap.
 
 Speed cap (2026-11-09, hard user requirement): PR feedback in 3-5
 minutes, and NO PR-feedback job may exceed 10 minutes. Evidence for the
@@ -8,12 +8,21 @@ minutes later — the Quality lane's pytest alone took 1449.8s on the
 took ~8 minutes. The 20-30 minute lanes are the 2-core box + coverage
 overhead, not one slow test.
 
+TEMPORARY (2026-11-10, user directive): the ci.yml PR-feedback jobs
+(quality-lint, quality-tests) are capped at 20 minutes, not 10 —
+tier-1 is OFF, so they fall back to Dubai (tier-2) and need install
+time (cold venv + torch reinstall on the first run). Back to 10 when
+tier-1 returns / the venv is warm. The tests-os.yml Linux legs stay
+at 10: they SKIP on PRs (Quality owns execution), so the cap never
+binds them.
+
 The cap lands WITH the tier-1 speedup, never alone: the routing prefers
 tier-1 (opselon-docker-runner, 8-thread, pytest -n 8) and the runner
 selector only falls to tier-2 when tier-1 has no online+idle match. On
 tier-2 this job CANNOT fit in 10 minutes — a timeout there is the
 fail-closed guard doing its job (bring tier-1 back), not a reason to
-raise the cap.
+raise the cap — except for this temporary 20-minute allowance while
+tier-1 is off by the user's own hand.
 
 Scope (deliberate, pinned below): the cap covers the PR-feedback path
 only — ci.yml quality-lint / quality-tests and the tests-os.yml Linux
@@ -34,10 +43,16 @@ import yaml
 
 WORKFLOWS = Path(".github/workflows")
 
-# PR-feedback jobs: the 10-minute cap applies to all of these.
-PR_JOBS = {
-    "ci.yml": ("quality-lint", "quality-tests"),
-    "tests-os.yml": ("tests-linux-self-hosted", "tests-linux-hosted"),
+# PR-feedback jobs and their caps (2026-11-10, user directive):
+# ci.yml quality-lint / quality-tests are capped at 20 minutes —
+# tier-1 is OFF, so they fall back to Dubai (tier-2) and need install
+# time (cold venv + torch reinstall on the first run). Temporary: back
+# to 10 when tier-1 returns / the venv is warm. The tests-os.yml Linux
+# legs stay at 10 — they SKIP on PRs (Quality owns execution), so the
+# cap never binds them.
+PR_JOB_CAPS = {
+    "ci.yml": (("quality-lint", "quality-tests"), 20),
+    "tests-os.yml": (("tests-linux-self-hosted", "tests-linux-hosted"), 10),
 }
 
 # Schedule/manual-only heavy jobs: deliberately NOT capped at 10 minutes.
@@ -53,16 +68,16 @@ def _load(name: str) -> dict:
         return yaml.safe_load(fh)
 
 
-def test_pr_feedback_jobs_are_capped_at_10_minutes() -> None:
-    """Every PR-feedback job has timeout-minutes <= 10."""
-    for workflow, jobs in PR_JOBS.items():
+def test_pr_feedback_jobs_are_capped() -> None:
+    """Every PR-feedback job has timeout-minutes <= its cap."""
+    for workflow, (jobs, cap) in PR_JOB_CAPS.items():
         wf = _load(workflow)
         for job in jobs:
             timeout = wf["jobs"][job].get("timeout-minutes")
             assert timeout is not None, f"{workflow} {job} must set timeout-minutes"
-            assert timeout <= 10, (
+            assert timeout <= cap, (
                 f"{workflow} {job} timeout-minutes is {timeout}, "
-                "over the 10-minute PR-feedback cap (2026-11-09)"
+                f"over the {cap}-minute PR-feedback cap (2026-11-10)"
             )
 
 

@@ -169,6 +169,29 @@ def test_windows_and_macos_run_on_schedule_never_on_prs() -> None:
         assert "workflow_dispatch" in on, f"{wf_name} must keep the dispatch escape hatch"
 
 
+def test_perf_benchmark_runs_on_schedule_never_on_prs() -> None:
+    """Performance benchmark: semi-monthly schedule + dispatch, no PR trigger.
+
+    The hosted nse-bench regression watch must not run on every PR that
+    touches web/models/experience/bench paths — it burns hosted minutes
+    and PR noise for a regression table. Its PR home is the Quality
+    wall-clock budget step (blocking, every PR); the full regression
+    table comes from the semi-monthly sweep (1st & 15th, 04:17 UTC)
+    plus manual dispatch.
+    """
+    wf = _load("perf-benchmark.yml")
+    on = _on(wf)
+    assert "push" not in on and "pull_request" not in on, (
+        "perf-benchmark.yml must have no push/pull_request trigger (never on PRs)"
+    )
+    assert "schedule" in on, "perf-benchmark.yml must have a schedule trigger"
+    crons = [s.get("cron", "") for s in on["schedule"]]
+    assert "17 4 1,15 * *" in crons, (
+        "perf-benchmark.yml schedule must be semi-monthly (1st & 15th, 04:17 UTC)"
+    )
+    assert "workflow_dispatch" in on, "perf-benchmark.yml must keep the dispatch escape hatch"
+
+
 def test_windows_and_macos_run_full_on_schedule() -> None:
     """decide_os_lane.bash: FULL for windows/macos on schedule, SKIP for linux.
 
