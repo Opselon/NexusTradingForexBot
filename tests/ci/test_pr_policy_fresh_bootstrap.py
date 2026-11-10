@@ -272,6 +272,13 @@ def test_prune_script_is_age_gated_and_never_fatal() -> None:
     or uses them, so they are dead weight at any age — but the deletion
     pattern must require the 16-hex lock hash, so the live stable venv
     (`...-.venv-ci-3.11`) never matches.
+
+    The uv wheel cache is managed ONLY with uv's own tool (`uv cache
+    prune` — never rm inside the cache, uv forbids it): the cache grew
+    to 16 GB on Dubai and filled the disk (2026-11-10) because the prune
+    never touched it. And the pytest temp top dir stays fresh, so its
+    SESSION subdirs must be pruned by age too (3.6 GB of stale Nov-9
+    sessions on Dubai).
     """
     text = PRUNE_SCRIPT.read_text(encoding="utf-8")
     assert "-mtime" in text, "prune must be age-gated (mtime)"
@@ -279,6 +286,16 @@ def test_prune_script_is_age_gated_and_never_fatal() -> None:
     assert "/tmp" in text, "prune must cover /tmp test leftovers"
     assert "[0-9a-f]" in text and "{16}" in text, (
         "prune must delete obsolete hash-bound venvs by their 16-hex lock hash"
+    )
+    assert "uv cache prune" in text, (
+        "prune must manage the uv wheel cache with `uv cache prune` (16 GB on Dubai, 2026-11-10)"
+    )
+    assert ".cache/uv" not in text, (
+        "prune must never address the uv cache directory directly "
+        "(uv forbids touching the cache) — use `uv cache prune` only"
+    )
+    assert "pytest-of-github-runner" in text, (
+        "prune must age-prune the pytest session subdirs (3.6 GB stale on Dubai, 2026-11-10)"
     )
     # The callers guard with `|| true`; the script itself must also not
     # abort on a single failed deletion (set -uo pipefail, no -e, and

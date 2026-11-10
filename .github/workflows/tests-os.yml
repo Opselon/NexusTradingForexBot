@@ -268,8 +268,11 @@ jobs:
           BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
           HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
           bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
-          XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
-          if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          # 2026-11-10 (user directive): ONE worker on this box (Dubai,
+          # 4 cores / 8 GB) — -n 4 measured no speedup, only memory
+          # pressure and swap thrash. The hosted leg keeps the
+          # core-sized count.
+          XDIST=1
           python scripts/ci/run_test_plan.py \
             --repo-root . \
             --base "$BASE" \

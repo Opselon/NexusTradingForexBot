@@ -282,14 +282,15 @@ Same head, OS Linux lane (no coverage, `-n 2`): 1028 s total — that
 lane no longer runs on PRs (2026-11-09: it re-ran the same selection,
 so it was removed from the PR path; dispatch-only now).
 Lint lane: 115 s. The pytest step is 92% of the Quality job — the
-20-30 minute lanes are the 2-core box + coverage overhead, not one
+20-30 minute lanes are the 4-core box + coverage overhead, not one
 slow test. Coverage overhead on tier-2: ~483 s (1449.8 s with `--cov`
 vs 966.4 s without, same expanded set). Slowest single tests: four
 `test_dependency_intelligence.py` setups at ~110 s each (module-scoped
 graph build under coverage) — a ~110 s floor on any lane, not the wall.
 
-Why tier-1 fits the cap: xdist is sized to the runner (`nproc`, capped
-at 8) — tier-1 runs pytest at `-n 8` vs tier-2's `-n 2`, and the same
+Why tier-1 fits the cap: pytest runs with ONE worker on self-hosted
+tiers (2026-11-10 user directive — `-n 4` measured no speedup on
+Dubai, only memory pressure and swap thrash), and the same
 full suite measured ~8 minutes on a GitHub-hosted runner. Expected
 tier-1 Quality job: ~8-9 minutes (leaf PRs, targeted ~7 files: ~1-2
 min). The next run after tier-1 came back online is the live proof.
@@ -340,10 +341,14 @@ Also automatic now (same commit):
   since 2026-11-10): obsolete hash-bound venvs (any age — no job
   references them since the stable-venv switch) and nse-ci caches older
   than 30 days, /tmp test
-  artifacts (`tmp*`, `pytest-*`) older than 24h. Age-gated and
-  failure-proof; it never touches the current venv, the uv wheel cache,
-  or anything a live job could own. (The Dubai box held 107 tmp* dirs,
-  1687 model.pt files, 3.5G of pytest sessions on 2026-11-09.)
+  artifacts (`tmp*`, `pytest-*`, pytest session subdirs) older than 24h,
+  plus `uv cache prune` for the wheel cache. Age-gated and
+  failure-proof; it never touches the current venv or anything a live
+  job could own. (The Dubai box held 107 tmp* dirs,
+  1687 model.pt files, 3.5G of pytest sessions on 2026-11-09 — and a
+  16 GB uv cache that filled the disk on 2026-11-10, because the prune
+  never touched the cache before; the cache is managed with uv's own
+  prune tool, never by rm.)
 
 Acceptance test: a fresh runner (or a wiped `_work` dir + empty
 `~/.cache`) takes a job and goes green with zero manual steps. The
@@ -560,7 +565,7 @@ do not run on the runner at all; they run in the local gate.
 
 | Lane | Cache | Notes |
 | :--- | :--- | :--- |
-| Self-hosted legs | uv cache only (`enable-cache: true`, `cache-dependency-glob: requirements.lock`) | Persistent `UV_CACHE_DIR` in the runner user's home; no `setup-python` pip cache (it would key on the system Python the lane does not use). |
+| Self-hosted legs | local uv cache in the runner user's home (`~/.cache/uv`), managed by `uv cache prune` at the start of every lane | No GitHub Actions cache (`enable-cache: false` on self-hosted — uploading a multi-GB cache from a tethered box burns Post time); no `setup-python` pip cache (it would key on the system Python the lane does not use). |
 | GitHub-hosted legs | none | Ephemeral runners; any Actions cache is inert there and would alias the self-hosted machine's key. |
 
 Cleanup/invalidation stays bounded by `requirements.lock`

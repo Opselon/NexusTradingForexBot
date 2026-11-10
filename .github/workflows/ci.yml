@@ -722,20 +722,16 @@ jobs:
           # C17 plans (changed-file driven); Python executes via pytest.
           # targeted on PR/push; full on schedule + full dispatch (policy).
           MODE=targeted
-          # Size xdist to the runner, not a fixed 4: nexus-2core has 2
-          # vCPU, so -n 4 oversubscribes and the suite runs SLOWER than
-          # -n 2 (context switching + per-worker import cost).
+          # 2026-11-10 (user directive): ONE pytest worker on self-hosted
+          # tiers. Dubai is 4 cores / 8 GB, and -n 4 measured no speedup
+          # there — it only adds memory pressure (a full torch import per
+          # worker) and swap thrash on the shared box. 1 worker is enough.
+          # Hosted runners keep the core-sized count (capped at 8): they
+          # are big ephemeral machines and hosted is last-resort only.
           CORES="$(nproc 2>/dev/null || echo 2)"
           XDIST="$CORES"
-          # Size xdist to the runner: tier-1 is an 8-thread shared docker box
-          # under load, but under the coverage tracer -n 8 covered more ground
-          # (91% at ~9m40s) than -n 4 (57% at same elapsed time) — fewer workers
-          # under coverage means each worker's tracer-serialized imports take
-          # longer wall-clock, so the suite runs SLOWER overall. Keep -n 8
-          # (capped) and save time elsewhere instead of changing worker count,
-          # which is not the bottleneck here (mirrors the documented
-          # nexus-2core case where fixed worker counts misfired).
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
+          if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ]; then XDIST=1; fi
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi

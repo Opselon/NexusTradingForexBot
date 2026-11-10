@@ -17,9 +17,11 @@
 #   * /tmp tmp* dirs and pytest sessions older than 24h (a concurrent
 #     job's files are minutes old; the Dubai box held 107 tmp* dirs,
 #     1687 model.pt files and 3.5G of pytest sessions, 2026-11-09).
-# It never touches the CURRENT venv, the uv wheel cache (a proper cache
-# with its own eviction — pruning it would only slow installs), or
-# anything younger than the thresholds. Safe to run concurrently: every
+# It never touches the CURRENT venv or anything younger than the
+# thresholds. The uv wheel cache is managed with uv's own tool
+# (`uv cache prune` below — never rm inside the cache: uv forbids
+# touching it directly): prune removes unused entries and keeps what
+# the current lock needs. Safe to run concurrently: every
 # deletion is age-gated (except the obsolete-venv rule, which matches
 # only dirs no job can reference), and failures are warnings, never
 # fatal.
@@ -43,12 +45,26 @@ prune_older_than() {
 # lock regen) are dead weight at ANY age — a new lock no longer mints a
 # new dir, and no job references them. Delete them unconditionally: the
 # 16-hex pattern cannot match the live stable venv (`...-.venv-ci-3.11`).
-# This is what unblocked Dubai (2026-11-10): its disk filled up with one
-# venv per lock regen while the sync into the new stable venv needed the
-# same ~6 GB again, and both Quality jobs died with "No space left on
-# device". A runner executes one job at a time, so nothing is using them.
+# CORRECTION (2026-11-10): this rule did NOT unblock Dubai — the disk
+# was freed by hand (16 GB uv cache + 3.6 GB pytest temp dirs), because
+# the prune never touched the uv cache and the pytest temp top dir
+# stayed fresh. The obsolete-venv rule is still correct hygiene, but
+# the real unblocker was the uv-cache prune below. A runner executes
+# one job at a time, so nothing is using them.
 if [ -d "$HOME/.cache/nse-venvs" ]; then
   find "$HOME/.cache/nse-venvs" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*\.venv-ci-[0-9a-f]{16}-.*' -exec rm -rf -- {} + 2>/dev/null || true
+fi
+
+# uv wheel cache (2026-11-10): the cache grew to 16 GB on Dubai and
+# filled the disk — the prune never touched it before, and every
+# --refresh retry re-downloaded the torch/nvidia wheels into it.
+# `uv cache prune` is the supported tool (never rm inside the cache:
+# uv forbids it) and removes unused entries while keeping what the
+# current lock needs. Runs at the start of the setup step, when no uv
+# process is running (a runner executes one job at a time), so no
+# --force. Failure-proof: if uv is not on PATH yet, skip silently.
+if command -v uv >/dev/null 2>&1; then
+  uv cache prune 2>/dev/null || true
 fi
 
 # Other venvs (the live stable one) and warm linter/type caches older
@@ -58,9 +74,13 @@ prune_older_than "$HOME/.cache/nse-ci" 30 "*"
 
 # /tmp test leftovers: tmp* dirs (pytest/tmp_path + engine clones) and
 # pytest session dirs. 24h, not 30d: these are per-run artifacts, and a
-# live job's files are minutes old.
+# live job's files are minutes old. NOTE: /tmp/pytest-of-github-runner
+# itself stays fresh (every session touches it), so its SESSION subdirs
+# must be pruned by age too — the top-dir rule alone never fired, and
+# the dir held 3.6 GB of stale Nov-9 sessions on Dubai (2026-11-10).
 prune_older_than "/tmp" 1 "tmp*"
 prune_older_than "/tmp" 1 "pytest-*"
 prune_older_than "/tmp" 1 ".pytest_cache*"
+prune_older_than "/tmp/pytest-of-github-runner" 1 "*"
 
-echo "runner state pruned (obsolete hash-bound venvs, venvs/caches >30d, /tmp artifacts >24h)"
+echo "runner state pruned (obsolete hash-bound venvs, uv cache prune, venvs/caches >30d, /tmp artifacts + pytest sessions >24h)"

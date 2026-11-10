@@ -4,8 +4,8 @@ Speed cap (2026-11-09, hard user requirement): PR feedback in 3-5
 minutes, and NO PR-feedback job may exceed 10 minutes. Evidence for the
 cap: the 7d2fa45d run (created 18:53:53Z) was still in_progress ~47
 minutes later — the Quality lane's pytest alone took 1449.8s on the
-2-core tier-2 box, while the same full suite on a GitHub-hosted runner
-took ~8 minutes. The 20-30 minute lanes are the 2-core box + coverage
+4-core tier-2 box (Dubai), while the same full suite on a GitHub-hosted runner
+took ~8 minutes. The 20-30 minute lanes are the 4-core box + coverage
 overhead, not one slow test.
 
 TEMPORARY (2026-11-10, user directive): the ci.yml PR-feedback jobs
@@ -17,12 +17,14 @@ at 10: they SKIP on PRs (Quality owns execution), so the cap never
 binds them.
 
 The cap lands WITH the tier-1 speedup, never alone: the routing prefers
-tier-1 (opselon-docker-runner, 8-thread, pytest -n 8) and the runner
+tier-1 (opselon-docker-runner) and the runner
 selector only falls to tier-2 when tier-1 has no online+idle match. On
 tier-2 this job CANNOT fit in 10 minutes — a timeout there is the
 fail-closed guard doing its job (bring tier-1 back), not a reason to
 raise the cap — except for this temporary 20-minute allowance while
-tier-1 is off by the user's own hand.
+tier-1 is off by the user's own hand. Pytest runs with ONE worker on
+self-hosted tiers (2026-11-10 user directive: -n 4 measured no speedup
+on Dubai, only memory pressure and swap thrash).
 
 Scope (deliberate, pinned below): the cap covers the PR-feedback path
 only — ci.yml quality-lint / quality-tests and the tests-os.yml Linux
@@ -79,6 +81,47 @@ def test_pr_feedback_jobs_are_capped() -> None:
                 f"{workflow} {job} timeout-minutes is {timeout}, "
                 f"over the {cap}-minute PR-feedback cap (2026-11-10)"
             )
+
+
+def _steps(wf: dict, job: str) -> list:
+    return wf["jobs"][job].get("steps", [])
+
+
+def _run(step: dict) -> str:
+    return step.get("run", "")
+
+
+def test_self_hosted_pytest_runs_single_worker() -> None:
+    """Self-hosted pytest runs with ONE worker (-n 1); hosted keeps cores.
+
+    2026-11-10 (user directive, verified on Dubai: 4 cores / 8 GB):
+    -n 4 measured no speedup on the shared box — it only adds memory
+    pressure (a full torch import per worker) and swap thrash. 1 worker
+    is enough. Hosted runners are big ephemeral machines and hosted is
+    last-resort only, so they keep the core-sized count (capped at 8).
+    """
+    wf = _load("ci.yml")
+    pytest_steps = [s for s in _steps(wf, "quality-tests") if "--xdist" in _run(s)]
+    assert pytest_steps, "quality-tests must have a pytest step using --xdist"
+    run = _run(pytest_steps[0])
+    assert "RUNNER_ENVIRONMENT" in run and "XDIST=1" in run, (
+        "quality-tests must force XDIST=1 when RUNNER_ENVIRONMENT is self-hosted"
+    )
+
+    os_wf = _load("tests-os.yml")
+    for leg, expect_single in (
+        ("tests-linux-self-hosted", True),
+        ("tests-linux-hosted", False),
+    ):
+        skew = [s for s in _steps(os_wf, leg) if "--xdist" in _run(s)]
+        assert skew, f"{leg} must have a SKEW step using --xdist"
+        leg_run = _run(skew[0])
+        if expect_single:
+            assert "XDIST=1" in leg_run and "cpu_count" not in leg_run, (
+                f"{leg} (Dubai) must run pytest with a single worker"
+            )
+        else:
+            assert "cpu_count" in leg_run, f"{leg} (hosted) must keep the core-sized worker count"
 
 
 def test_heavy_schedule_only_jobs_keep_their_budgets() -> None:
