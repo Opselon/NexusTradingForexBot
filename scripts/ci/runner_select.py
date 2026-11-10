@@ -153,7 +153,6 @@ def select(
     env: dict[str, str],
     untrusted: bool = False,
     fallback_labels: tuple[str, ...] | list[str] | None = None,
-    plan_mode: str = "",
 ) -> dict[str, Any]:
     """Decide the runner class. Pure function — returns a decision dict.
 
@@ -163,15 +162,6 @@ def select(
     winning tier is reported in ``decision["tier"]`` (1, 2, or 0 for hosted)
     and the exact label array to schedule with lands in
     ``decision["runner_labels"]`` (consumed via ``runs-on: fromJSON()``).
-
-    ``plan_mode`` is the C17 plan's selection mode ("" when the preflight
-    could not classify): "expanded" means the plan is the full suite
-    (global invalidation). The full suite needs ~11m on the shared tier-1
-    box (measured 2026-11-09: 91% at 9m38s, killed at the 10-min cap
-    twice) while the same suite proved 6-7m on GitHub-hosted, so an
-    expanded plan routes to hosted to hold the 10-min cap. A targeted
-    plan keeps the self-hosted tiers. An empty/unknown mode changes
-    nothing (fail open to the availability logic below).
     """
     flag_name = f"ENABLE_{platform.upper()}_SELF_HOSTED"
     enabled = (
@@ -202,19 +192,6 @@ def select(
             f"untrusted (fork) pull request -> {FORK_REASON}; github-hosted class mandatory"
         )
         decision["runner_class"] = "github-hosted"
-        return decision
-
-    # Plan-aware routing: an expanded plan runs the full suite, which does
-    # not fit the 10-min cap on the shared tier-1 box (see docstring).
-    # This needs no runner-status token — hosted needs no availability
-    # check — so it runs before the token/availability logic below.
-    if plan_mode == "expanded":
-        decision["reason"] = (
-            "expanded plan (global invalidation): full suite needs ~11m on the "
-            "shared tier-1 box (measured 2026-11-09: 91% at 9m38s, killed at "
-            "the 10-min cap twice) vs 6-7m GitHub-hosted; routing to hosted "
-            "to hold the 10-min cap"
-        )
         return decision
 
     if not enabled:
@@ -286,13 +263,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--hosted", required=True, help="GitHub-hosted fallback image")
     ap.add_argument("--untrusted", action="store_true", help="fork PR: force github-hosted class")
-    ap.add_argument(
-        "--plan-mode",
-        default="",
-        help="C17 plan selection mode from the preflight classification "
-        "('targeted' | 'expanded' | '' when unclassified; 'expanded' "
-        "routes to GitHub-hosted to hold the 10-min cap)",
-    )
     ap.add_argument("--env-prefix", default="", help=argparse.SUPPRESS)
     args = ap.parse_args(argv)
 
@@ -324,7 +294,6 @@ def main(argv: list[str] | None = None) -> int:
         env=env,
         untrusted=args.untrusted,
         fallback_labels=(tuple(x for x in args.fallback_labels.split(",") if x) or None),
-        plan_mode=args.plan_mode,
     )
 
     # Emit the machine-readable decision (consumed via fromJson() in the

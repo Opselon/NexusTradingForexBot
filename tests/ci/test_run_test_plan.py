@@ -433,67 +433,6 @@ def test_mypy_only_pyproject_selects_tooling_suite(tmp_path, engine_binary):
         assert "pyproject.toml" in plan["fallback_reason"]
 
 
-def test_plan_only_writes_plan_without_running_pytest(tmp_path, engine_binary):
-    """--plan-only is the routing preflight: it must compute the plan
-    (selection mode + selected files) and exit 0 WITHOUT executing
-    pytest. The test file below would FAIL if executed, so a zero exit
-    proves pytest never ran."""
-    repo = _scratch_repo(
-        tmp_path,
-        {
-            "src/nexus_scalp/mod.py": "VALUE = 1\n",
-            "tests/unit/test_mod.py": (
-                "from nexus_scalp.mod import VALUE\n\n\n"
-                "def test_value():\n    assert VALUE == 2  # would fail if executed\n"
-            ),
-            "tests/critical_suite.txt": "tests/unit/test_mod.py\n",
-            "tests/fast_suite.txt": "tests/unit/test_mod.py\n",
-        },
-    )
-    _git(repo, "init", "-q")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "base")
-    base = _git(repo, "rev-parse", "HEAD")
-    _write(repo, "src/nexus_scalp/mod.py", "VALUE = 1\n# leaf change\n")
-    _git(repo, "add", ".")
-    _git(repo, "commit", "-qm", "leaf")
-    head = _git(repo, "rev-parse", "HEAD")
-    out_dir = repo / "plan-out"
-    proc = subprocess.run(
-        [
-            sys.executable,
-            str(REPO / "scripts" / "ci" / "run_test_plan.py"),
-            "--plan-only",
-            "--repo-root",
-            str(repo),
-            "--base",
-            base,
-            "--head",
-            head,
-            "--event",
-            "pull_request",
-            "--mode",
-            "targeted",
-            "--native-binary",
-            str(engine_binary),
-            "--out-dir",
-            str(out_dir),
-        ],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    assert proc.returncode == 0, proc.stdout + proc.stderr
-    plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
-    assert plan["selection_mode"] == "targeted"
-    assert "tests/unit/test_mod.py" in [t["id"] for t in plan["selected_tests"]]
-    manifest = json.loads((out_dir / "execution-manifest.json").read_text(encoding="utf-8"))
-    assert manifest["pytest_not_run"] is True
-    assert manifest["pytest_exit_code"] is None
-    assert manifest["plan_selection_mode"] == "targeted"
-
-
 # ----------------------------------------------------------------------
 # End to end: run_test_plan.py receives --metadata in production.
 # ----------------------------------------------------------------------

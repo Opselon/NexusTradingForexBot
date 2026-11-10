@@ -155,56 +155,14 @@ def _runner(status="online", busy=False, name="r", labels=_LINUX):
     }
 
 
-def _select(platform, runners, labels=_LINUX, env=None, untrusted=False, plan_mode=""):
+def _select(platform, runners, labels=_LINUX, env=None, untrusted=False):
     env = dict(_TOKEN, **(env or {}))
     orig = rs.list_runners
     rs.list_runners = lambda repository, token: runners
     try:
-        return rs.select(
-            platform, _REPO, labels, "fallback", env, untrusted=untrusted, plan_mode=plan_mode
-        )
+        return rs.select(platform, _REPO, labels, "fallback", env, untrusted=untrusted)
     finally:
         rs.list_runners = orig
-
-
-def test_expanded_plan_routes_to_hosted_despite_eligible_tier1():
-    # Full suite needs ~11m on the shared tier-1 box (measured
-    # 2026-11-09: 91% at 9m38s, killed at the 10-min cap twice) vs 6-7m
-    # GitHub-hosted; the 10-min cap forces hosted even when tier-1 is
-    # online and idle.
-    decision = _select("linux", [_runner()], plan_mode="expanded")
-    _assert_class(decision, "github-hosted")
-    assert "expanded" in decision["reason"]
-
-
-def test_targeted_plan_keeps_self_hosted():
-    _assert_class(_select("linux", [_runner()], plan_mode="targeted"), "self-hosted")
-
-
-def test_unclassified_plan_mode_changes_nothing():
-    # Empty/unknown mode fails open to the availability logic.
-    _assert_class(_select("linux", [_runner()], plan_mode=""), "self-hosted")
-
-
-def test_expanded_plan_needs_no_runner_status_token():
-    # Routing to hosted needs no availability check, so it must not
-    # depend on the runner-status credential being present.
-    env = {"NSE_RUNNER_STATUS_TOKEN": ""}
-    decision = _select("linux", [_runner()], env=env, plan_mode="expanded")
-    _assert_class(decision, "github-hosted")
-
-
-def test_fork_pr_still_wins_over_expanded_plan():
-    # Trust boundary first: a fork PR is untrusted regardless of plan.
-    decision = _select(
-        "linux",
-        [_runner()],
-        env={"ENABLE_LINUX_SELF_HOSTED": "true"},
-        untrusted=True,
-        plan_mode="expanded",
-    )
-    _assert_class(decision, "github-hosted")
-    assert "untrusted" in decision["reason"]
 
 
 def _assert_class(decision, expected):

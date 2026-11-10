@@ -36,16 +36,6 @@ inputs:
     description: "GitHub-hosted fallback image (defaults to the platform's image)"
     required: false
     default: ""
-  plan_mode:
-    description: >-
-      C17 plan selection mode from the caller's preflight classification
-      ('targeted' | 'expanded' | '' when unclassified). An 'expanded'
-      plan runs the full suite, which does not fit the 10-min cap on the
-      shared tier-1 box (measured ~11m vs 6-7m GitHub-hosted), so it
-      routes to GitHub-hosted. Empty keeps the availability-only
-      behavior unchanged.
-    required: false
-    default: ""
 
 outputs:
   runner_class:
@@ -86,7 +76,6 @@ runs:
         NSE_RUNNER_LABELS_IN: ${{ inputs.labels }}
         NSE_RUNNER_FALLBACK_LABELS_IN: ${{ inputs.fallback_labels }}
         NSE_RUNNER_HOSTED_IN: ${{ inputs.hosted }}
-        NSE_RUNNER_PLAN_MODE_IN: ${{ inputs.plan_mode }}
         NSE_RUNNER_UNTRUSTED: ${{ inputs.untrusted }}
         # Credential presence is the ONLY secret-dependent input. Absent =>
         # fail open to the hosted fallback. Never printed, never forwarded.
@@ -110,7 +99,6 @@ runs:
           --labels "$LABELS" \
           --fallback-labels "$NSE_RUNNER_FALLBACK_LABELS_IN" \
           --hosted "$HOSTED" \
-          --plan-mode "${NSE_RUNNER_PLAN_MODE_IN:-}" \
           $UNTRUSTED
 
     - name: Observability record
