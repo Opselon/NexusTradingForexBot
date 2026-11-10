@@ -9,11 +9,8 @@ Policy (hybrid, automation-first):
   * REQUIRED_CRITICAL_SOURCES - explicit, human-owned floor of
     execution-critical modules that must ALWAYS map to the critical
     suite (live_engine, order_manager, risk_engine, policy, ...).
-  * Hot-path discovery from the dependency-intelligence graph
-    (artifacts/dependency_intelligence/graph.json): any module whose
-    hotspot score exceeds HOTSPOT_SCORE_FLOOR is treated as a
-    discovered-critical candidate. Missing mappings for those surface
-    as WARNINGS (drift visibility) while explicit floor gaps FAIL.
+  * The dependency-intelligence graph (hotspot discovery) was removed
+    with that feature; the explicit floor is now the whole contract.
   * A source module is "covered" when at least one critical-suite test
     file EXISTS and imports/exercises the module (measured by reading
     the test file for the module's dotted path or file name).
@@ -44,7 +41,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_ROOT = REPO_ROOT / "src" / "nexus_scalp"
 MANIFEST = REPO_ROOT / "tests" / "critical_suite.txt"
 SLOW_MANIFEST = REPO_ROOT / "tests" / "slow_suite.txt"
-DEP_GRAPH = REPO_ROOT / "artifacts" / "dependency_intelligence" / "graph.json"
 
 #: Modules whose failure modes move money. THE FLOOR - every entry MUST
 #: keep at least one critical-suite test that exercises it. Adding a
@@ -200,50 +196,13 @@ def build_report() -> dict[str, Any]:
             row["status"] = "OK"
         floor_rows.append(row)
 
-    # --- graph-discovered hotspots (drift visibility) ---
-    # The dependency-intelligence graph is the repo's authoritative
-    # hot-path inventory; nodes flagged criticality=HIGH there are
-    # "discovered critical". A discovered-critical module with no
-    # critical-suite guardian surfaces as drift (report-only WARNING:
-    # the heuristic graph must not hard-fail CI; the explicit floor
-    # above is the hard contract). Add a floor entry or a guardian to
-    # clear the warning.
-    discovered_rows = []
+    # --- graph-discovered hotspots: REMOVED with the dependency graph ---
+    # The dependency-intelligence feature (and its graph.json artifact) was
+    # deleted; there is no hotspot inventory anymore. The explicit floor
+    # above is the whole contract now — it is the hard requirement, and it
+    # does not depend on any graph.
+    discovered_rows: list[dict[str, Any]] = []
     missing_discovered: list[str] = []
-    if DEP_GRAPH.exists():
-        try:
-            graph = json.loads(DEP_GRAPH.read_text(encoding="utf-8"))
-            nodes = graph.get("nodes") or []
-            for node in nodes:
-                nid = node.get("id") or ""
-                if not nid.startswith("mod:nexus_scalp."):
-                    continue
-                dotted = nid[len("mod:") :]
-                if dotted in REQUIRED_CRITICAL_SOURCES:
-                    continue
-                if node.get("criticality") != "HIGH":
-                    continue
-                g = guards(dotted)
-                row = {
-                    "module": dotted,
-                    "tier": "discovered",
-                    "criticality": node.get("criticality"),
-                    "guardians": g,
-                }
-                if not g:
-                    row["status"] = "UNGUARDED_HOTSPOT"
-                    missing_discovered.append(dotted)
-                else:
-                    row["status"] = "OK"
-                discovered_rows.append(row)
-        except (OSError, ValueError):
-            discovered_rows.append(
-                {
-                    "module": "<dependency-graph>",
-                    "status": "GRAPH_UNREADABLE",
-                    "guardians": [],
-                }
-            )
 
     ok = not missing_floor
     return {
@@ -256,9 +215,7 @@ def build_report() -> dict[str, Any]:
         "unguarded_discovered": missing_discovered,
         "policy": (
             "explicit-floor modules with zero critical-suite guardians FAIL; "
-            "graph-discovered hotspots (criticality=HIGH in the "
-            "dependency-intelligence graph) without guardians surface as "
-            "drift warnings (report-only)"
+            "graph-discovered hotspots were removed with the dependency graph"
         ),
     }
 

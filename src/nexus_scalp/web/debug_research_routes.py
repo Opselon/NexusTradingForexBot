@@ -2477,13 +2477,6 @@ def register_debug_research_routes(
 
     app.include_router(factory_router)
 
-    # =========================================================================
-    # DEPENDENCY INTELLIGENCE (2026-08-27): canonical import + DI + architecture
-    # graph for NSE engineering/debugging. AST-only, never boots the engine.
-    # =========================================================================
-    from nexus_scalp.web.dependency_routes import router as dependency_router
-
-    app.include_router(dependency_router)
     # Thin handlers over the News AI service; reuses the Factory LLM provider.
     # =========================================================================
     from nexus_scalp.web.news_intelligence_routes import router as news_intel_router

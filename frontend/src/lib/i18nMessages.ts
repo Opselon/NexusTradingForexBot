@@ -28,7 +28,6 @@ import { MESSAGES as controlCenter } from "@/features/control-center/i18n";
 import { MESSAGES as database } from "@/features/database/i18n";
 import { MESSAGES as decisionTrace } from "@/features/decision-trace/i18n";
 import { MESSAGES as debug } from "@/features/debug/i18n";
-import { MESSAGES as dependency } from "@/features/dependency/i18n";
 import { MESSAGES as factory } from "@/features/factory/i18n";
 import { MESSAGES as governance } from "@/features/governance/i18n";
 import { MESSAGES as health } from "@/features/health/i18n";
@@ -66,7 +65,6 @@ for (const scope of [
   database,
   decisionTrace,
   debug,
-  dependency,
   factory,
   governance,
   health,

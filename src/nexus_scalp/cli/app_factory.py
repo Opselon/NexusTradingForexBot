@@ -34,7 +34,7 @@ from nexus_scalp.release.metadata import PRODUCT_DISPLAY
 logger = get_logger("nexus_scalp.cli.app_factory")
 
 # LAZY (EU-03, wave-6 perf): ai_commands (ai_providers.orchestrator),
-# dependency_commands (networkx), gateway_commands (fastapi -> torch+polars)
+# gateway_commands (fastapi -> torch+polars)
 # and model_studio_commands (model_studio_routes -> torch) are NOT imported
 # here anymore — see cli/lazy_subapps.py. Importing them eagerly made even
 # `nexus --version` pay the whole neural/provider/graph stack; the group
