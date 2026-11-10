@@ -82,27 +82,40 @@ def _synth_records(contract: Any, config: Any) -> list[dict[str, Any]]:
     return out
 
 
-@pytest.fixture(autouse=True)
-def _synthetic_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+@pytest.fixture(autouse=True, scope="module")
+def _synthetic_model(tmp_path_factory: pytest.TempPathFactory) -> None:
     """Point the session config at a deterministic checkpoint in tmp.
 
     The live 70d_liquidity champion is a RELEASE ASSET and is absent from a
     fresh checkout, so the route-layer contracts (C-3/C-4/C-9/H-15) died with
     FileNotFoundError before any assertion ran (CI run #3330: all 10 failed
     in _make_session with 500 OPERATION_FAILED). The checkpoint is minted
-    in the test's tmp dir on purpose — see tests/helpers/synthetic_checkpoint
+    in a tmp dir on purpose — see tests/helpers/synthetic_checkpoint
     (writing a synthetic model.pt into artifacts/ would install a fake
     champion in the tree the runtime reads). The suites inject their own
     records loader, so the model is loaded but the route mechanics under
     test do not depend on its weights; num_features=70 matches the
     engine's 70D feature vector (build_70d_vector).
+
+    Module-scoped mint: the checkpoint is deterministic (seeded) and
+    read-only after minting, and no test asserts per-test freshness, so
+    re-running the 30-step AdamW mint for every test in the file bought
+    byte-identical files ~hundreds of ms at a time.
     """
     import sys
 
     from tests.helpers.synthetic_checkpoint import write_trained_checkpoint
 
-    artifact = write_trained_checkpoint(tmp_path / "model.pt", num_features=70)
-    monkeypatch.setattr(sys.modules[__name__], "MODEL", str(artifact))
+    artifact = write_trained_checkpoint(
+        tmp_path_factory.mktemp("replay_checkpoint") / "model.pt", num_features=70
+    )
+    module = sys.modules[__name__]
+    original = module.MODEL
+    module.MODEL = str(artifact)
+    try:
+        yield
+    finally:
+        module.MODEL = original
 
 
 @pytest.fixture(scope="module")

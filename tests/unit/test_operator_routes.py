@@ -382,9 +382,17 @@ class TestSanitization:
 
 
 class TestOperatorRouteAuthentication:
-    def test_unauthenticated_request_rejected(self, _deterministic_operator_env: None) -> None:
-        app = create_app(engine_ref=None)
-        unauth_client = TestClient(app)
+    @pytest.fixture(scope="class")
+    def unauth_client(self, _deterministic_operator_env: None) -> TestClient:
+        """One app for the five credential-transport probes.
+
+        Every probe is a side-effect-free GET asserting only 401/200/405
+        semantics, so the five per-test ``create_app`` builds bought nothing
+        beyond warm-up time.
+        """
+        return TestClient(create_app(engine_ref=None))
+
+    def test_unauthenticated_request_rejected(self, unauth_client: TestClient) -> None:
         for endpoint in (
             "/api/operator/summary",
             "/api/operator/decisions",
@@ -395,33 +403,25 @@ class TestOperatorRouteAuthentication:
             r = unauth_client.get(endpoint)
             assert r.status_code == 401, (endpoint, r.status_code, r.text)
 
-    def test_invalid_token_rejected(self, _deterministic_operator_env: None) -> None:
-        app = create_app(engine_ref=None)
-        unauth_client = TestClient(app)
+    def test_invalid_token_rejected(self, unauth_client: TestClient) -> None:
         r = unauth_client.get(
             "/api/operator/summary",
             headers={"Authorization": "Bearer invalid-token-12345"},
         )
         assert r.status_code == 401
 
-    def test_x_nse_token_header_accepted(self, _deterministic_operator_env: None) -> None:
-        app = create_app(engine_ref=None)
-        unauth_client = TestClient(app)
+    def test_x_nse_token_header_accepted(self, unauth_client: TestClient) -> None:
         r = unauth_client.get(
             "/api/operator/summary",
             headers={"X-NSE-Token": FAKE_WEB_AUTH_TOKEN},
         )
         assert r.status_code == 200
 
-    def test_query_param_token_accepted(self, _deterministic_operator_env: None) -> None:
-        app = create_app(engine_ref=None)
-        unauth_client = TestClient(app)
+    def test_query_param_token_accepted(self, unauth_client: TestClient) -> None:
         r = unauth_client.get(f"/api/operator/summary?token={FAKE_WEB_AUTH_TOKEN}")
         assert r.status_code == 200
 
-    def test_cookie_token_accepted(self, _deterministic_operator_env: None) -> None:
-        app = create_app(engine_ref=None)
-        unauth_client = TestClient(app)
+    def test_cookie_token_accepted(self, unauth_client: TestClient) -> None:
         unauth_client.cookies.set("nse_web_auth", FAKE_WEB_AUTH_TOKEN)
         r = unauth_client.get("/api/operator/summary")
         assert r.status_code == 200

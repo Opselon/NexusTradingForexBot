@@ -104,18 +104,83 @@ def _build_ledger(db: Path) -> None:
         con.close()
 
 
-@pytest.fixture()
-def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+@pytest.fixture(scope="module")
+def _truth_harness(tmp_path_factory: pytest.TempPathFactory):
+    """Build the two apps ONCE and pin the auth env for the whole module.
+
+    The operator routes resolve ``operator_routes._audit_db_path()`` PER
+    REQUEST — the in-body path swap inside
+    test_bounded_tail_window_makes_rows0_the_oldest_row already relies on
+    that — so a shared TestClient is request-equivalent to the per-test app
+    builds this file used to pay (create_app x6 -> x2, plus one cold import
+    chain instead of one per worker-file lead test). Same module-level
+    pytest.MonkeyPatch pattern as test_operator_routes's
+    _deterministic_operator_env, which tests/conftest.py's web-auth
+    lifecycle explicitly supports (module-scoped pins outlive function-
+    scoped restores).
+    """
     from nexus_scalp.web import operator_routes
 
-    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
-    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
-    db = tmp_path / "audit.db"
-    _build_ledger(db)
+    mp = pytest.MonkeyPatch()
+    mp.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+    mp.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
+
+    seeded_db = tmp_path_factory.mktemp("cc_ledger") / "audit.db"
+    _build_ledger(seeded_db)
+    empty_db = tmp_path_factory.mktemp("cc_ledger_empty") / "audit.db"
+    con = sqlite3.connect(empty_db)
+    try:
+        con.executescript(
+            """
+            CREATE TABLE audit_signals (
+                id INTEGER PRIMARY KEY,
+                request_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                action TEXT NOT NULL,
+                confidence REAL NOT NULL,
+                regime TEXT NOT NULL,
+                generated_at TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE audit_orders (
+                id INTEGER PRIMARY KEY,
+                ticket INTEGER,
+                order_id TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                action TEXT NOT NULL,
+                price REAL NOT NULL,
+                volume REAL NOT NULL,
+                timestamp TEXT NOT NULL
+            );
+            """
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    mp.setattr(operator_routes, "_audit_db_path", lambda: str(seeded_db))
+    seeded_client = TestClient(create_app(engine_ref=None))
+    mp.setattr(operator_routes, "_audit_db_path", lambda: str(empty_db))
+    empty_client_app = TestClient(create_app(engine_ref=None))
+    try:
+        yield {
+            "seeded_client": seeded_client,
+            "empty_client": empty_client_app,
+            "seeded_db": seeded_db,
+            "empty_db": empty_db,
+        }
+    finally:
+        mp.undo()
+
+
+@pytest.fixture()
+def client(monkeypatch: pytest.MonkeyPatch, _truth_harness) -> TestClient:
+    from nexus_scalp.web import operator_routes
+
     # Same test-isolation seam the existing operator suite uses: redirect the
     # audit ledger to the tmp fixture WITHOUT touching production code.
-    monkeypatch.setattr(operator_routes, "_audit_db_path", lambda: str(db))
-    return TestClient(create_app(engine_ref=None))
+    monkeypatch.setattr(operator_routes, "_audit_db_path", lambda: str(_truth_harness["seeded_db"]))
+    return _truth_harness["seeded_client"]
 
 
 def _auth_kwargs() -> dict[str, str]:
@@ -270,44 +335,12 @@ def test_bounded_tail_window_makes_rows0_the_oldest_row(client: TestClient) -> N
 
 
 @pytest.fixture()
-def empty_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
+def empty_client(monkeypatch: pytest.MonkeyPatch, _truth_harness) -> TestClient:
     """Same auth + ledger seam, but a schema-only audit DB with zero rows."""
     from nexus_scalp.web import operator_routes
 
-    monkeypatch.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
-    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
-    db = tmp_path / "empty_audit.db"
-    con = sqlite3.connect(db)
-    try:
-        con.executescript(
-            """
-            CREATE TABLE audit_signals (
-                id INTEGER PRIMARY KEY,
-                request_id TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                action TEXT NOT NULL,
-                confidence REAL NOT NULL,
-                regime TEXT NOT NULL,
-                generated_at TEXT NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE TABLE audit_orders (
-                id INTEGER PRIMARY KEY,
-                ticket INTEGER,
-                order_id TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                action TEXT NOT NULL,
-                price REAL NOT NULL,
-                volume REAL NOT NULL,
-                timestamp TEXT NOT NULL
-            );
-            """
-        )
-        con.commit()
-    finally:
-        con.close()
-    monkeypatch.setattr(operator_routes, "_audit_db_path", lambda: str(db))
-    return TestClient(create_app(engine_ref=None))
+    monkeypatch.setattr(operator_routes, "_audit_db_path", lambda: str(_truth_harness["empty_db"]))
+    return _truth_harness["empty_client"]
 
 
 def test_empty_ledger_reports_null_not_a_fabricated_timestamp(

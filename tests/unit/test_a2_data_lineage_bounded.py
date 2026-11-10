@@ -2,18 +2,33 @@
 
 Verifies the FULL lineage RAW -> CLEAN -> FEATURES -> LABELS -> DATASET ->
 MODEL INPUT via the SAME canonical builder the authoritative
-ds_70d_clean_m1_20260904 artifact uses, on a small 5k-bar M1 tail so the
+ds_70d_clean_m1_20260904 artifact uses, on a small 5k-bar M1 frame so the
 suite finishes in seconds, not minutes.
 
-Reuse (from repo root, never concurrent with other pytest that writes to the
-same scratch dataset id):
-    .venv/Scripts/python.exe -m pytest tests/unit/test_a2_data_lineage_bounded.py -q -p no:cacheprovider
+The original shape read ``data/raw/XAUUSD_M1.csv`` — a gitignored,
+download-only machine file — behind a skipif, so in CI the module collected
+and skipped forever: a green-looking suite that exercised nothing (the same
+silent-zero-coverage defect class ML-QA-019 remediated for the parity
+suite). The bars are now produced by the deterministic synthetic generator
+``generate_synthetic_bars`` (M1, tz-aware UTC, canonical OHLCV — the exact
+shape ``build_70d_dataset`` consumes from a broker fetch; the same importer
+and seed pattern as ``test_70d_bug106_incremental_phase19.py``), and the
+artifact store is redirected into the test's tmp dir, so the contract runs
+in EVERY checkout instead of skipping, and never touches the real
+artifacts/ tree.
+
+Pins that describe the DATA's market character (BUG-234's almost-all-nonzero
+HTF features, label-population) are asserted against the synthetic frame
+itself — the builder machinery under test is identical; only the bar source
+changed. Schema-hash pins are data-independent and unchanged.
+
+Reuse (from repo root):
+    .venv/Scripts/python.exe -m pytest tests/unit/test_a2_data_lineage_bounded.py -q
 """
 
 from __future__ import annotations
 
 import hashlib
-import pathlib
 
 import numpy as np
 import polars as pl
@@ -28,27 +43,22 @@ from nexus_scalp.model_generation.temporal_contract import (
     CANONICAL_SEQ_LEN,
 )
 from nexus_scalp.model_lifecycle.model_class_contract import MODEL_CLASS_CONTRACT_ID
+from scripts.data.ingest_historical_candles import generate_synthetic_bars
 
-DECLARED_CSV = pathlib.Path("data/raw/XAUUSD_M1.csv")
-
-
-def _load_slice(n: int = 5000) -> pl.DataFrame:
-    raw = (
-        pl.read_csv("data/raw/XAUUSD_M1.csv")
-        .with_columns(pl.col("time_utc").str.to_datetime(strict=True).alias("time_utc"))
-        .sort("time")
-    )
-    return raw.tail(n)
+_BAR_COUNT = 5000
+_SEED = 42
 
 
-@pytest.mark.skipif(
-    not DECLARED_CSV.exists(),
-    reason="raw XAUUSD_M1.csv absent (gitignored machine data; runs fully on dev machines)",
-)
-def test_a2_bounded_dataset_build_and_lineage() -> None:
-    """RAW -> CLEAN -> FEATURES -> LABELS -> DATASET -> MODEL INPUT on 5k M1 tail."""
+@pytest.fixture(scope="module")
+def slice_df() -> pl.DataFrame:
+    """Deterministic 5k-bar synthetic M1 tail (replaces the git-absent CSV)."""
+    return generate_synthetic_bars(symbol="XAUUSD", count=_BAR_COUNT, seed=_SEED)
 
-    store = ArtifactStore()
+
+def test_a2_bounded_dataset_build_and_lineage(slice_df, tmp_path) -> None:
+    """RAW -> CLEAN -> FEATURES -> LABELS -> DATASET -> MODEL INPUT on 5k M1 bars."""
+
+    store = ArtifactStore(root=tmp_path / "artifacts")
     dataset_id = "a2_lineage_probe_5k"
     # Deterministic rerun: blow away the prior probe artifact (store has no
     # delete helper; the path is the single source of writability).
@@ -58,8 +68,7 @@ def test_a2_bounded_dataset_build_and_lineage() -> None:
         except Exception:
             pass
 
-    slice_df = _load_slice(5000)
-    assert int(slice_df.height) == 5000
+    assert int(slice_df.height) == _BAR_COUNT
 
     # ---- RAW DATA -----------------------------------------------------
     assert slice_df["time"].is_sorted()
@@ -93,8 +102,19 @@ def test_a2_bounded_dataset_build_and_lineage() -> None:
     for i in range(5):
         assert f"feat_{i}" in frame.columns
     vf = verify_70d_artifact(dataset_id, store=store)
-    assert vf.get("ok") is True, f"verify_70d_artifact failed: {vf}"
+    # Same verifier contract as test_70d_parity_task3.py: a news_frame=None
+    # build is rejected ONLY by the news gate (dims 50..59 are contract
+    # zeros -> FEATURE_DISABLED); every structural check must still pass.
+    assert vf.get("ok") is False, f"verify_70d_artifact unexpected verdict: {vf}"
     assert int(vf.get("feature_count", 0)) == 70
+    assert vf["dimension_ok"] is True
+    assert vf["schema_id_ok"] is True
+    assert vf["schema_hash_ok"] is True
+    assert vf["all_finite"] is True
+    assert vf["all_in_range"] is True
+    assert vf["timestamp_sane"] is True
+    assert vf["news_coverage"]["ok"] is False
+    assert vf["news_coverage"]["news_status"] == "FEATURE_DISABLED"
 
     # Clipping contract: features clipped at |3.0|; no NaN/Inf downstream.
     feats = [f"feat_{i}" for i in range(70)]
@@ -141,7 +161,7 @@ def test_a2_bounded_dataset_build_and_lineage() -> None:
     assert sorted(np.unique(seq["y"]).tolist()) == [0, 1, 2]
 
     # Scaler semantics: dataset stores RAW clipped values; the model scaler
-    # (mean/std, clip [-5,+5]) is fit at train time per-fold. On this slice
+    # (mean/std, clip [-5,+5]) is fit at train time per-fold. On this frame
     # the news block is FEATURE_DISABLED (all-zero) => near-constant column.
     sd = X.std(axis=0)
     assert float(sd.min()) < 0.01

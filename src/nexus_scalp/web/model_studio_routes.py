@@ -29,14 +29,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import polars as pl
-import torch
 from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from nexus_scalp.features.schema import active_dimension, active_schema
-from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
-from nexus_scalp.models.scalp_net import ScalpNet
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.web.errors import (
     log_web_error,
@@ -47,9 +43,18 @@ from nexus_scalp.web.errors import (
 logger = get_logger("nexus_scalp.web.model_studio_routes")
 
 if TYPE_CHECKING:
-    # Import-only, for annotations: the builder module is otherwise imported
-    # lazily inside the endpoints that use it (see _builder_config_from_request).
+    # Import-only, for annotations: the heavy scientific imports (torch,
+    # polars, ScalpNet) are otherwise imported lazily inside the functions
+    # that use them — create_app() imports this module at every app boot,
+    # and paying the multi-second torch/polars import for every web-serving
+    # test's first request bought nothing for the studio handlers themselves.
+    # Annotations are strings under `from __future__ import annotations`, so
+    # the runtime code never needs these names at import time.
+    import polars as pl
+    import torch
+
     from nexus_scalp.model_lab.model_builder import ModelBuilderConfig
+    from nexus_scalp.models.scalp_net import ScalpNet
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -267,6 +272,8 @@ def _resolve_requested_dataset(raw: str) -> Path | None:
 
 def _read_dataset_frame(target: Path) -> pl.DataFrame:
     """Read an inventory-derived dataset as a Polars frame (parquet or csv only)."""
+    import polars as pl
+
     if target.suffix.lower() == ".parquet":
         return pl.read_parquet(target)
     if target.suffix.lower() == ".csv":
@@ -640,6 +647,8 @@ class _StudioBundleHolder:
 
 def _get_active_model_and_scaler(engine: Any, dimension: int) -> tuple[torch.nn.Module, Any, str]:
     """Resolves model and scaler for inference testing (hot-loaded, live bundle, or fresh instance)."""
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     with _STUDIO_BUNDLE_LOCK:
         if _StudioBundleHolder.active is not None:
             if _StudioBundleHolder.active.dimension == dimension:
@@ -709,6 +718,8 @@ def _capture_layer_activations(
     model: torch.nn.Module, x_tensor: torch.Tensor
 ) -> list[dict[str, Any]]:
     """Runs a forward pass with temporary forward hooks to capture layer statistics."""
+    import torch
+
     activations: list[dict[str, Any]] = []
     hooks = []
 
@@ -759,6 +770,8 @@ def _compute_saliency(model: torch.nn.Module, x_np: np.ndarray, top_k: int = 5) 
     the tensor pipeline, so the value is NEVER echoed; the failure is reported
     server-side and the client gets a fixed, uninformative marker.
     """
+    import torch
+
     try:
         x_var = torch.tensor(x_np, dtype=torch.float32, requires_grad=True)
         model.zero_grad()
@@ -1044,6 +1057,8 @@ def fetch_70d_components(engine: Any = None) -> dict[str, Any]:
 
 def execute_predict(req: ModelStudioPredictRequest, engine: Any = None) -> dict[str, Any]:
     """Deep neural prediction inspection with entropy, saliency, and layer norms."""
+    import torch
+
     t0 = time.perf_counter()
     dim = req.dimension if req.dimension in (50, 70) else 50
     model, scaler, model_source = _get_active_model_and_scaler(engine, dim)
@@ -1215,6 +1230,8 @@ def execute_predict(req: ModelStudioPredictRequest, engine: Any = None) -> dict[
 
 def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> dict[str, Any]:
     """Runs automated 6-step adversarial stress test on model."""
+    import torch
+
     dim = req.dimension if req.dimension in (50, 70) else 50
     model, scaler, _ = _get_active_model_and_scaler(engine, dim)
 
@@ -1316,6 +1333,8 @@ def execute_stress_test(req: ModelStudioStressRequest, engine: Any = None) -> di
 
 def execute_benchmark(req: ModelStudioBenchmarkRequest, engine: Any = None) -> dict[str, Any]:
     """Profiles model inference latency over N iterations."""
+    import torch
+
     dim = req.dimension if req.dimension in (50, 70) else 50
     model, _, _ = _get_active_model_and_scaler(engine, dim)
     n = req.iterations
@@ -1363,6 +1382,11 @@ def execute_benchmark(req: ModelStudioBenchmarkRequest, engine: Any = None) -> d
 
 def execute_train(req: ModelStudioTrainRequest) -> dict[str, Any]:
     """Dispatches real PyTorch model training with chosen dataset and hyperparameters."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     run_id = f"train_studio_{int(time.time())}"
 
     explicit_dataset = bool(str(req.dataset_path or "").strip())
@@ -1945,6 +1969,8 @@ def execute_validate_position_dataset(req: ModelStudioPositionValidateRequest) -
 
 def execute_list_models() -> dict[str, Any]:
     """1. Lists all models from the SQLite registry and syncs filesystem checkpoints."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     registry.sync_filesystem_checkpoints()
     models = registry.list_models(include_archived=False)
@@ -1988,6 +2014,8 @@ def _resolve_head_classes(weights_path: Path, weights: dict[str, Any]) -> int:
     2. the sibling ``<stem>.meta.json`` declared head, if a legal value
     3. TRAINED_CLASS_COUNT fallback (engine-identical)
     """
+    import torch
+
     from nexus_scalp.model_lifecycle.model_class_contract import (
         LEGACY_HEAD_CLASSES,
         TRAINED_CLASS_COUNT,
@@ -2016,6 +2044,11 @@ def _resolve_head_classes(weights_path: Path, weights: dict[str, Any]) -> int:
 
 def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict[str, Any]:
     """2. Hot-loads model weights and scaler sidecar atomically into memory."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     registry = get_model_registry()
     rec = registry.get_model(req.model_id)
 
@@ -2202,6 +2235,8 @@ def execute_hot_load(req: ModelStudioHotLoadRequest, engine: Any = None) -> dict
 
 def execute_active_model() -> dict[str, Any]:
     """3. Returns the runtime state of the currently hot-loaded model."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     with _STUDIO_BUNDLE_LOCK:
         if _StudioBundleHolder.active is None:
             registry = get_model_registry()
@@ -2246,6 +2281,8 @@ def execute_active_model() -> dict[str, Any]:
 
 def execute_rollback(engine: Any = None) -> dict[str, Any]:
     """4. Atomically rolls back to the previous active champion model from history."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     prev = registry.get_previous_active_model()
     if prev is None:
@@ -2268,6 +2305,11 @@ def execute_rollback(engine: Any = None) -> dict[str, Any]:
 
 def execute_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
     """5. Dispatches fine-tuning from a base model checkpoint with backbone freezing options."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     registry = get_model_registry()
 
     base_id = req.base_model_id.strip()
@@ -2428,6 +2470,11 @@ def execute_fine_tune(req: ModelStudioFineTuneRequest) -> dict[str, Any]:
 
 def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
     """6. Performs dry-run verification battery on a model checkpoint and its sidecars."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     registry = get_model_registry()
     rec = registry.get_model(req.model_id)
 
@@ -2579,6 +2626,10 @@ def execute_verify(req: ModelStudioVerifyRequest) -> dict[str, Any]:
 
 def execute_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:
     """7. Registers an external or discovered model checkpoint into the SQLite catalog."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
+
     target_path = _resolve_requested_model(req.path)
     if target_path is None or not target_path.is_file():
         raise HTTPException(status_code=400, detail=f"File {req.path!r} not found.")
@@ -2619,6 +2670,8 @@ def execute_register_model(req: ModelStudioRegisterRequest) -> dict[str, Any]:
 
 def execute_delete_model(model_id: str) -> dict[str, Any]:
     """8. Safely removes a model from the registry (guarded against active champion)."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     with _STUDIO_BUNDLE_LOCK:
         if _StudioBundleHolder.active and _StudioBundleHolder.active.model_id == model_id:
@@ -2643,6 +2696,8 @@ def execute_delete_model(model_id: str) -> dict[str, Any]:
 
 def execute_get_scaler(model_id: str) -> dict[str, Any]:
     """9. Inspects the scaler vector parameters (means, stds) for a model."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     rec = registry.get_model(model_id)
 
@@ -2700,6 +2755,11 @@ def execute_get_scaler(model_id: str) -> dict[str, Any]:
 
 def execute_canary(req: ModelStudioCanaryRequest) -> dict[str, Any]:
     """10. Hot-loads a candidate model into a shadow canary slot."""
+    import torch
+
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+    from nexus_scalp.models.scalp_net import ScalpNet
+
     target_path = _resolve_requested_model(req.model_id)
     if target_path is None or not target_path.is_file():
         raise HTTPException(status_code=400, detail=f"Model {req.model_id!r} not found.")
@@ -2747,6 +2807,8 @@ def execute_canary(req: ModelStudioCanaryRequest) -> dict[str, Any]:
 
 def execute_history(limit: int = 50) -> dict[str, Any]:
     """11. Returns audit trail of model hot-swaps, rollbacks, and loads from SQLite."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     events = registry.get_load_history(limit=limit)
     return {"status": "OK", "count": len(events), "history": events}
@@ -2754,6 +2816,8 @@ def execute_history(limit: int = 50) -> dict[str, Any]:
 
 def execute_export_model(req: ModelStudioExportRequest) -> dict[str, Any]:
     """12. Packages model weights, scaler, and manifest into a zip bundle."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     rec = registry.get_model(req.model_id)
     if rec is None or not rec.weights_path:
@@ -2798,6 +2862,8 @@ def execute_export_model(req: ModelStudioExportRequest) -> dict[str, Any]:
 
 def execute_tag_model(req: ModelStudioTagRequest) -> dict[str, Any]:
     """13. Updates the deployment stage and fine-tune permissions for a model."""
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     valid_stages = ("CHAMPION", "CANARY", "STAGING", "ARCHIVED")
     stage_upper = req.stage.upper().strip()
     if stage_upper not in valid_stages:
@@ -2820,6 +2886,8 @@ def execute_tag_model(req: ModelStudioTagRequest) -> dict[str, Any]:
 
 def execute_benchmark_live(iterations: int = 100) -> dict[str, Any]:
     """14. Live profiling of inference latency and throughput of the hot-loaded active model."""
+    import torch
+
     with _STUDIO_BUNDLE_LOCK:
         if _StudioBundleHolder.active is None:
             raise HTTPException(status_code=400, detail="No active model hot-loaded to benchmark.")
@@ -2858,6 +2926,7 @@ def execute_benchmark_live(iterations: int = 100) -> dict[str, Any]:
 
 def execute_drift_check(req: ModelStudioDriftRequest) -> dict[str, Any]:
     """15. Detects feature distribution drift between active scaler and candidate dataset."""
+
     with _STUDIO_BUNDLE_LOCK:
         if _StudioBundleHolder.active is None:
             raise HTTPException(
@@ -2924,6 +2993,8 @@ def _bundle_dir_for(model_id: str) -> Path | None:
     Reads the registry record (never request input) so the certification path
     stays inside the operator's artifact roots.
     """
+    from nexus_scalp.model_generation.model_registry import get_model_registry
+
     registry = get_model_registry()
     rec = registry.get_model(model_id)
     if rec is None or not rec.manifest_path:
@@ -3107,6 +3178,7 @@ def execute_verify_load_contract(req: ModelStudioLoadContractRequest) -> dict[st
 
 def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Registers Deep Learning / Model Studio REST endpoints on the FastAPI app."""
+    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
 
     def _fail_closed(
         endpoint: str,
@@ -3514,11 +3586,14 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @app.get("/api/model-studio/models/switch/preview")
     def route_switch_preview(model_id: str) -> dict[str, Any]:
+        import torch
+
         from nexus_scalp.model_lab.contract_gate import (
             assert_model_weights_dimension,
             assert_scaler_file_compatibility,
             assert_schema_dimension,
         )
+        from nexus_scalp.models.scalp_net import ScalpNet
 
         registry = get_model_registry()
         rec = registry.get_model(model_id)
@@ -3574,7 +3649,6 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         # forward pass at the declared width?
         def _smoke() -> None:
             weights = torch.load(weights_path, map_location="cpu", weights_only=True)
-            from nexus_scalp.models.scalp_net import ScalpNet
 
             head = weights["classifier.weight"].shape[0]
             model = ScalpNet(num_features=rec.dimension, num_classes=int(head))

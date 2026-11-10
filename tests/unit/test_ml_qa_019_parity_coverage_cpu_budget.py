@@ -615,16 +615,23 @@ def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
     return out
 
 
-def test_the_old_data_gate_shape_was_a_no_coverage_module(
+def test_subprocess_old_shape_skips_and_remediated_module_runs(
     _subprocess_verdict: tuple[int, str],
 ) -> None:
-    """NEGATIVE CONTROL (executed): the old shape collects and skips both tests.
+    """NEGATIVE CONTROL + its complement, on the ONE shared subprocess run.
 
-    This is the executed proof that the defect class is "silent zero
-    coverage", not a theoretical one. The reconstructed old module is
-    collected in the shared subprocess pytest run (see
-    ``_subprocess_verdict``), and the report must show exactly 2 skipped /
-    0 passed — i.e. a green-looking module that exercised nothing.
+    Merged from ``test_the_old_data_gate_shape_was_a_no_coverage_module`` +
+    ``test_current_module_has_no_skips`` (both consumed the same module-
+    scoped ``_subprocess_verdict``; on the CI junit the shared spawn's cost
+    was attributed to whichever node requested the fixture first, reading
+    as two ~35s tests for one subprocess). Every assertion from both is
+    preserved:
+
+    * the reconstructed OLD skipif-on-git-absent-data module collects and
+      skips BOTH durable tests (rc=0, "2 skipped") — the executed proof
+      that the defect class is "silent zero coverage";
+    * the remediated module collects AND runs — every durable node PASSED,
+      none SKIPPED — no skip can hide a contract.
     """
     returncode, verdict = _subprocess_verdict
     # pytest -q under pytest 9.1.1 suppresses the pass/skip line from the
@@ -634,21 +641,9 @@ def test_the_old_data_gate_shape_was_a_no_coverage_module(
         f"tests — that is the zero-coverage defect ML-QA-019 fixes. "
         f"rc={returncode} out={verdict[-600:]}"
     )
-    # the module must still COLLECT (skip, not error) — rc=0 with skips
+    # the old module must still COLLECT (skip, not error) — rc=0 with skips
     assert returncode == 0, (
         f"a skipped-only module exits 0 — the gate saw green at zero coverage. rc={returncode}"
-    )
-
-
-def test_current_module_has_no_skips(_subprocess_verdict: tuple[int, str]) -> None:
-    """The remediated module collects AND runs — no skip can hide a contract.
-
-    Complement to the negative control: the shared subprocess run over the
-    remediated module must report 0 skipped and 3 passed.
-    """
-    returncode, verdict = _subprocess_verdict
-    assert returncode == 0, (
-        f"the remediated module must execute cleanly; rc={returncode} output={verdict[-1200:]}"
     )
     # Scope skip detection to the target module's three durable nodes. The
     # shared subprocess run also executes the old-shape negative control,

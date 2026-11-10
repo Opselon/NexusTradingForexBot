@@ -176,7 +176,7 @@ class TestIngestion:
 
 class TestDeduplication:
     def test_08_ingestor_exact_duplicate_collapses(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         ts = datetime(2026, 8, 16, 10, 0, tzinfo=UTC)
         item = {"title": "Fed Cuts Rates", "url": "https://a.com/fed", "published_at": ts}
         result = engine.ingestor.ingest_source_items(
@@ -201,7 +201,7 @@ class TestDeduplication:
         assert engine.db.count_articles() == 1
 
     def test_09_syndicated_title_merges_evidence(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         ts = datetime(2026, 8, 16, 10, 0, tzinfo=UTC)
         item1 = {
             "title": "Fed Shocks Markets with Hike",
@@ -258,7 +258,7 @@ class TestDeduplication:
         assert normalize_url("") == ""
 
     def test_12_updated_article_creates_version_not_overwrite(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         ts = datetime(2026, 8, 16, 10, 0, tzinfo=UTC)
         item1 = {
             "title": "CPI Report",
@@ -666,7 +666,7 @@ class TestNewsGate:
 
 class TestMemory:
     def test_38_duplicate_news_no_double_impact(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         ts = datetime(2026, 8, 16, 10, 0, tzinfo=UTC)
         item = {
             "title": "Gold Surges on Fed Dovish Pivot",
@@ -695,7 +695,7 @@ class TestMemory:
         assert engine.db.count_articles() == 1
 
     def test_39_historical_article_immutable(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         engine.db.insert_article(
             {
                 "article_id": "news_imm",
@@ -751,7 +751,7 @@ class TestMemory:
         assert row["title"] == "Original headline"
 
     def test_40_versioning_preserved(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         engine.db.insert_version(
             {
                 "article_id": "news_v",
@@ -783,7 +783,7 @@ class TestMemory:
         assert latest["revision"] == 2
 
     def test_41_post_event_error_stored(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         art = make_article("Fed hawkish, gold bearish", article_id="news_pev")
         engine.pipeline.analyze_article(art)
         now = datetime.now(UTC)
@@ -799,7 +799,7 @@ class TestMemory:
         )
 
     def test_42_trade_linkage(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         link_id = engine.link_trade(
             trade_id="t100",
             article_id="news_link",
@@ -818,17 +818,79 @@ class TestMemory:
 # =============================================================================
 
 
+def _disable_fetch_jitter(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero the fetcher's 0-1 s politeness jitter for localhost targets.
+
+    The jitter is rate-limit etiquette for REAL feeds; against an
+    instantly-refused 127.0.0.1 endpoint it is pure dead time. Replaces only
+    the fetcher module's ``random`` binding (the file's sole random use is
+    ``random.uniform(0.0, 1.0)`` before each fetch), leaving the shared
+    random module untouched for the rest of the worker process.
+    """
+    import nexus_scalp.news.ingest.fetcher as _fetcher
+
+    class _NoJitterRandom:
+        @staticmethod
+        def uniform(a: float, b: float) -> float:
+            return 0.0
+
+    monkeypatch.setattr(_fetcher, "random", _NoJitterRandom)
+
+
 class TestWorker:
+    @staticmethod
+    def _point_enabled_sources_at_refused_local(seeded_db: NewsDatabase) -> None:
+        """Leave ONE enabled feed, pointed at an instantly-refused local URL.
+
+        test_44/test_46 assert worker LIVENESS, failure ISOLATION and
+        CHECKPOINT restore — never fetch content and never the number of
+        sources polled. Two cost sources removed here:
+
+        * The seeded registry's real WAN feeds (federalreserve.gov,
+          bankofengland.co.uk, cnbc, ...) made each ``tick()`` pay ~8 real
+          HTTPS GETs plus politeness jitter (20-33 s per tick on CI, and a
+          live-network dependency in a unit lane). A connection-refused
+          127.0.0.1:9 URL keeps the FULL production path executing — adapter
+          build, real httpx client, typed failure classification,
+          health/backoff persistence — deterministically and offline.
+        * One due source instead of eight: the adapters' connect-failure
+          handling retries before surfacing the typed failure (~2 s per
+          source of real transport behavior, not test-tunable), so eight
+          due sources cost ~16 s per cycle no matter where they point.
+          Cycle liveness and isolation are fully proven by one due source
+          failing inside an otherwise-successful cycle.
+
+        Must run AFTER NewsEngine construction: the engine's __init__ re-seed
+        restores the seeded WAN feed_urls and would undo an earlier update
+        (the fetcher reads source configs from the DB per cycle, so the
+        values at tick() time are what get fetched).
+        """
+        import sqlite3
+
+        with sqlite3.connect(seeded_db.db_path) as con:
+            con.execute(
+                "UPDATE news_sources SET feed_url = 'http://127.0.0.1:9/feed' WHERE enabled = 1"
+            )
+        enabled = seeded_db.list_sources(enabled_only=True)
+        for stale in enabled[1:]:
+            seeded_db.set_source_enabled(stale["source_id"], False)
+
     def test_43_worker_starts_stops(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0)
         worker.start()
         assert worker.running
         worker.stop()
         assert not worker.running
 
-    def test_44_worker_cycle_runs(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+    def test_44_worker_cycle_runs(self, seeded_db, monkeypatch):
+        _disable_fetch_jitter(monkeypatch)
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
+        # AFTER engine construction: NewsEngine.__init__ re-seeds the source
+        # registry, which restores the seeded WAN feed_urls and would undo an
+        # earlier update. The fetcher reads source configs from the DB per
+        # cycle, so re-pointing them here is what tick() actually fetches.
+        self._point_enabled_sources_at_refused_local(seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0)
         worker.start()
         try:
@@ -839,7 +901,7 @@ class TestWorker:
             worker.stop()
 
     def test_45_worker_survives_source_failure(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         # disable all sources so the fetch cycle has nothing due -> no crash
         for s in seeded_db.list_sources(enabled_only=False):
             seeded_db.set_source_enabled(s["source_id"], False)
@@ -851,8 +913,12 @@ class TestWorker:
         finally:
             worker.stop()
 
-    def test_46_worker_restart_safe(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+    def test_46_worker_restart_safe(self, seeded_db, monkeypatch):
+        _disable_fetch_jitter(monkeypatch)
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
+        # AFTER engine construction (see test_44): the __init__ re-seed would
+        # restore the WAN feed_urls otherwise.
+        self._point_enabled_sources_at_refused_local(seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0)
         worker.start()
         worker.tick()
@@ -863,21 +929,21 @@ class TestWorker:
         worker2.stop()
 
     def test_47_queue_bounded(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0, max_queue=5)
         for i in range(10):
             worker._enqueue(f"news_{i}", priority=0.5)
         assert worker._jobs.qsize() <= 5
 
     def test_48_queue_dedup(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0)
         worker._enqueue("news_dup", priority=0.5)
         assert worker._enqueue("news_dup", priority=0.9) is False  # no dup jobs
         assert worker._queued_ids == {"news_dup"}
 
     def test_49_worker_status_serializable(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         worker = NewsWorker(engine=engine, interval_sec=0.0)
         status = format_news_worker_status(worker)
         assert "running" in status and "queue_size" in status
@@ -911,7 +977,7 @@ class TestDatabase:
         assert news_db.get_impacts("news_heal")  # impacts rebuilt from payload
 
     def test_53_context_cache_bounded(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         ctx = engine.current_context()
         assert isinstance(ctx, CurrentNewsContext)
         ctx2 = engine.current_context()
@@ -925,18 +991,18 @@ class TestDatabase:
 
 class TestEngine:
     def test_54_engine_health_available(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         health = engine.health()
         assert "available" in health
         assert "db" in health
 
     def test_55_engine_self_heal(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         result = engine.self_heal()
         assert result["status"] == "SUCCESS"
 
     def test_56_article_analysis_by_id(self, seeded_db):
-        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)))
+        engine = NewsEngine(config=NewsConfig(db_path=str(seeded_db.db_path)), db=seeded_db)
         engine.db.insert_article(
             {
                 "article_id": "news_aid",

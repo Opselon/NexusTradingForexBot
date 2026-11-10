@@ -31,9 +31,6 @@ independent adversarial angles (brief §30/§26).
 | `test_qa_deep_observability_evidence.py` | 8 | evidence preservation (OBS-1..7) | seeded + bounded threads |
 | `test_qa_deep_execution_safety.py` | 4 | execution safety (EXEC-1..4) | structural |
 
-Helper: `tests/helpers/fault_injection.py` (`FaultPoint` — deterministic,
-count-based boundary fault injector).
-
 ## 3. Rules
 
 1. **Offline by default.** No network, no MT5, no package downloads. Any
