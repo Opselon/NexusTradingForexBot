@@ -535,7 +535,13 @@ jobs:
     # Back to 10 when tier-1 returns / the venv is warm.
     # Leaf PRs (targeted selection, ~7 files) run in ~1-2 min; the
     # expanded suite is the remaining wall — see docs/CI_ARCHITECTURE.md.
-    timeout-minutes: 60
+    # TEMPORARY (2026-11-10, PR #740 diagnostics): the full-suite
+    # fallback (434 files, deleted dependency_commands.py has no test
+    # mapping) reached 99% in ~52 min then hit the 60-min cap, so the
+    # junit.xml was never written and the 39 failing tests are unnamed.
+    # 90 min lets this one-off fallback run finish and name its failures.
+    # Restore to 60 after PR #740 merges (and to 10 when tier-1 returns).
+    timeout-minutes: 90
 
     env:
       NSE_RUNNER_CLASS: ${{ needs.runner-select.outputs.runner_class }}
