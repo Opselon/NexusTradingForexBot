@@ -18,6 +18,7 @@ import contextlib
 import os
 import sqlite3
 import sys
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,6 +45,19 @@ from .state_taxonomy import (
 )
 
 logger = get_logger("nexus_scalp.release.health")
+
+# Serializes full health sweeps process-wide. HealthEngine().overall() /
+# run_all() runs native-heavy checks (subprocess git, importlib.metadata,
+# polars collect) and is called from several threads at once: the v1 prewarm
+# daemon thread (api_v1_wiring._warm_bound via _health_block), the legacy
+# /health endpoint (diagnostics_state_routes.health_probe, which calls
+# overall() directly), and request threads. Concurrent sweeps raced in
+# native code and segfaulted an xdist worker (gw0, PR #740 run 42846477184)
+# and made /health return 503/UNHEALTHY (KeyError: 'verdict' in
+# test_health_endpoint_verdict_uses_canonical_checks, run 42862501569).
+# One lock here is the single choke point for every sweep, whatever the
+# caller; _health_block's own lock additionally dedupes via its cache.
+_SWEEP_LOCK = threading.Lock()
 
 # Categories known to the diagnostics/health contract.
 ALL_CATEGORIES = [
@@ -1746,6 +1760,13 @@ class HealthEngine:
         )
 
     def run_all(self) -> list[HealthEntry]:
+        # The whole sweep runs under _SWEEP_LOCK: concurrent callers (prewarm
+        # thread, /health, request threads) must never execute the native
+        # checks at the same time. See the module-level _SWEEP_LOCK comment.
+        with _SWEEP_LOCK:
+            return self._run_all_locked()
+
+    def _run_all_locked(self) -> list[HealthEntry]:
         checks: list[tuple[str, Callable[[], HealthEntry]]] = [
             ("SYSTEM", self.check_system),
             ("RUNTIME", self.check_runtime),

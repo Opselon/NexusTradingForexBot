@@ -32,6 +32,7 @@ from typing import Any
 
 import yaml
 from fastapi import HTTPException
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from nexus_scalp.database.maintenance_gate import engine_start_guard, migration_guard
@@ -558,9 +559,19 @@ def register_diagnostics_state_routes(
                     critical,
                 )
             if verdict == "NOT READY" or critical:
-                raise HTTPException(
+                # 503 keeps the Docker-healthcheck contract (unhealthy), but
+                # the verdict payload is the TOP-LEVEL body — NOT wrapped
+                # under an HTTPException "detail" key. Readers (the /health
+                # contract test, docker/healthcheck.sh) read data["verdict"]
+                # directly; the old raise hid it one level down, so any
+                # non-READY verdict (e.g. DEGRADED on a fresh checkout,
+                # where the DATA check FAILs because the canonical bars file
+                # is gitignored) surfaced as KeyError: 'verdict' instead of
+                # the verdict itself. Status code, verdict, checks and the
+                # frontend block are all unchanged.
+                return JSONResponse(
                     status_code=503,
-                    detail={
+                    content={
                         "verdict": verdict,
                         "checks": checks,
                         "critical_failures": critical,
@@ -579,13 +590,15 @@ def register_diagnostics_state_routes(
                 # the build resolved. Only this `frontend` key is new.
                 "frontend": _frontend_block(),
             }
-        except HTTPException:
-            raise
         except Exception as exc:
             logger.warning("health probe unhealthy", exc_info=exc)
-            raise HTTPException(
-                status_code=503, detail={"verdict": "UNHEALTHY", "error": type(exc).__name__}
-            ) from exc
+            # Same top-level shape as the verdict path above: the sweep
+            # itself failed, so there is no verdict — report UNHEALTHY
+            # directly instead of hiding it under "detail".
+            return JSONResponse(
+                status_code=503,
+                content={"verdict": "UNHEALTHY", "error": type(exc).__name__},
+            )
 
     # TASK-11: Database health / hygiene state (real backend data — never fake).
     @app.get("/api/db/hygiene")
