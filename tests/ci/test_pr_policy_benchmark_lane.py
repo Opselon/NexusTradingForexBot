@@ -32,6 +32,13 @@ Quality-lane failure) or silently drop one (which would delete the
 protection entirely). A new wall-clock budget assertion anywhere in the
 critical suite must be added to WALL_CLOCK_NODES here AND to the
 deselect + dedicated step in every coverage lane.
+
+TEMPORARY (2026-11-10, user-approved): the Quality planner run is
+uninstrumented on PR/push runs (COV_FLAGS is empty unless MODE=full),
+so the suite fits the 10-min cap on the shared tier-1 box without the
+coverage tracer. The rule above still binds every instrumented
+invocation (FULL runs); the budget nodes still run in the dedicated
+uninstrumented step on every PR.
 """
 
 from __future__ import annotations
@@ -83,12 +90,28 @@ def _code(run: str) -> str:
 
 
 def test_ci_quality_tests_deselects_wall_clock_nodes_from_coverage_run() -> None:
-    """ci.yml quality-tests: the planner run deselects the budget nodes."""
+    """ci.yml quality-tests: the planner run deselects the budget nodes.
+
+    Coverage is TEMPORARY-skipped on PR/push runs (2026-11-10): the
+    planner run carries --cov only on FULL runs (MODE=full), via
+    COV_FLAGS. The deselects stay in every mode — on FULL runs the
+    planner run IS instrumented, so the budget nodes must be deselected
+    from it; on PR runs they still run in the dedicated uninstrumented
+    budget step.
+    """
     ci = _load("ci.yml")
     steps = _steps(ci["jobs"]["quality-tests"])
     planner = _named(steps, "Planner-driven pytest")
     run = _run(planner)
-    assert "--cov=src" in run, "quality-tests planner run must stay coverage-instrumented"
+    # --cov exists only behind the MODE=full gate (COV_FLAGS); the
+    # --pytest-extra itself must not hardcode coverage.
+    assert 'COV_FLAGS=""' in run, "planner run must default to no coverage (PR runs)"
+    assert 'if [ "$MODE" = "full" ]; then COV_FLAGS="--cov=src' in run, (
+        "planner run must stay coverage-instrumented on FULL runs (schedule / full dispatch)"
+    )
+    extra = next(line for line in run.splitlines() if line.strip().startswith("--pytest-extra"))
+    assert "$COV_FLAGS" in extra, "planner run must pass coverage via COV_FLAGS"
+    assert "--cov" not in extra, "planner run must not hardcode --cov in --pytest-extra"
     for node in WALL_CLOCK_NODES:
         assert f"--deselect {node}" in run, (
             f"quality-tests planner run must deselect the wall-clock budget node {node}"

@@ -731,10 +731,21 @@ jobs:
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
+          # TEMPORARY (2026-11-10, user-approved): skip coverage
+          # measurement on PR/push runs (MODE=targeted) — the coverage
+          # tracer inflates pytest past the 10-min cap on the shared
+          # tier-1 box (expanded suite ~11m with coverage; the OS lane
+          # without --cov passed on the same box). Full validation runs
+          # (MODE=full: schedule / full dispatch) keep coverage, and the
+          # coverage gates below record N/A on PR runs instead of failing.
+          # Re-enable when the tier-1 suite fits the cap with coverage.
+          COV_FLAGS=""
+          if [ "$MODE" = "full" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
           # No HTML coverage report on this lane: it costs a full
           # render pass over 784 files and nobody reads htmlcov in CI.
-          # term-missing feeds the coverage step; xml feeds the
-          # critical-file gate on expanded plans.
+          # Coverage (COV_FLAGS) is TEMPORARILY skipped on PR/push runs
+          # (2026-11-10): the xml feeds the critical-file gate on full
+          # runs only, and the coverage gates record N/A when it is absent.
           #
           # NOTE: these comments must stay ABOVE the command, never inside
           # its backslash continuation — a '#' line inside a continuation
@@ -771,7 +782,7 @@ jobs:
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
             --xdist "$XDIST" \
-            --pytest-extra "--durations=25 --cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents --deselect tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark --deselect tests/e2e/test_smoke_chain.py" \
+            --pytest-extra "--durations=25 $COV_FLAGS --junitxml=$CI_RESULTS_DIR/pytest/junit.xml -q --deselect tests/unit/news/ingest/test_payload_value_gate_benchmark.py::test_gate_cost_is_far_cheaper_than_the_write_it_prevents --deselect tests/integration/test_model_promotion_pipeline_e2e.py::test_promotion_transaction_happy_path_and_benchmark --deselect tests/e2e/test_smoke_chain.py" \
             --out-dir "$CI_RESULTS_DIR/test-plan" \
             --runner-name "${{ runner.name }}" \
             --attempt "${{ github.run_attempt }}" \
@@ -848,6 +859,13 @@ jobs:
           import json, os, re
           root = os.environ["CI_RESULTS_DIR"]
           pct = None
+          # TEMPORARY (2026-11-10): coverage is skipped on PR/push runs,
+          # so no coverage.xml is produced. That absence is intentional —
+          # record N/A (passing, explicit) instead of "errored". The
+          # pytest check itself still fails the job if pytest failed, so
+          # nothing is hidden. Full runs keep coverage and take the
+          # normal path below.
+          skipped = not os.path.isfile(os.path.join(root, "pytest", "coverage.xml"))
           log_path = os.path.join(root, "pytest", "pytest.txt")
           try:
               with open(log_path, encoding="utf-8", errors="replace") as fh:
@@ -857,12 +875,17 @@ jobs:
                           pct = float(m.group(1))
           except Exception:
               pass
-          status = "passed" if pct is not None else "errored"
+          if skipped:
+              status = "passed"
+              detail = "coverage skipped on PR runs (temporary 2026-11-10) — enforced in full validation runs"
+          else:
+              status = "passed" if pct is not None else "errored"
+              detail = f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log"
           payload = {
               "check": "coverage",
               "status": status,
               "exit_code": 0,
-              "detail": f"{pct:.1f}% line coverage" if pct is not None else "coverage% not found in log",
+              "detail": detail,
               "percent": pct,
           }
           with open(os.path.join(root, "run-info", "coverage.json"), "w") as fh:
@@ -879,6 +902,15 @@ jobs:
         run: |
           set +e
           mkdir -p "$CI_RESULTS_DIR/coverage"
+          # TEMPORARY (2026-11-10): coverage is skipped on PR/push runs,
+          # so there is no coverage.xml to gate on. Record N/A (passing,
+          # explicit) — per-file floors are enforced in full validation
+          # runs (schedule / full dispatch), same as for targeted plans.
+          if [ ! -f "$CI_RESULTS_DIR/pytest/coverage.xml" ]; then
+            python scripts/ci/make_ci_results.py check "$CI_RESULTS_DIR" critical_coverage 0 "coverage skipped on PR runs (temporary 2026-11-10) — per-file floors enforced in full validation runs" || true
+            echo "critical-file coverage gate: NOT APPLICABLE (no coverage data; floors enforced in full runs)"
+            exit 0
+          fi
           # CI quota diet + planner integration: a TARGETED plan executes a
           # deliberate SUBSET — per-file floors are enforced in full
           # validation runs (schedule / full dispatch) only, and the N/A is

@@ -156,7 +156,7 @@ reduced / advisory form.
 | Lint, format, types, static gates (`quality-lint`) | ✓ | ✓ | ✓ | ✓ | — |
 | C17 planner validation + targeted tests (`quality-tests`) | ✓ | ✓ | ✓ | ✓ | Quality owns test execution on PRs (one execution per PR, 2026-11-09). The OS Linux legs SKIP on PR/push/schedule and run FULL (dispatch) or SKEW (dispatch) only — they used to re-run the same selection back-to-back. |
 | Mandatory critical safety tests (risk / accounting / execution / model-contract files in the critical suite) | ✓ | ✓ | ✓ | ✓ | — |
-| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans the gate records N/A explicitly, never a silent skip. |
+| Critical-file coverage gate | ◐ | ✓ | ✓ | ✓ | Per-file floors enforced on expanded/full plans only; on targeted plans — and whenever coverage is skipped (TEMPORARY 2026-11-10: no --cov on PR runs, so the suite fits the 10-min cap on tier-1) — the gate records N/A explicitly, never a silent skip. |
 | Wall-clock perf-budget assertion (payload value-gate) | ✓ | ✓ | ✓ | ✓ | MOVED (2026-11-09): out of the coverage-instrumented run into a dedicated uninstrumented single-process step in the same lane — the assertion still runs on every PR, blocking; only the instrumentation changed. See the rule below. |
 | JS tests (`js-tests.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
 | Go API (`go-api.yml`, path-filtered) | ✓ | ✓ | — | ✓ | — |
