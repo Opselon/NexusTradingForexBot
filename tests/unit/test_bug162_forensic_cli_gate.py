@@ -42,6 +42,7 @@ def _plain(text: str) -> str:
     forced on, so plain flag substrings never match the raw output)."""
     return _ANSI_RE.sub("", text)
 
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 VALID_GATE_EXITS = {0, 1, 2, 3}

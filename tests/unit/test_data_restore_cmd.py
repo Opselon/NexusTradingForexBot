@@ -47,6 +47,7 @@ def _plain(text: str) -> str:
     forced on, so plain flag substrings never match the raw output)."""
     return _ANSI_RE.sub("", text)
 
+
 #: The exact schema `nexus data-fetch` writes and every consumer reads.
 CANON_COLUMNS = [
     "time",

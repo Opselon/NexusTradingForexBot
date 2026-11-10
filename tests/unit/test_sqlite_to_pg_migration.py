@@ -55,6 +55,7 @@ def _plain(text: str) -> str:
     forced on, so plain flag substrings never match the raw output)."""
     return _ANSI_RE.sub("", text)
 
+
 # The lane's ISOLATED PostgreSQL instance. NEVER the live localhost:5432 —
 # that one holds live engine tables and its credentials are not repo values.
 PG_URL_ENV = "NSE_PG_TEST_URL"

@@ -789,7 +789,9 @@ def execute_http_post(
             timeout_exc = getattr(httpx, "TimeoutException", None)
             if timeout_exc is not None and isinstance(e, timeout_exc):
                 return GateResult(
-                    ok=False, category=FailureCategory.TIMEOUT, reason=f"timeout: {type(e).__name__}"
+                    ok=False,
+                    category=FailureCategory.TIMEOUT,
+                    reason=f"timeout: {type(e).__name__}",
                 )
             return GateResult(
                 ok=False,
