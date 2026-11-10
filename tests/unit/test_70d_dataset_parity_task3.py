@@ -35,8 +35,17 @@ from nexus_scalp.model_generation.schema_v2 import (
 )
 from tests.helpers.liquidity_fixtures import steady_bars
 
+# M1 bars per default fixture frame. 200 was the original size, but
+# compute_70d_frame re-runs the 50D + liquidity engines per output row
+# (146 rows at n=200), so every call cost ~2s locally / ~3.5s in CI and
+# this file called it 8x. 120 bars still exercises the full pipeline
+# (55-bar causal warm-up, HTF aggregation, liquidity, clamping) with 66
+# output rows at ~45% of the cost; the news test's event was moved to
+# 01:00 so it still falls inside the shorter frame.
+_DEFAULT_BARS = 120
 
-def _frame(n: int = 200, price: float = 3300.0, step: float = 0.0) -> pl.DataFrame:
+
+def _frame(n: int = _DEFAULT_BARS, price: float = 3300.0, step: float = 0.0) -> pl.DataFrame:
     t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
     bars = steady_bars(n, price=price, step=step, t0=t0)
     # bars_to_frame expects rows with keys; build manually to match schema_v2
@@ -81,8 +90,23 @@ def _news_frame(ts: datetime) -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 
 
-def test_p06_70d_frame_columns_and_dimension() -> None:
-    frame = compute_70d_frame(_frame())
+@pytest.fixture(scope="module")
+def default_frame() -> pl.DataFrame:
+    """The canonical no-news 70D frame, computed ONCE per module.
+
+    Five tests below read the identical default input; recomputing it per
+    test re-ran the full per-row 50D + liquidity engines (~2s locally,
+    ~3.5s in CI per call). Polars frames are never mutated by the tests
+    (every polars op returns a new frame), so sharing is safe. The news
+    test and the reproducibility test keep their own computations: the
+    news frame differs by input, and p19 must prove two INDEPENDENT runs
+    agree, so caching its two calls would void the assertion.
+    """
+    return compute_70d_frame(_frame())
+
+
+def test_p06_70d_frame_columns_and_dimension(default_frame: pl.DataFrame) -> None:
+    frame = default_frame
     feat_cols = [c for c in frame.columns if c.startswith("feat_")]
     assert len(feat_cols) == 70
     assert frame.columns.count("feat_69") == 1
@@ -90,8 +114,8 @@ def test_p06_70d_frame_columns_and_dimension() -> None:
     assert "liquidity_status" in frame.columns
 
 
-def test_p06_70d_frame_values_valid() -> None:
-    frame = compute_70d_frame(_frame())
+def test_p06_70d_frame_values_valid(default_frame: pl.DataFrame) -> None:
+    frame = default_frame
     feat_cols = [c for c in frame.columns if c.startswith("feat_")]
     arr = frame.select(feat_cols).to_numpy()
     assert arr.shape[1] == 70
@@ -100,26 +124,30 @@ def test_p06_70d_frame_values_valid() -> None:
     assert np.isfinite(arr).all()
     assert (arr >= -3.0).all() and (arr <= 3.0).all()
     # causal warm-up: rows < min_bars are excluded
-    assert frame.height <= 200 - 54
+    assert frame.height <= _DEFAULT_BARS - 54
 
 
-def test_p06_news_disabled_is_explicit() -> None:
-    frame = compute_70d_frame(_frame(), news_frame=None)
+def test_p06_news_disabled_is_explicit(default_frame: pl.DataFrame) -> None:
+    frame = default_frame
     statuses = frame["news_status"].unique().to_list()
     assert statuses == [FeatureSourceState.FEATURE_DISABLED.value]
 
 
 def test_p06_news_enabled_populates_news_block() -> None:
+    # Event at 01:00 sits inside the default 120-bar frame (00:00-01:59),
+    # so rows from 01:00 on see it as the latest causally-prior event.
+    # (news_context_at applies no freshness decay — the latest prior
+    # event's fields are returned verbatim — so the exact hour is free.)
     frame = compute_70d_frame(
-        _frame(), news_frame=_news_frame(datetime(2026, 8, 1, 3, 0, tzinfo=UTC))
+        _frame(), news_frame=_news_frame(datetime(2026, 8, 1, 1, 0, tzinfo=UTC))
     )
     feat_50 = frame["feat_50"].to_list()
     # news block should have non-zero relevance from the event
     assert any(v != 0.0 for v in feat_50)
 
 
-def test_p06_liquidity_status_available() -> None:
-    frame = compute_70d_frame(_frame())
+def test_p06_liquidity_status_available(default_frame: pl.DataFrame) -> None:
+    frame = default_frame
     statuses = frame["liquidity_status"].unique().to_list()
     assert statuses == [FeatureSourceState.FEATURE_AVAILABLE.value]
 
@@ -129,8 +157,8 @@ def test_p06_liquidity_status_available() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_p08_frame_matches_canonical_contract() -> None:
-    frame = compute_70d_frame(_frame())
+def test_p08_frame_matches_canonical_contract(default_frame: pl.DataFrame) -> None:
+    frame = default_frame
     feat_cols = [c for c in frame.columns if c.startswith("feat_")]
     row = frame.tail(1).row(0, named=True)
     vec = [float(row[c]) for c in feat_cols]

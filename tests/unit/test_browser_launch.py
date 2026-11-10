@@ -22,6 +22,7 @@ opener gives the same evidence without touching the network stack.
 
 from __future__ import annotations
 
+import re
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -32,6 +33,20 @@ import pytest
 from nexus_scalp.cli import browser_launch
 
 REPO = Path(__file__).resolve().parents[2]
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes.
+
+    Typer/Rich styles option names as separate spans (``-`` + ``-no`` +
+    ``-browser``), so with colour forced on (CI runner env) the plain
+    substring ``--no-browser`` never appears in the captured stdout even
+    though the flag renders. Strip escapes before asserting on flags —
+    same pattern as tests/unit/test_training_dataset_source.py.
+    """
+    return _ANSI_RE.sub("", text)
 
 
 # ---------------------------------------------------------------------------
@@ -492,7 +507,7 @@ def test_start_help_advertises_no_browser() -> None:
 
     res = CliRunner().invoke(app, ["start", "--help"])
     assert res.exit_code == 0
-    assert "--no-browser" in res.stdout
+    assert "--no-browser" in _plain(res.stdout)
 
 
 def test_facade_reexports_the_frozen_seam() -> None:
@@ -512,7 +527,11 @@ def test_engine_boot_gate_is_wired_into_the_serve_loop() -> None:
     assert "SERVER READY" in src
     # The gate must be scheduled on the real loop, and the ACTUAL bind port
     # (uvicorn_config.port) must be what is opened — never a literal 8080/8081.
-    assert "asyncio.create_task(" in src
+    # OBS-011 (#685): the scheduling goes through the named-task seam
+    # spawn_named_task (which wraps asyncio.create_task so a probe failure is
+    # attributable) — the literal create_task call moved into
+    # observability/task_spawner.py, so pin the seam here, not the raw call.
+    assert "spawn_named_task(" in src
     # The gate reads the resolved host/port — never a literal 8080/8081. When
     # the Go API plane is up (Wave 5) both resolve from ITS origin; otherwise
     # they fall back to the Python bind host/port.

@@ -25,6 +25,7 @@ Contract under test (CONTRACT §2 LANE 2):
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import polars as pl
@@ -36,6 +37,16 @@ from nexus_scalp.cli.main import app
 from nexus_scalp.release import exit_codes as xc
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
+
 
 #: The exact schema `nexus data-fetch` writes and every consumer reads.
 CANON_COLUMNS = [
@@ -127,7 +138,7 @@ def _json_of(res) -> dict:
 def test_command_registered_with_documented_options() -> None:
     res = _invoke(["data-restore", "--help"])
     assert res.exit_code == 0
-    text = res.stdout
+    text = _plain(res.stdout)
     for flag in ("--source", "--symbol", "--timeframe", "--out", "--json"):
         assert flag in text
     assert "--force" in text

@@ -16,6 +16,7 @@ compared against, so a surface drifting from canonical truth fails here.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -28,7 +29,7 @@ from nexus_scalp.release.state_truth import resolve_field
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
-def _cli_version_payload() -> dict[str, Any]:
+def _cli_version_payload(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Fresh-subprocess ``nexus version --json`` (CLI surface of truth)."""
     proc = subprocess.run(
         [sys.executable, "-m", "nexus_scalp.cli.main", "version", "--json"],
@@ -37,6 +38,7 @@ def _cli_version_payload() -> dict[str, Any]:
         text=True,
         timeout=180,
         check=False,
+        env=env,
     )
     assert proc.returncode == 0, proc.stderr[-800:]
     lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
@@ -45,20 +47,57 @@ def _cli_version_payload() -> dict[str, Any]:
     return payload
 
 
-@pytest.fixture
-def cli_payload() -> dict[str, Any]:
-    """Fresh-subprocess ``nexus version --json`` (CLI surface of truth).
+def _isolated_cli_env(run_dir: Path) -> dict[str, str]:
+    """The subprocess env for the shared CLI payload: a fresh, EMPTY home and
+    databases, mirroring the conftest per-test redirects (HOME, settings DB,
+    audit DB, data root).
 
-    Function-scoped DELIBERATELY (not module): the conftest autouse
-    fixture redirects HOME per test, and the CLI subprocess inherits
-    os.environ — so a module-scoped payload would read the RUNNER's real
-    HOME (nexus.yaml -> PAPER) while the in-process matrix resolver reads
-    the redirected empty HOME (UNKNOWN), and the mode-parity tests fail
-    with PAPER != UNKNOWN. Function scope runs the subprocess after the
-    redirect, so both surfaces read the same (empty) HOME. Costs one
-    subprocess spawn per test that requests it; correctness over speed.
+    This is what makes a MODULE-scoped payload safe. The old function-scoped
+    fixture existed because a module-scoped spawn would inherit the RUNNER's
+    real HOME (nexus.yaml -> PAPER) while the in-process matrix resolver
+    reads the redirected empty HOME (UNKNOWN) — PAPER != UNKNOWN. Here the
+    subprocess never sees the real HOME at all: it gets its own empty one,
+    so both surfaces read the same (empty) configuration. Verified: the
+    payload from two distinct empty HOMEs differs only in timestamp fields
+    (``generated_at`` / ``checked_at``) — no compared field embeds a path.
     """
-    return _cli_version_payload()
+    home_dir = run_dir / "home"
+    tmp_dir = run_dir / "tmp"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    env.update(
+        {
+            "HOME": str(home_dir),
+            "USERPROFILE": str(home_dir),
+            "LOCALAPPDATA": str(home_dir),
+            "APPDATA": str(home_dir),
+            "TMPDIR": str(tmp_dir),
+            "TEMP": str(tmp_dir),
+            "TMP": str(tmp_dir),
+            "NEXUS_SETTINGS_DB": str(run_dir / "app_settings.db"),
+            "NEXUS_AUDIT_DB": str(run_dir / "audit.db"),
+            "NSE_DATABASE__SQLITE_PATH": str(run_dir / "audit.db"),
+            "NEXUS_DATA_ROOT": str(run_dir / "data"),
+            "NEXUS_PAPER_PERSIST": "1",
+        }
+    )
+    return env
+
+
+@pytest.fixture(scope="module")
+def cli_payload(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
+    """One fresh-subprocess ``nexus version --json`` shared by the module.
+
+    Was function-scoped (one ~6s interpreter spawn per test, 8 spawns per
+    file on CI) for the HOME-redirect reason above; the controlled empty env
+    in ``_isolated_cli_env`` removes that reason — the payload is computed
+    once, under exactly the empty configuration every test's in-process
+    resolver sees. No test mutates the payload (all read it), so sharing
+    cannot leak state between tests.
+    """
+    run_dir = tmp_path_factory.mktemp("cli_truth_home")
+    return _cli_version_payload(_isolated_cli_env(run_dir))
 
 
 @pytest.fixture(scope="module")

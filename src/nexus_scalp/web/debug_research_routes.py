@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import sqlite3
 import time
 from datetime import UTC, datetime
 from typing import Any
@@ -1107,6 +1108,22 @@ def register_debug_research_routes(
                     " FROM strategy_intelligence_registry GROUP BY lifecycle_state"
                 )
                 lifecycle_counts = {str(r["lifecycle_state"]): int(r["n"]) for r in rows}
+            elif getattr(engine.audit, "_is_sqlite", False):
+                # SQLite has no registered read plane by design
+                # (research_read_plane() returns None); read the file DB
+                # directly — the same fast path research/store.py rows()
+                # uses. Guarded by _is_sqlite so the PostgreSQL URI on
+                # _db_path never reaches a raw connect (RUNTIME-INTEGRITY-002).
+                conn = sqlite3.connect(engine.audit._db_path, timeout=5.0)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    rows = conn.execute(
+                        "SELECT lifecycle_state, COUNT(*) AS n"
+                        " FROM strategy_intelligence_registry GROUP BY lifecycle_state"
+                    ).fetchall()
+                    lifecycle_counts = {str(r["lifecycle_state"]): int(r["n"]) for r in rows}
+                finally:
+                    conn.close()
         except Exception:
             lifecycle_counts = {}
 
@@ -1126,14 +1143,32 @@ def register_debug_research_routes(
         bounded = max(1, min(int(limit), 500))
         try:
             plane = engine.audit.research_read_plane()
-            if plane is None:
-                return []
-            return list(
-                plane.query(
-                    "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?",
-                    (bounded,),
+            if plane is not None:
+                return list(
+                    plane.query(
+                        "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?",
+                        (bounded,),
+                    )
                 )
-            )
+            if getattr(engine.audit, "_is_sqlite", False):
+                # SQLite has no registered read plane by design
+                # (research_read_plane() returns None); read the file DB
+                # directly — the same fast path research/store.py rows()
+                # uses. Guarded by _is_sqlite so the PostgreSQL URI on
+                # _db_path never reaches a raw connect (RUNTIME-INTEGRITY-002).
+                conn = sqlite3.connect(engine.audit._db_path, timeout=5.0)
+                try:
+                    conn.row_factory = sqlite3.Row
+                    return [
+                        dict(r)
+                        for r in conn.execute(
+                            "SELECT * FROM strategy_intelligence_registry ORDER BY updated_at DESC LIMIT ?",
+                            (bounded,),
+                        ).fetchall()
+                    ]
+                finally:
+                    conn.close()
+            return []
         except Exception as e:
             log_web_error(
                 logger, "/api", None, e, context={"msg": "Failed to retrieve experience strategies"}
@@ -2477,13 +2512,6 @@ def register_debug_research_routes(
 
     app.include_router(factory_router)
 
-    # =========================================================================
-    # DEPENDENCY INTELLIGENCE (2026-08-27): canonical import + DI + architecture
-    # graph for NSE engineering/debugging. AST-only, never boots the engine.
-    # =========================================================================
-    from nexus_scalp.web.dependency_routes import router as dependency_router
-
-    app.include_router(dependency_router)
     # Thin handlers over the News AI service; reuses the Factory LLM provider.
     # =========================================================================
     from nexus_scalp.web.news_intelligence_routes import router as news_intel_router

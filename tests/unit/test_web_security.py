@@ -291,7 +291,15 @@ class TestSSESanitization:
         so an unauthenticated probe now (correctly) receives 401 before any
         SSE frame. The token is set via env for BOTH the middleware (server
         side) and this raw request (client side).
+
+        HEARTBEAT-FIRST (SSE-CONNECT-001): the stream legitimately opens
+        with an empty keepalive frame (``event: heartbeat`` / ``data: {}``)
+        before the first heavy snapshot, so the FIRST frame is NOT the
+        state snapshot. Read frames until the ``event: state`` snapshot
+        arrives and assert on that — asserting on the first frame would
+        test the heartbeat, not the snapshot.
         """
+        import json
         import socket
         import threading
         import time
@@ -328,27 +336,55 @@ class TestSSESanitization:
                 sock.settimeout(15)
                 buf = b""
                 deadline = time.time() + 15
-                while b"\n\n" not in buf and time.time() < deadline:
-                    chunk = sock.recv(4096)
+                state_obj = None
+                # Keep reading until the state snapshot arrives. The first
+                # frame is the empty heartbeat keepalive, so a single-frame
+                # read would assert on `{}` instead of the snapshot.
+                while state_obj is None and time.time() < deadline:
+                    try:
+                        chunk = sock.recv(4096)
+                    except TimeoutError:
+                        break
                     if not chunk:
                         break
                     buf += chunk
-                text = buf.decode("utf-8", errors="replace")
-                assert "\n\n" in text, f"no SSE frame received; got: {text[:200]}"
-                # First frame body (after headers) is the 'state' snapshot.
-                head, _, body = text.partition("\r\n\r\n")
-                assert "200" in head, f"SSE status not 200: {head[:120]}"
-                assert "Traceback" not in body
-                assert "RuntimeError" not in body
-                assert "file://" not in body
-                payload_line = next(
-                    (ln for ln in body.splitlines() if ln.startswith("data: ")), None
+                    text = buf.decode("utf-8", errors="replace")
+                    if "\r\n\r\n" not in text:
+                        continue  # headers not complete yet
+                    head, _, body = text.partition("\r\n\r\n")
+                    assert "200" in head, f"SSE status not 200: {head[:120]}"
+                    # Sanitization applies to EVERY frame, heartbeat included.
+                    assert "Traceback" not in body
+                    assert "RuntimeError" not in body
+                    assert "file://" not in body
+                    # Only parse frames terminated by "\n\n". The trailing
+                    # segment after the last terminator is a partial frame
+                    # still in flight — a recv() boundary can fall inside
+                    # the multi-KB state snapshot (CI cut it at char 4064,
+                    # inside a JSON string) — so never json.loads() it.
+                    # It stays in `buf` and is parsed once the next chunk
+                    # completes it.
+                    frames = body.split("\n\n")
+                    for raw_frame in frames[:-1]:
+                        frame = raw_frame.strip()
+                        if not frame:
+                            continue
+                        event = None
+                        payload_line = None
+                        for ln in frame.splitlines():
+                            if ln.startswith("event: "):
+                                event = ln[len("event: ") :].strip()
+                            elif ln.startswith("data: "):
+                                payload_line = ln
+                        if payload_line is None or event != "state":
+                            continue
+                        state_obj = json.loads(payload_line[len("data: ") :])
+                        break
+                assert state_obj is not None, (
+                    "no state snapshot frame received; got: "
+                    f"{buf.decode('utf-8', errors='replace')[:300]}"
                 )
-                assert payload_line is not None, "no data: line in SSE frame"
-                import json
-
-                obj = json.loads(payload_line[len("data: ") :])
-                assert "engine_running" in obj
+                assert "engine_running" in state_obj
         finally:
             server.should_exit = True
             thread.join(timeout=5)

@@ -32,9 +32,6 @@ wall-clock figure.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
-
 import polars as pl
 import pytest
 
@@ -79,18 +76,37 @@ def _feature_diff_count(canon: pl.DataFrame, fast: pl.DataFrame) -> int:
     return diffs
 
 
-def _cpu_ms(fn: Callable[[], Any]) -> float:
-    """CPU milliseconds consumed by one call.
-
-    Reads ``time.process_time()`` — the same source ``budget_cpu_ms`` uses —
-    per leg so the speedup test can compare the two builders directly rather
-    than reading the stopwatch's combined total.
-    """
+def _build_both(real_bars: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame, float, float]:
+    """Build canonical + fast frames once, timing each leg (see built_frames)."""
     import time
 
     start = time.process_time()
-    fn()
-    return (time.process_time() - start) * 1000.0
+    canon = compute_70d_frame(real_bars, news_frame=None)
+    canon_ms = (time.process_time() - start) * 1000.0
+    start = time.process_time()
+    fast = compute_70d_frame_fast(real_bars, news_frame=None)
+    fast_ms = (time.process_time() - start) * 1000.0
+    return canon, fast, canon_ms, fast_ms
+
+
+@pytest.fixture(scope="module")
+def built_frames(real_bars: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame, float, float]:
+    """Both builders run ONCE per module, timed back-to-back.
+
+    PERF (round 2): the two tests below used to build both frames
+    independently — 4 full builds of the 600-bar frame per module run
+    (canonical is the O(n^2) path, ~10s per build on the CI runner), which
+    was the whole ~40s file time. The parity test and the speedup test
+    consume the SAME two frames and the SAME back-to-back CPU timings, so
+    one shared build serves both: the timings are still real measurements
+    taken back-to-back on the same input in this process (exactly what the
+    speedup contract requires), and the parity assertions still compare
+    the full 600-bar frames — nothing is weakened, the duplicate work
+    is just gone. The module wall time halves (~40s -> ~20s), which also
+    shortens the test_current_module_has_no_skips meta-test that runs this
+    file as a subprocess.
+    """
+    return _build_both(real_bars)
 
 
 def test_synthetic_bars_satisfy_the_builder_contract(real_bars: pl.DataFrame) -> None:
@@ -110,10 +126,14 @@ def test_synthetic_bars_satisfy_the_builder_contract(real_bars: pl.DataFrame) ->
     assert _BAR_COUNT > 55  # past the builders' causal warm-up floor
 
 
-def test_bug106_incremental_byte_identical(real_bars: pl.DataFrame) -> None:
-    """TEST-TASK09-01: the incremental builder is byte-identical to canonical."""
-    canon = compute_70d_frame(real_bars, news_frame=None)
-    fast = compute_70d_frame_fast(real_bars, news_frame=None)
+def test_bug106_incremental_byte_identical(built_frames) -> None:
+    """TEST-TASK09-01: the incremental builder is byte-identical to canonical.
+
+    Frames come from the module-scoped ``built_frames`` fixture (both
+    builders run once per module — see its docstring); the parity
+    assertions themselves are unchanged.
+    """
+    canon, fast, _canon_ms, _fast_ms = built_frames
     assert canon.height == fast.height
     assert canon["timestamp"].to_list() == fast["timestamp"].to_list()
     assert len([c for c in canon.columns if c.startswith("feat_")]) == 70
@@ -121,7 +141,7 @@ def test_bug106_incremental_byte_identical(real_bars: pl.DataFrame) -> None:
     assert diffs == 0, f"{diffs} feature diffs between canonical and fast builders"
 
 
-def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
+def test_bug106_incremental_speedup(built_frames) -> None:
     """The fast builder must not be slower than canonical on the same input.
 
     ML-QA-019: measured in CPU time (``time.process_time()`` via the shared
@@ -129,6 +149,12 @@ def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
     CI runner a co-tenant load spike slows the wall clock with zero change
     in the code under test, and the old ``perf_counter()`` bound tripped on
     that noise.
+
+    The timings are the ones measured back-to-back by the module-scoped
+    ``built_frames`` fixture when it built both frames (same input, same
+    process) — re-running both builders here would double the module's
+    build count for no new evidence, since this test and the parity test
+    above consume the same two legs.
 
     Two contracts, in strength order:
 
@@ -144,8 +170,7 @@ def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
       code change. The canonical builder is the O(n^2) path, so its own
       runtime on this host is the right yardstick, and the ratio scales.
     """
-    canon_ms = _cpu_ms(lambda: compute_70d_frame(real_bars, news_frame=None))
-    fast_ms = _cpu_ms(lambda: compute_70d_frame_fast(real_bars, news_frame=None))
+    _canon, _fast, canon_ms, fast_ms = built_frames
     # 1. structural: the fast path is not slower than the O(n^2) canonical one
     assert fast_ms <= canon_ms, (
         f"the incremental builder consumed {fast_ms:.1f} ms CPU vs canonical "

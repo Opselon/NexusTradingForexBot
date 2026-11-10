@@ -127,6 +127,40 @@ class TestConfigValidation:
         assert res.state is ProviderState.AUTO_DISABLED
         assert calls == []  # NO network (steer 24)
 
+    def test_valid_config_clears_stale_config_error_disable(self) -> None:
+        """PR #740: one unconfigured provider must not poison the shared gate.
+
+        validate_config() with a missing key auto-disables the gate; a LATER
+        validate_config() with a valid config must clear that config-error
+        disable (re-validation). Otherwise every subsequent provider in the
+        same process sees available() == False — in CI an unconfigured
+        provider built by one test left the process-wide gate disabled, so
+        a later LLM test's population had zero LLM candidates.
+        """
+        gate, _ = make_gate()
+        reason, _ = gate.validate_config("", "http://host/v1", "m")
+        assert reason is DisableReason.API_KEY_MISSING
+        assert gate.health_snapshot()["auto_disabled"] is True
+        reason, _ = gate.validate_config("k", "http://host/v1", "m")
+        assert reason is DisableReason.NONE
+        snap = gate.health_snapshot()
+        assert snap["auto_disabled"] is False
+        assert snap["provider_state"] == ProviderState.AVAILABLE.value
+
+    def test_valid_config_does_not_clear_auth_failed_disable(self) -> None:
+        """401 auto-disable stays sticky until reconfigure() (key rotation):
+        a valid-shaped config says nothing about whether the key expired."""
+        gate, _ = make_gate()
+        res = gate.execute("k", result_auth)
+        assert res.ok is False
+        assert gate.health_snapshot()["auto_disabled"] is True
+        assert gate.health_snapshot()["auto_disabled_reason"] == DisableReason.AUTH_FAILED.value
+        reason, _ = gate.validate_config("k2", "http://host/v1", "m")
+        assert reason is DisableReason.NONE
+        assert gate.health_snapshot()["auto_disabled"] is True
+        gate.reconfigure()
+        assert gate.health_snapshot()["auto_disabled"] is False
+
 
 # ---------------------------------------------------------------------------
 # 2. 429 handling (steer 21, 26, 42): bounded retries, Retry-After, backoff

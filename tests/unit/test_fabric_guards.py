@@ -25,6 +25,7 @@ import re
 import sqlite3
 import sys
 import tokenize
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -73,7 +74,15 @@ def _baseline_offenders() -> frozenset[str]:
     (PR 2-4).  The guard asserts the set only ever SHRINKS: a new violation
     in a module not on this list fails CI immediately, while removing entries
     from this file is a visible, reviewable migration step.
+
+    Cached: the baseline file is read once per session instead of once per
+    parametrized test (~700 reads of the same 89-line file).
     """
+    return _read_baseline_offenders()
+
+
+@lru_cache(maxsize=1)
+def _read_baseline_offenders() -> frozenset[str]:
     if not _SRC_BASELINE.exists():
         return frozenset()
     return frozenset(
@@ -125,7 +134,14 @@ def _is_statement_position(all_tokens: list[Any], idx: int) -> bool:
     return True
 
 
-def _code_without_docstrings_comments(path: Path) -> str:
+# Stripped-code cache: the two whole-tree guards (PRAGMA, raw connect) scan
+# the same 773 files, and tokenizing every file twice was the file's whole
+# cost (16.2s + 11.2s locally). Production files do not change during a test
+# session, so the stripped text is computed once per file and shared.
+_STRIPPED_CODE_CACHE: dict[Path, str] = {}
+
+
+def _code_without_docstrings_comments(path: Path, needle: str | None = None) -> str:
     """Return the file's code with comments and docstrings stripped.
 
     The guards scan for ``PRAGMA`` and ``sqlite3.connect(`` as raw text, which
@@ -140,12 +156,36 @@ def _code_without_docstrings_comments(path: Path) -> str:
 
     A file that cannot be tokenized is returned verbatim rather than skipped:
     a syntax error must not silently exclude a file from the guard's scan.
+
+    ``needle`` is a whole-tree pre-filter: when the needle never appears in
+    the raw source, the stripped text cannot contain it either, so the file
+    is skipped without tokenizing (only ~29 of 773 files mention PRAGMA,
+    ~81 mention sqlite3). This is exact for every single-token occurrence —
+    all real PRAGMA / sqlite3.connect usages — because the stripped text is
+    built from the file's own token strings; the only construction it could
+    miss is a needle deliberately split across adjacent tokens (e.g. the
+    implicit concatenation ``"PRAG" "MA"``), which does not occur anywhere
+    in the tree (no ``PRAG`` substring exists outside ``PRAGMA``). Files
+    that DO mention the needle still go through the full tokenizer, so
+    docstring/comment mentions are excluded exactly as before.
     """
+    if needle is not None:
+        try:
+            raw = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        if needle not in raw:
+            return ""
+    cached = _STRIPPED_CODE_CACHE.get(path)
+    if cached is not None:
+        return cached
     try:
         with tokenize.open(path) as fh:
             tokens = list(tokenize.generate_tokens(fh.readline))
     except Exception:
-        return path.read_text(encoding="utf-8", errors="replace")
+        stripped = path.read_text(encoding="utf-8", errors="replace")
+        _STRIPPED_CODE_CACHE[path] = stripped
+        return stripped
 
     keep: list[str] = []
     for idx, tok in enumerate(tokens):
@@ -163,7 +203,9 @@ def _code_without_docstrings_comments(path: Path) -> str:
     # Tokens are unambiguous when concatenated: no separators are needed, and
     # inserting them would break the multi-token regexes (``sqlite3 . connect``
     # no longer matches ``sqlite3\\.connect``).
-    return "".join(keep)
+    stripped = "".join(keep)
+    _STRIPPED_CODE_CACHE[path] = stripped
+    return stripped
 
 
 def test_guard_no_pragma_outside_sqlite_infra() -> None:
@@ -177,7 +219,7 @@ def test_guard_no_pragma_outside_sqlite_infra() -> None:
         # where SQLite-specific behavior is allowed to live.
         if rel.startswith("database/") or rel.startswith("adapters/database/"):
             continue
-        text = _code_without_docstrings_comments(p)
+        text = _code_without_docstrings_comments(p, needle="PRAGMA")
         offenders.extend([f"{rel}: PRAGMA"] * len(re.findall(r"PRAGMA", text)))
     # Pre-existing violations are tracked in the baseline; anything not on
     # it is a NEW SQLite-specific leak into domain code.
@@ -198,7 +240,7 @@ def test_guard_no_raw_connect_outside_infra() -> None:
         rel = p.relative_to(SRC_ROOT).as_posix()
         if rel.startswith("database/") or rel.startswith("adapters/database/"):
             continue
-        text = _code_without_docstrings_comments(p)
+        text = _code_without_docstrings_comments(p, needle="sqlite3")
         offenders.extend(
             [f"{rel}: raw sqlite3.connect"] * len(re.findall(r"sqlite3\.connect\s*\(", text))
         )

@@ -92,7 +92,7 @@ nexus test --mode quick|unit|integration|health|release|all
 nexus logs [--tail N] [--errors] [--worker] [--export file.zip]
 nexus config [--validate path] [--show] [--json]
 nexus repair [--recreate-config] [--news-db]
-nexus diagnostics | export-diagnostics
+nexus export-diagnostics
 nexus verify-release [--root dir]
 nexus update [check|status|history|rollback|doctor] [--channel ...] [--dry-run]
 nexus setup | install

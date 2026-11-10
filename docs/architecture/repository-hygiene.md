@@ -10,7 +10,7 @@
 
 - 1,621 tracked files (724 py / 625 md / 80 json / 22 js / 16 mjs / 15 ps1 / 10 yml)
 - 351 Python source files AST-parsed, 361 modules, 0 parse errors
-- Full import graph (own `dependency_intelligence` engine): **1,209 nodes / 3,656 edges**
+- Full import graph: REMOVED with the `dependency_intelligence` engine (deleted — its only use was the web dashboard + tests)
 - 230 backend API endpoints cross-checked against 122 frontend call sites
 - 9 CI workflows, 20 scripts, 149 unit test files, 7 JS test files
 - Dependency manifests (pyproject, requirements.txt, venv reality), .gitignore/.dockerignore
@@ -38,7 +38,7 @@
 ## 3. Top findings (details + evidence in JSON `cleanup_queue`)
 
 ### P0 — act before next build/release (no code change done by this audit)
-1. **CLEANUP-001 · Undeclared imports.** `networkx` (`dependency_intelligence/analysis.py:19`, used by the `/api/dependency` web routes AND `nexus dependency` CLI) and `psycopg` (`database/drivers/postgres_driver.py`) are imported but declared nowhere. Dev venv masks this; a clean install / Docker / PyInstaller build can fail at import. *Fix owner: Coder/DevOps.*
+1. **CLEANUP-001 · Undeclared imports.** `networkx` was imported only by the deleted `dependency_intelligence` feature (web routes + `nexus dependency` CLI) — resolved by deleting that feature. `psycopg` (`database/drivers/postgres_driver.py`) is imported but declared nowhere. Dev venv masks this; a clean install / Docker / PyInstaller build can fail at import. *Fix owner: Coder/DevOps.*
 2. **CLEANUP-002 · Authoritative-doc dead paths.** `agents/skill.md` documents the critical-suite runner as `tests/helpers/run_critical.py` — which does not exist (actual: `tests/critical_suite.txt` consumed directly by pytest). `docs/engineering/ops/ci-telegram-operations.md` cites two deleted test files. 25 dead refs total. *Fix owner: Docs.*
 
 ### P1 — could cause wrong behavior later

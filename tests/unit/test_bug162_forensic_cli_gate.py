@@ -21,6 +21,7 @@ pass after restoration.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +32,16 @@ from typer.testing import CliRunner
 from nexus_scalp.cli.main import app
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -68,7 +79,7 @@ def test_forensic_command_in_cli_inventory() -> None:
     Pre-fix HEAD: typer raises 'No such command' usage error, exit 2.
     """
     res = runner.invoke(app, ["forensic", "--help"])
-    out = res.stdout or ""
+    out = _plain(res.stdout or "")
     assert res.exit_code == 0, (
         f"BUG-162: 'forensic' not a valid CLI command (exit={res.exit_code}): {out[:300]}"
     )

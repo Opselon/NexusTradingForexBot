@@ -435,6 +435,14 @@ def test_probe_failure_is_actionable_and_not_ready(monkeypatch, tmp_path, failur
 
 def test_old_driver_cannot_pass_ready(monkeypatch, tmp_path):
     manager = _ready_probe(monkeypatch, tmp_path, backend="cuda", version="2.13.0+cu126")
+    # The driver gate is decided BEFORE the application probe runs, and
+    # status() does not short-circuit on it — so an unmocked probe would
+    # spawn a real worker subprocess (interpreter + torch import, 6.6s on
+    # CI) whose result cannot change this assertion. Skip it; the probe
+    # path itself is covered by test_application_probe_* / test_torch_smoke_*.
+    monkeypatch.setattr(
+        manager, "run_application_probe", lambda exe: te.EnvCheck("application", True)
+    )
     report = manager.status("cuda")
     assert not report.training_ready
     assert any(c.code == "DRIVER_TOO_OLD" for c in report.failing())

@@ -35,6 +35,7 @@ from nexus_scalp.model_lab.experiment_registry import (
     ExperimentRecord,
     ExperimentRegistry,
     ExperimentUnknownError,
+    _now_utc,
     capture_git_revision,
     json_path,
     sha256_text,
@@ -320,16 +321,51 @@ def test_benchmark_1000_records_top10_under_50ms(reg: ExperimentRegistry) -> Non
     reg.top_n("val_loss", n=10)
 
     t0 = time.process_time()
-    for i in range(n):
-        reg.register(
-            _rec(
-                f"exp_bench_{i:04d}",
-                dataset_hash=f"{i:064d}",
-                model_config={"family": "STUDENT_MLP", "input_dimension": 70, "i": i},
-            )
-        )
-    for i in range(0, n, 3):  # ~333 finalized so the query has work to do
-        reg.record_result(f"exp_bench_{i:04d}", metrics={"val_loss": float(i) / 1000.0})
+    # Seed the 1,000 rows in ONE transaction. The public register() /
+    # record_result() API opens a connection and commits per call, so
+    # seeding through it is 1,333 commits — ~14s of commit overhead on
+    # the CI runner's disk before the measured leg even starts — and
+    # registration throughput is explicitly NOT what this benchmark gates
+    # (see below). The rows are built with the product's own
+    # ExperimentRecord.to_db_row() serialization and the same UPDATE
+    # record_result() issues, so the data the query runs over is identical;
+    # the register/record_result paths themselves are covered by the other
+    # tests in this file (including the concurrency ones).
+    with reg._connect() as conn:
+        with reg._transaction(conn):
+            for i in range(n):
+                conn.execute(
+                    """INSERT INTO experiments
+                       (experiment_id, status, git_sha, git_dirty, working_tree_hash,
+                        dataset_hash, dataset_id, model_config, params, seed, metrics,
+                        artifact_hash, manifest_sha256, created_at, finalized_at)
+                       VALUES
+                       (:experiment_id, :status, :git_sha, :git_dirty, :working_tree_hash,
+                        :dataset_hash, :dataset_id, :model_config, :params, :seed, :metrics,
+                        :artifact_hash, :manifest_sha256, :created_at, :finalized_at)""",
+                    _rec(
+                        f"exp_bench_{i:04d}",
+                        dataset_hash=f"{i:064d}",
+                        model_config={"family": "STUDENT_MLP", "input_dimension": 70, "i": i},
+                    ).to_db_row(),
+                )
+            for i in range(0, n, 3):  # ~333 finalized so the query has work to do
+                conn.execute(
+                    """UPDATE experiments
+                          SET status = 'COMPLETED',
+                              metrics = ?,
+                              artifact_hash = ?,
+                              manifest_sha256 = ?,
+                              finalized_at = ?
+                        WHERE experiment_id = ?""",
+                    (
+                        json.dumps({"val_loss": float(i) / 1000.0}, sort_keys=True),
+                        "",
+                        "",
+                        _now_utc(),
+                        f"exp_bench_{i:04d}",
+                    ),
+                )
     register_ms = (time.process_time() - t0) * 1000.0
 
     t1 = time.process_time()

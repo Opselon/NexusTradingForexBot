@@ -81,8 +81,29 @@ class _DrawdownEngine(_FakeEngine):
         return report
 
 
+@pytest.fixture(scope="module")
+def _shared_app():
+    """One FastAPI app for the whole module.
+
+    create_app() re-registers every router/middleware per call (~1s on CI),
+    but every route reads the engine from ``app.state`` at request time, so
+    tests can share the app while each still gets a fresh engine (below).
+    The auth token is set before the build so app creation never falls back
+    to generating/persisting a token.
+    """
+    tok = os.environ.get("NSE_WEB_AUTH_TOKEN")
+    os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
+    try:
+        yield create_app(engine_ref=None)
+    finally:
+        if tok is None:
+            os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+        else:
+            os.environ["NSE_WEB_AUTH_TOKEN"] = tok
+
+
 @pytest.fixture
-def dd_client(tmp_path, monkeypatch):
+def dd_client(tmp_path, monkeypatch, _shared_app):
     tok = os.environ.get("NSE_WEB_AUTH_TOKEN")
     os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
     # POST /api/config writes configs/live.yaml at the PROCESS cwd. Without
@@ -95,7 +116,11 @@ def dd_client(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "configs").mkdir(exist_ok=True)
     db = tmp_path / "app_settings.db"
-    client = TestClient(create_app(engine_ref=_DrawdownEngine(db)))
+    # Fresh engine per test (fresh settings DB + runtime store, so every test
+    # starts from the bootstrap drawdown); the app itself is shared, and the
+    # routes resolve app.state.engine per request.
+    _shared_app.state.engine = _DrawdownEngine(db)
+    client = TestClient(_shared_app)
     client.headers.update({"Authorization": "Bearer web-contract-test-token"})
     yield client
     if tok is None:

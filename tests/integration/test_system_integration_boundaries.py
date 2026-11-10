@@ -134,7 +134,7 @@ class TestCwdIndependentIdentity:
 
 
 class TestForensicReferenceRegistryCoherence:
-    def test_single_registry_truth_engine_vs_check(self, monkeypatch):
+    def test_single_registry_truth_engine_vs_check(self, monkeypatch, tmp_path):
         """Freeze the golden baseline into the ENGINE registry; the SAME
         process's check_news_availability_matrix must see liquidity enabled +
         references present (no split singleton), i.e. NOT critical for
@@ -159,6 +159,17 @@ class TestForensicReferenceRegistryCoherence:
         n_engine = len(engine.references)
         if n_engine == 0:
             pytest.skip("auto-freeze unavailable in this environment")
+
+        # The check ALSO requires the ambient data files to exist (CWD-relative
+        # first probe): a fresh checkout has no artifacts/news.db or
+        # artifacts/candle_intel.db (both gitignored), so without this the
+        # test fails CRITICAL on missing files, not on the registry split it
+        # exists to pin. Provision empty files in an isolated CWD so the
+        # test is hermetic — the product check stays fail-closed.
+        (tmp_path / "artifacts").mkdir()
+        (tmp_path / "artifacts" / "news.db").touch()
+        (tmp_path / "artifacts" / "candle_intel.db").touch()
+        monkeypatch.chdir(tmp_path)
 
         cfg_like = type("Cfg", (), {})()
         model_like = type("M", (), {"liquidity_features_enabled": True})()

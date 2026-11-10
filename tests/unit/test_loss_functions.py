@@ -15,6 +15,8 @@ Covers, per the task's ACCEPTANCE_CRITERIA:
 from __future__ import annotations
 
 import math
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pytest
@@ -81,6 +83,29 @@ class _MLP(torch.nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+@contextmanager
+def _single_thread_torch() -> Iterator[None]:
+    """Pin torch to one intra-op thread for the duration of the block.
+
+    The benchmark trains a tiny MLP (307x12 -> 32 -> 16 -> 3) for 25 epochs,
+    so each step is dozens of micro-ops whose cost is thread-pool
+    synchronisation, not FLOPs — and on the 2-core self-hosted runner torch's
+    default thread count oversubscribes the box (the causal-conv latency test
+    in this repo measured a ~2-3 ms forward pass reporting 464 ms of CPU time
+    before pinning). One thread removes that overhead. The previous count is
+    restored on exit so no other test file sharing the pytest worker is
+    affected.
+    """
+    prev = torch.get_num_threads()
+    if prev != 1:
+        torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        if prev != 1:
+            torch.set_num_threads(prev)
 
 
 # ---------------------------------------------------------------------------
@@ -634,7 +659,23 @@ def _brier(y_true: torch.Tensor, probs: torch.Tensor, n_classes: int) -> float:
     return float(((probs - onehot) ** 2).sum(dim=-1).mean())
 
 
-def _run_benchmark_fold(
+# One fold result per (seed, loss, hyperparameter) combination, shared across
+# the benchmark tests in this module. The five benchmark tests used to retrain
+# the SAME folds from scratch — 49 fold-trainings in total (15 in
+# test_benchmark_three_losses_on_identical_folds, 10 each in the focal-vs-CE,
+# confidence-ceiling and Brier tests, 2 + 2 in the reproducibility /
+# actually-smooths tests) for only 20 distinct (seed, loss, kwargs)
+# combinations. The values are pure functions of their key (fixed seeds,
+# fixed data, fixed model init), so caching them returns bit-identical
+# metrics; no assertion changes, only the redundant retraining goes away.
+# Keyed on the full signature so a different n / epochs / kwargs can never
+# collide with a cached fold.
+_FOLD_CACHE: dict[
+    tuple[int, str, int, int, int, tuple[tuple[str, Any], ...]], dict[str, float]
+] = {}
+
+
+def _run_benchmark_fold_impl(
     seed: int,
     loss_name: str,
     n_classes: int = 3,
@@ -644,6 +685,7 @@ def _run_benchmark_fold(
 ) -> dict[str, float]:
     """Train one fold with the given loss and report validation metrics.
 
+    Uncached worker — call ``_run_benchmark_fold`` for the memoised version.
     ``loss_kwargs`` are forwarded to ``build_loss`` — the headline comparison
     passes real hyperparameters (``label_smoothing=0.1``), since
     ``build_loss("label_smoothing")`` alone defaults to ``smoothing=0.0`` and
@@ -669,11 +711,12 @@ def _run_benchmark_fold(
     loss_fn = build_loss(loss_name, **loss_kwargs)
     Xtr, ytr, Xva, yva = X[tr], y[tr], X[va], y[va]
 
-    for _ in range(epochs):
-        opt.zero_grad()
-        loss_fn(model(Xtr), ytr).backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-        opt.step()
+    with _single_thread_torch():
+        for _ in range(epochs):
+            opt.zero_grad()
+            loss_fn(model(Xtr), ytr).backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
+            opt.step()
 
     model.eval()
     with torch.no_grad():
@@ -684,7 +727,35 @@ def _run_benchmark_fold(
         "balanced_acc": _balanced_accuracy(yva, pred, n_classes),
         "minority_f1": _minority_f1(yva, pred, tuple(range(1, n_classes))),
         "brier": _brier(yva, probs, n_classes),
+        # Mean validation max-confidence, for the calibration test: the same
+        # trained model, no extra training (see
+        # test_label_smoothing_lowers_the_confidence_ceiling).
+        "mean_max_conf": float(probs.max(dim=-1).values.mean()),
     }
+
+
+def _run_benchmark_fold(
+    seed: int,
+    loss_name: str,
+    n_classes: int = 3,
+    n: int = 384,
+    epochs: int = 25,
+    **loss_kwargs: Any,
+) -> dict[str, float]:
+    """Memoised ``_run_benchmark_fold_impl`` — see ``_FOLD_CACHE``."""
+    key = (
+        seed,
+        loss_name,
+        n_classes,
+        n,
+        epochs,
+        tuple(sorted(loss_kwargs.items())),
+    )
+    cached = _FOLD_CACHE.get(key)
+    if cached is None:
+        cached = _run_benchmark_fold_impl(seed, loss_name, n_classes, n, epochs, **loss_kwargs)
+        _FOLD_CACHE[key] = cached
+    return cached
 
 
 N_FOLDS = 5
@@ -705,8 +776,11 @@ def test_benchmark_three_losses_on_identical_folds(loss_name: str) -> None:
 
 
 def test_benchmark_report_metrics_are_reproducible() -> None:
-    a = _run_benchmark_fold(BENCH_SEEDS[0], "focal")
-    b = _run_benchmark_fold(BENCH_SEEDS[0], "focal")
+    # Call the uncached worker directly: going through the memoised
+    # ``_run_benchmark_fold`` would return the same cached dict and make this
+    # determinism check vacuous.
+    a = _run_benchmark_fold_impl(BENCH_SEEDS[0], "focal")
+    b = _run_benchmark_fold_impl(BENCH_SEEDS[0], "focal")
     assert a == b
 
 
@@ -739,35 +813,21 @@ def test_label_smoothing_lowers_the_confidence_ceiling() -> None:
     guarantees by construction; ``Brier`` is only a downstream consequence of it
     and can move either way depending on whether the base model was over- or
     under-confident to begin with (see the benchmark report).
+
+    The quantity compared is the cached fold's ``mean_max_conf`` — the mean
+    over the validation split of the model's maximum predicted probability.
+    It is exactly what the old inline ``train_once`` helper returned: same
+    seed order for centres / labels / noise / split, same ``_MLP`` seed,
+    optimizer and epochs as ``_run_benchmark_fold`` with
+    ``loss_name="label_smoothing"``. Reusing the shared fold cache (instead
+    of retraining the same 10 models a second time) changes no value, only
+    the redundant training.
     """
-
-    def train_once(smoothing: float, seed: int) -> torch.Tensor:
-        g = torch.Generator().manual_seed(seed)
-        centres = torch.randn(3, 12, generator=g)
-        labels = torch.multinomial(torch.tensor(IMBALANCE).expand(384, 3), 1, generator=g).squeeze(
-            1
-        )
-        X = centres[labels] + torch.randn(384, 12, generator=g) * 0.9
-        idx = torch.randperm(384, generator=g)
-        tr, va = idx[:307], idx[307:]
-        model = _MLP(n_in=12, seed=seed + 1)
-        opt = torch.optim.AdamW(model.parameters(), lr=5e-3, weight_decay=1e-4)
-        loss_fn = build_loss("label_smoothing", label_smoothing=smoothing)
-        for _ in range(25):
-            opt.zero_grad()
-            loss_fn(model(X[tr]), labels[tr]).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0)
-            opt.step()
-        model.eval()
-        with torch.no_grad():
-            return torch.softmax(model(X[va]), dim=-1).max(dim=-1).values
-
     for seed in BENCH_SEEDS:
-        plain = train_once(0.0, seed)
-        smooth = train_once(0.1, seed)
-        assert float(smooth.mean()) < float(plain.mean()), (
-            f"seed {seed}: smoothing did not lower confidence ceiling "
-            f"({float(smooth.mean()):.4f} >= {float(plain.mean()):.4f})"
+        plain = _run_benchmark_fold(seed, "label_smoothing", label_smoothing=0.0)["mean_max_conf"]
+        smooth = _run_benchmark_fold(seed, "label_smoothing", label_smoothing=0.1)["mean_max_conf"]
+        assert smooth < plain, (
+            f"seed {seed}: smoothing did not lower confidence ceiling ({smooth:.4f} >= {plain:.4f})"
         )
 
 

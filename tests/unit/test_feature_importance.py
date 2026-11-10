@@ -459,12 +459,19 @@ class TestAnalyzeFeatures:
 
 
 class TestRealFeaturePipeline:
-    """The audit must run against the production 50D contract, not a stub."""
+    """The audit must run against the production 50D contract, not a stub.
+
+    ``bar_count=200`` throughout: 200 - 55 warmup bars = 145 usable rows,
+    comfortably above the >= 50 rows these tests assert, while the frame
+    build re-scans the full bar history on every bar (``compute_from_bars``
+    over ``bars[:i]``), so 500 bars costs ~6x the build time for no extra
+    coverage (measured locally: 1.46s engine loop at 500 bars, 0.25s at 200).
+    """
 
     def test_evaluation_frame_uses_the_real_feature_engine(self) -> None:
         from scripts.analysis.evaluate_feature_importance import build_evaluation_frame
 
-        result = build_evaluation_frame(bar_count=600, seed=5)
+        result = build_evaluation_frame(bar_count=200, seed=5)
         assert result.matrix.shape[1] == N_FEATURES
         assert result.matrix.shape[0] >= 50
         assert result.labels.shape == (result.matrix.shape[0],)
@@ -476,15 +483,15 @@ class TestRealFeaturePipeline:
     def test_evaluation_frame_is_deterministic(self) -> None:
         from scripts.analysis.evaluate_feature_importance import build_evaluation_frame
 
-        a = build_evaluation_frame(bar_count=500, seed=8)
-        b = build_evaluation_frame(bar_count=500, seed=8)
+        a = build_evaluation_frame(bar_count=200, seed=8)
+        b = build_evaluation_frame(bar_count=200, seed=8)
         np.testing.assert_array_equal(a.matrix, b.matrix)
         np.testing.assert_array_equal(a.labels, b.labels)
 
     def test_full_audit_over_real_frame(self) -> None:
         from scripts.analysis.evaluate_feature_importance import build_evaluation_frame
 
-        result = build_evaluation_frame(bar_count=500, seed=21)
+        result = build_evaluation_frame(bar_count=200, seed=21)
         rep = analyze_features(
             result.matrix,
             result.labels,
@@ -525,7 +532,7 @@ class TestCli:
         rc = main(
             [
                 "--bar-count",
-                "500",
+                "200",
                 "--seed",
                 "17",
                 "--repeats",
@@ -562,7 +569,7 @@ class TestCli:
             rc = main(
                 [
                     "--bar-count",
-                    "500",
+                    "200",
                     "--seed",
                     "3",
                     "--repeats",
@@ -586,7 +593,7 @@ class TestCli:
         rc = main(
             [
                 "--bar-count",
-                "500",
+                "200",
                 "--seed",
                 "4",
                 "--repeats",

@@ -437,11 +437,25 @@ def test_speedup_ratio_contract_is_structural() -> None:
     than the canonical one". Removing the ratio/leg comparison while keeping
     only a generous budget would leave the builder free to regress to
     canonical speed unnoticed.
+
+    SHAPE (round 2): both builders run ONCE per module in the shared
+    ``built_frames`` fixture (``_build_both``) — the speedup test consumes
+    their back-to-back per-leg timings instead of re-running both builders.
+    The legs must therefore be pinned where they now live (the builder),
+    and the test itself must still unpack per-leg timings and compare them
+    directly; either half missing is the same regression the old shape
+    caught.
     """
     code = _code_lines(_slice(_MODULE, "test_bug106_incremental_speedup"))
     assert code, "test_bug106_incremental_speedup must exist"
-    assert "compute_70d_frame(" in code, "the canonical leg must run"
-    assert "compute_70d_frame_fast(" in code, "the incremental leg must run"
+    assert "built_frames" in code, (
+        "the speedup test must consume the shared back-to-back timings "
+        "(re-running both builders would double the module's build count)"
+    )
+    builder = _code_lines(_slice(_MODULE, "_build_both"))
+    assert builder, "_build_both must exist (shared canonical+fast build)"
+    assert "compute_70d_frame(" in builder, "the canonical leg must run"
+    assert "compute_70d_frame_fast(" in builder, "the incremental leg must run"
     # The structural contract: a direct comparison of the two legs' CPU cost.
     # ``consumed_ms`` is the single-shot stopwatch total (both legs summed,
     # indistinguishable); the ratio contract needs per-leg figures.
@@ -475,6 +489,74 @@ def test_dimension_contract_pinned() -> None:
 # ===========================================================================
 # 2. The negative control — the OLD shape was a no-coverage module
 # ===========================================================================
+
+
+def _isolated_env_overrides(run_dir: Path) -> dict[str, str]:
+    """Empty-HOME/DB overrides for the shared subprocess run.
+
+    The subprocess fixture is module-scoped, so it spawns BEFORE the
+    conftest per-test HOME redirect exists — without these overrides it
+    would inherit the RUNNER's real HOME (and real config) instead of the
+    empty one every in-process leg sees. Same key set as the conftest
+    autouse fixtures; the values are fresh empty dirs/files, so the run is
+    hermetic regardless of fixture-setup ordering.
+    """
+    home_dir = run_dir / "home"
+    tmp_dir = run_dir / "tmp"
+    home_dir.mkdir(parents=True, exist_ok=True)
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return {
+        "HOME": str(home_dir),
+        "USERPROFILE": str(home_dir),
+        "LOCALAPPDATA": str(home_dir),
+        "APPDATA": str(home_dir),
+        "TMPDIR": str(tmp_dir),
+        "TEMP": str(tmp_dir),
+        "TMP": str(tmp_dir),
+        "NEXUS_SETTINGS_DB": str(run_dir / "app_settings.db"),
+        "NEXUS_AUDIT_DB": str(run_dir / "audit.db"),
+        "NSE_DATABASE__SQLITE_PATH": str(run_dir / "audit.db"),
+        "NEXUS_DATA_ROOT": str(run_dir / "data"),
+        "NEXUS_PAPER_PERSIST": "1",
+    }
+
+
+@pytest.fixture(scope="module")
+def _subprocess_verdict(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[int, str]:
+    """ONE shared subprocess pytest run for BOTH subprocess legs.
+
+    Was two separate spawns (old-shape negative control + remediated
+    module), each paying a full interpreter start plus the torch/polars/
+    nexus_scalp import graph on the 2-core CI runner — the remediated leg
+    alone was 52.8s in CI run #3319. Both target files run in a single
+    invocation and both tests below assert on the one cached verdict, so
+    the import cost is paid once. The verdicts are independent (each test
+    matches only its own file's nodes), and neither target needs anything
+    from the run: both legs still execute the real tests in a fresh
+    interpreter, exactly as before.
+
+    ``--noconftest``: neither target uses a conftest fixture (both define
+    their own module-scoped bar fixture; imports resolve via the PYTHONPATH
+    ``_pytest_env`` sets), so skipping the repo conftest import chain
+    (shadow70 fixtures et al.) only removes startup cost, not coverage.
+    The durable tests use synthetic bars only — no HOME/DB/config state —
+    and the isolated env above keeps the run hermetic regardless.
+    """
+    run_dir = tmp_path_factory.mktemp("mlqa_subprocess")
+    old = _old_shape_module(run_dir)
+    argv, env = _pytest_env()
+    env.update(_isolated_env_overrides(run_dir))
+    proc = subprocess.run(
+        [*argv, str(old), str(_MODULE), "--no-header", "-v", "--noconftest"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=str(_BATTERY_DIR.parents[1]),
+        env=env,
+    )
+    return proc.returncode, proc.stdout + proc.stderr
 
 
 def _old_shape_module(tmp_path: Path) -> Path:
@@ -533,66 +615,50 @@ def test_bug106_incremental_speedup(real_bars: pl.DataFrame) -> None:
     return out
 
 
-def test_the_old_data_gate_shape_was_a_no_coverage_module(tmp_path: Path) -> None:
+def test_the_old_data_gate_shape_was_a_no_coverage_module(
+    _subprocess_verdict: tuple[int, str],
+) -> None:
     """NEGATIVE CONTROL (executed): the old shape collects and skips both tests.
 
     This is the executed proof that the defect class is "silent zero
     coverage", not a theoretical one. The reconstructed old module is
-    collected in a subprocess pytest run against a worktree-relative
-    conftest, and the report must show exactly 2 skipped / 0 passed — i.e.
-    a green-looking module that exercised nothing.
+    collected in the shared subprocess pytest run (see
+    ``_subprocess_verdict``), and the report must show exactly 2 skipped /
+    0 passed — i.e. a green-looking module that exercised nothing.
     """
-    old = _old_shape_module(tmp_path)
-    argv, env = _pytest_env()
-    # NOTE: cwd is the WORKTREE root, not the shared checkout — the analysed
-    # module and the repo's pyproject config live here, and a relative
-    # PYTHONPATH must resolve against this tree.
-    proc = subprocess.run(
-        [*argv, str(old), "-v", "--no-header"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(_BATTERY_DIR.parents[1]),
-        env=env,
-    )
-    verdict = proc.stdout + proc.stderr
+    returncode, verdict = _subprocess_verdict
     # pytest -q under pytest 9.1.1 suppresses the pass/skip line from the
     # captured report, which would make these asserts tautologies — -v keeps it
     assert "2 skipped" in verdict, (
         f"the OLD skipif-on-git-absent-data shape must skip BOTH durable "
         f"tests — that is the zero-coverage defect ML-QA-019 fixes. "
-        f"rc={proc.returncode} out={verdict[-600:]}"
+        f"rc={returncode} out={verdict[-600:]}"
     )
     # the module must still COLLECT (skip, not error) — rc=0 with skips
-    assert proc.returncode == 0, (
-        f"a skipped-only module exits 0 — the gate saw green at zero coverage. rc={proc.returncode}"
+    assert returncode == 0, (
+        f"a skipped-only module exits 0 — the gate saw green at zero coverage. rc={returncode}"
     )
 
 
-def test_current_module_has_no_skips() -> None:
+def test_current_module_has_no_skips(_subprocess_verdict: tuple[int, str]) -> None:
     """The remediated module collects AND runs — no skip can hide a contract.
 
-    Complement to the negative control: the same subprocess collection over
-    the remediated module must report 0 skipped and 3 passed.
+    Complement to the negative control: the shared subprocess run over the
+    remediated module must report 0 skipped and 3 passed.
     """
-    argv, env = _pytest_env()
-    proc = subprocess.run(
-        [*argv, str(_MODULE), "--no-header", "-v"],
-        capture_output=True,
-        text=True,
-        check=False,
-        cwd=str(_BATTERY_DIR.parents[1]),
-        env=env,
-    )
-    verdict = proc.stdout + proc.stderr
-    assert proc.returncode == 0, (
-        f"the remediated module must execute cleanly; rc={proc.returncode} output={verdict[-1200:]}"
+    returncode, verdict = _subprocess_verdict
+    assert returncode == 0, (
+        f"the remediated module must execute cleanly; rc={returncode} output={verdict[-1200:]}"
     )
     # Scope skip detection to the target module's three durable nodes. The
-    # subprocess inherits the repository's pytest configuration, so unrelated
-    # CI files may legitimately report platform-specific skips. Those skips
-    # are not evidence that this ML-QA module was silently uncollected.
-    target_markers = tuple(f"::{name}" for name in _DURABLE_TESTS)
+    # shared subprocess run also executes the old-shape negative control,
+    # whose tests share the durable names but live in a different file and
+    # are EXPECTED to skip — so the markers must carry the module filename,
+    # not just the test name. The subprocess inherits the repository's
+    # pytest configuration, so unrelated CI files may legitimately report
+    # platform-specific skips. Those skips are not evidence that this ML-QA
+    # module was silently uncollected.
+    target_markers = tuple(f"{_MODULE.name}::{name}" for name in _DURABLE_TESTS)
     target_lines = [
         line for line in verdict.splitlines() if any(marker in line for marker in target_markers)
     ]
@@ -670,7 +736,12 @@ def test_byte_identity_holds_on_a_synthetic_frame() -> None:
     from nexus_scalp.model_generation.schema_v2 import compute_70d_frame
     from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
 
-    frame = _bars(300)
+    # 200 bars (146 feature rows) — well past the builders' 54-bar causal
+    # warm-up, so the frame is a real parity probe, but far cheaper than the
+    # analysed module's 600-bar frame: the canonical builder is O(n^2), so
+    # the 600-bar proof belongs in the subprocess leg (which must run the
+    # module as written), not repeated at full size in-process here.
+    frame = _bars(200)
     canon = compute_70d_frame(frame, news_frame=None)
     fast = compute_70d_frame_fast(frame, news_frame=None)
     assert canon.height == fast.height
@@ -691,7 +762,7 @@ def test_byte_identity_is_independent_of_the_generator_seed() -> None:
     from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
 
     for seed in (7, 12345, 999):
-        frame = _bars(220, seed=seed)
+        frame = _bars(150, seed=seed)
         canon = compute_70d_frame(frame, news_frame=None)
         fast = compute_70d_frame_fast(frame, news_frame=None)
         assert canon.height == fast.height, f"seed {seed}: row-count divergence"
@@ -717,7 +788,8 @@ def test_the_cpu_budget_is_a_complexity_gate_not_a_clock() -> None:
     from nexus_scalp.model_generation.schema_v2_incremental import compute_70d_frame_fast
 
     multiple = _module_budget_multiple()
-    frame = _bars(300)
+    # 200 bars: same rationale as test_byte_identity_holds_on_a_synthetic_frame.
+    frame = _bars(200)
     canon_ms = _cpu_ms_of(compute_70d_frame, frame)
     fast_ms = _cpu_ms_of(compute_70d_frame_fast, frame)
     both = canon_ms + fast_ms

@@ -602,11 +602,15 @@ class TestReleaseStatus:
         assert behind is None and ahead is None
 
     def test_api_release_status_endpoint_offline(self):
+        # WEB-AUTH-P0: /api/release/status is middleware-gated; a tokenless
+        # client 401s. authenticated_test_client sets a matching env token
+        # + Bearer <redacted> (run #3334).
         from fastapi.testclient import TestClient
 
         from nexus_scalp.web.server import create_app
+        from tests.helpers.authenticated_client import authenticated_test_client
 
-        client = TestClient(create_app(engine_ref=None))
+        client = authenticated_test_client(create_app(engine_ref=None))
         r = client.get("/api/release/status")
         assert r.status_code == 200
         data = r.json()
@@ -625,11 +629,16 @@ class TestReleaseStatus:
 # ---------------------------------------------------------------------------
 class TestLiveStateFeaturesVisibility:
     def test_features_block_exposes_effective_contract(self):
+        # WEB-AUTH-P0: /api/live/state is middleware-gated; a tokenless
+        # client 401s. This passed in run #3334 only by order-dependent
+        # luck (NSE_WEB_AUTH_DISABLE leaking into the worker); use the
+        # authenticated helper so it cannot flake.
         from fastapi.testclient import TestClient
 
         from nexus_scalp.web.server import create_app
+        from tests.helpers.authenticated_client import authenticated_test_client
 
-        client = TestClient(create_app(engine_ref=None))
+        client = authenticated_test_client(create_app(engine_ref=None))
         data = client.get("/api/live/state").json()
         feat = data["features"]
         # additive fields exist (None when no engine; never missing keys)

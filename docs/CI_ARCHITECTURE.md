@@ -284,9 +284,10 @@ so it was removed from the PR path; dispatch-only now).
 Lint lane: 115 s. The pytest step is 92% of the Quality job — the
 20-30 minute lanes are the 4-core box + coverage overhead, not one
 slow test. Coverage overhead on tier-2: ~483 s (1449.8 s with `--cov`
-vs 966.4 s without, same expanded set). Slowest single tests: four
-`test_dependency_intelligence.py` setups at ~110 s each (module-scoped
-graph build under coverage) — a ~110 s floor on any lane, not the wall.
+vs 966.4 s without, same expanded set). The `test_dependency_intelligence.py`
+setups (~110 s each, module-scoped graph build under coverage) were deleted
+with that feature; the slowest single tests are now the ML/model ones
+(see the heaviest-tests ranking).
 
 Why tier-1 fits the cap: pytest runs with ONE worker on self-hosted
 tiers (2026-11-10 user directive — `-n 4` measured no speedup on
