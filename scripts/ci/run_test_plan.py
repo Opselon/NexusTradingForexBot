@@ -556,7 +556,21 @@ def main() -> int:
     log(f"C17 DIGEST: {plan_obj['plan_digest'][:16]}...")
 
     # 3. selected tests
-    selected_ids = [t["id"] for t in plan_obj["selected_tests"]]
+    # Defense in depth (PR #740): the planner must never select a test
+    # file that does not exist on the checked-out tree — a deleted test
+    # in the diff (or a stale suite list) would otherwise reach pytest
+    # as a nonexistent path and pytest exits 5 (no tests collected),
+    # failing the whole Quality job for a file the PR itself removed.
+    # The C engine now skips such files too; this filter is the executor
+    # side of the same invariant, so a stale plan can never kill the run.
+    def _existing(ids: list[str]) -> list[str]:
+        kept = [t for t in ids if os.path.isfile(os.path.join(repo_root, t))]
+        dropped = [t for t in ids if t not in kept]
+        if dropped:
+            log(f"C17 DROPPED {len(dropped)} nonexistent selected file(s): {', '.join(dropped)}")
+        return kept
+
+    selected_ids = _existing([t["id"] for t in plan_obj["selected_tests"]])
     if not selected_ids:
         log("empty selection — conservative expansion (empty never passes)")
         try:
@@ -573,7 +587,7 @@ def main() -> int:
         except (RuntimeError, json.JSONDecodeError, OSError) as exc:
             log(f"conservative re-plan failed: {exc}")
             return 90
-        selected_ids = [t["id"] for t in plan_obj["selected_tests"]]
+        selected_ids = _existing([t["id"] for t in plan_obj["selected_tests"]])
         if not selected_ids:
             log("zero tests after expansion — failing closed")
             return 91
