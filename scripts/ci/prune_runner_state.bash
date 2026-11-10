@@ -67,6 +67,26 @@ if command -v uv >/dev/null 2>&1; then
   uv cache prune 2>/dev/null || true
 fi
 
+# Disk-space guard (2026-11-10): if the disk is nearly full, wipe the
+# uv wheel cache outright with uv's own tool (`uv cache clean` —
+# never rm inside the cache). The cache is regenerable and the venv
+# is intact, so the next sync downloads only packages missing from
+# the venv (a delta, never a full reinstall) — wiping the cache can
+# never force a full re-download while the venv is warm. This is the
+# emergency valve that keeps a long-lived runner from hitting the
+# ceiling again after many runs: `uv cache prune` handles ordinary
+# growth, this handles the pathological case (a 16 GB cache filled
+# the 40 GB Dubai disk, 2026-11-10). 5 GB floor: a full install needs
+# ~2.5 GB of downloads plus extraction headroom. Space-gated only —
+# it never fires on a healthy disk — and failure-proof.
+if command -v uv >/dev/null 2>&1; then
+  FREE_KB="$(df -k --output=avail / 2>/dev/null | tail -1 | tr -dc '0-9')"
+  if [ -n "${FREE_KB}" ] && [ "${FREE_KB}" -lt 5242880 ]; then
+    echo "disk nearly full (${FREE_KB} KB free < 5 GB): wiping the uv wheel cache (venv intact, next sync is a delta)"
+    uv cache clean 2>/dev/null || true
+  fi
+fi
+
 # Other venvs (the live stable one) and warm linter/type caches older
 # than 30 days.
 prune_older_than "$HOME/.cache/nse-venvs" 30 ".venv-ci-*"
@@ -83,4 +103,4 @@ prune_older_than "/tmp" 1 "pytest-*"
 prune_older_than "/tmp" 1 ".pytest_cache*"
 prune_older_than "/tmp/pytest-of-github-runner" 1 "*"
 
-echo "runner state pruned (obsolete hash-bound venvs, uv cache prune, venvs/caches >30d, /tmp artifacts + pytest sessions >24h)"
+echo "runner state pruned (obsolete hash-bound venvs, uv cache prune, disk guard if <5 GB free, venvs/caches >30d, /tmp artifacts + pytest sessions >24h)"

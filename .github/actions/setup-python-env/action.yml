@@ -64,7 +64,17 @@ runs:
         # can never deliver its wheel (proven by the proof/leaf-timing
         # diagnostic — uv resolved filelock 4.2.10 from PyPI, then the
         # download timed out after 3 retries in 43.5s). An extra index
-        # must be a mirror that CAN serve wheels. UV_INDEX_STRATEGY is
+        # must be a mirror that CAN serve wheels. The Dubai runner
+        # overrides the primary in the run script below (PyPI, measured
+        # fastest there) — the index is a per-machine network property,
+        # so the runner picks it itself by RUNNER_NAME. UV_INDEX_STRATEGY is
+        # load-bearing: uv's default first-index strategy uses the FIRST
+        # index that has a package and never consults the others for it,
+        # so without unsafe-best-match the extra index is a no-op for
+        # packages the primary already carries (proven by the
+        # proof/leaf-timing run). unsafe-best-match considers all indexes
+        # and picks the best version; downloads prefer the primary when
+        # it has the chosen version.
         # load-bearing: uv's default first-index strategy uses the FIRST
         # index that has a package and never consults the others for it,
         # so without unsafe-best-match the extra index is a no-op for
@@ -90,6 +100,25 @@ runs:
         # caches (>30d) and /tmp test leftovers (>24h). Age-gated and
         # failure-proof — a prune must never fail a lane.
         bash scripts/ci/prune_runner_state.bash || true
+        # Per-runner primary index (2026-11-10, measured on Dubai):
+        # the default primary is TUNA (tier-1 cannot reach
+        # files.pythonhosted.org), but the Dubai runner (RUNNER_NAME
+        # nexus-*) downloads the same 14 MB wheel from PyPI at
+        # 3.4 MB/s vs 1.6 MB/s from TUNA and 1.6 MB/s from Aliyun
+        # (TUNA RTT 425 ms; the 1 Gbps port is the datacenter link,
+        # the VPS's international transit is ~2-8 MB/s). PyPI is
+        # also the origin, so it never lags a fresh release the way
+        # mirrors do (filelock 4.2.10 lagged on Aliyun). The extra
+        # stays Aliyun for both — a mirror that can serve wheels.
+        case "${RUNNER_NAME:-}" in
+          nexus-*)
+            export UV_DEFAULT_INDEX="https://pypi.org/simple/"
+            export UV_INDEX_URL="https://pypi.org/simple/"
+            export UV_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+            export PIP_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
+            echo "Dubai runner (${RUNNER_NAME}): PyPI primary (measured fastest, 2026-11-10)"
+            ;;
+        esac
         # Self-hosted runners persist $HOME across jobs, but
         # actions/checkout wipes the workspace (clean: true) on every job —
         # so a workspace venv was rebuilt from the lock on EVERY lane
@@ -126,16 +155,19 @@ runs:
           uv venv --python "${{ inputs.python-version }}" "${VENV_DIR}"
           VENV_DIR="$PWD/${VENV_DIR}"
         fi
-        # Retry with a cache refresh if the first sync fails: a stale uv
-        # index cache (or a lagging mirror) can hold a version list
-        # without a freshly published pin, and the retry re-fetches the
-        # indexes (mirror + PyPI fallback) instead of failing the lane.
-        # (tier-1, 2026-11-09: the install failed on filelock 4.2.10 even
-        # with the PyPI fallback + best-match set.) The retry only runs
-        # on failure, so warm runs pay nothing.
+        # Retry PLAIN, without a cache refresh (2026-11-10): the old
+        # retry re-fetched every index and re-downloaded ALL 94
+        # packages on ANY failure — that is how the uv cache grew to
+        # 16 GB and filled the Dubai disk. A plain retry reuses the
+        # warm cache and the warm venv, so only packages missing from
+        # the venv download: a one-package lock change downloads one
+        # package, never all 94. The retry only runs on failure, so
+        # warm runs pay nothing. A stale index cache is a rare,
+        # diagnosable failure — it fails the lane visibly with the
+        # real error instead of silently re-downloading everything.
         if ! VIRTUAL_ENV="${VENV_DIR}" uv pip sync requirements.lock; then
-          echo "::warning::lock sync failed; retrying with a cache refresh"
-          VIRTUAL_ENV="${VENV_DIR}" uv pip sync --refresh requirements.lock
+          echo "::warning::lock sync failed; retrying once (plain, cache intact)"
+          VIRTUAL_ENV="${VENV_DIR}" uv pip sync requirements.lock
         fi
         # Always re-install the editable root: the .pth records the
         # workspace path, which must track the current checkout.

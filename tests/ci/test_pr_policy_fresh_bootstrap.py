@@ -178,17 +178,31 @@ def test_fetch_script_actually_unshallows() -> None:
 
 
 def test_setup_action_has_mirror_fallback_index() -> None:
-    """The install indexes must be mirrors that can SERVE wheels to tier-1.
+    """The install indexes must be mirrors that can SERVE wheels — per runner.
 
-    Primary is the TUNA mirror, extra is Aliyun (2026-11-09, proven by
-    the proof/leaf-timing diagnostic on tier-1): files.pythonhosted.org
-    is UNREACHABLE from tier-1 (uv connect timeout after 3 retries), so
-    PyPI can resolve a version but can never deliver its wheel — it must
-    NOT be an index for the self-hosted lanes. And the Aliyun node
-    serving tier-1 lags fresh releases (filelock 4.2.10 missing while
-    the node this VM hits has it), so Aliyun cannot be the primary;
-    TUNA's node serving tier-1 IS synced (lists 4.2.10, uv resolves it
-    in 4.36s; USTC/BFSU/Aliyun all lack it).
+    Default primary is the TUNA mirror, extra is Aliyun (2026-11-09,
+    proven by the proof/leaf-timing diagnostic on tier-1):
+    files.pythonhosted.org is UNREACHABLE from tier-1 (uv connect
+    timeout after 3 retries), so PyPI can resolve a version but can
+    never deliver its wheel there. And the Aliyun node serving tier-1
+    lags fresh releases (filelock 4.2.10 missing while the node this
+    VM hits has it), so Aliyun cannot be the primary; TUNA's node
+    serving tier-1 IS synced (lists 4.2.10, uv resolves it in 4.36s;
+    USTC/BFSU/Aliyun all lack it).
+
+    EXCEPTION — Dubai (2026-11-10, measured): the Dubai runner
+    (RUNNER_NAME nexus-*) downloads the same 14 MB wheel from PyPI
+    at 3.4 MB/s vs 1.6 MB/s from TUNA and 1.6 MB/s from Aliyun
+    (TUNA RTT 425 ms), so the action overrides the primary to PyPI
+    for nexus-* runners only. PyPI is also the origin, so it never
+    lags a fresh release. The extra stays Aliyun for both.
+
+    The lock-install retry must be PLAIN (2026-11-10): the old retry
+    re-fetched every index and re-downloaded ALL 94 packages on ANY
+    failure — that is how the uv cache grew to 16 GB and filled the
+    Dubai disk. A plain retry reuses the warm cache and the warm
+    venv, so only packages missing from the venv download.
+
     UV_INDEX_STRATEGY is load-bearing: uv's default first-index
     strategy uses the FIRST index that has a package and never consults
     the others for it — the extra index alone was proven a no-op by the
@@ -200,14 +214,23 @@ def test_setup_action_has_mirror_fallback_index() -> None:
     )
     assert "PIP_EXTRA_INDEX_URL" in action, "setup action must set PIP_EXTRA_INDEX_URL"
     assert "mirrors.aliyun.com/pypi/simple" in action, "extra index must be Aliyun"
-    assert "pypi.org/simple" not in action, (
-        "PyPI must not be an install index (files.pythonhosted.org is unreachable from tier-1)"
+    assert "pypi.tuna.tsinghua.edu.cn/simple" in action, (
+        "default primary index must be TUNA (tier-1 cannot reach PyPI)"
+    )
+    assert "pypi.org/simple" in action, (
+        "setup action must use PyPI as the primary for the Dubai runner"
+    )
+    assert "nexus-*)" in action, (
+        "the PyPI primary must be gated on the Dubai runner (RUNNER_NAME nexus-*)"
     )
     assert "UV_INDEX_STRATEGY" in action, "setup action must set UV_INDEX_STRATEGY"
     assert "unsafe-best-match" in action, "index strategy must be unsafe-best-match"
-    assert "--refresh" in action, (
-        "setup action must retry the lock install with a cache refresh "
-        "on resolution failure (stale index cache / mirror lag)"
+    assert "--refresh" not in action, (
+        "setup action must NOT retry the lock install with a cache refresh: "
+        "it re-downloads all 94 packages on any failure (16 GB cache, Dubai disk-full, 2026-11-10)"
+    )
+    assert "uv pip sync requirements.lock" in action, (
+        "setup action must sync the lock (plain retry reuses the warm cache + venv)"
     )
     for wf in ("ci.yml", "tests-os.yml"):
         text = (REPO / ".github" / "workflows" / wf).read_text(encoding="utf-8")
@@ -273,12 +296,16 @@ def test_prune_script_is_age_gated_and_never_fatal() -> None:
     pattern must require the 16-hex lock hash, so the live stable venv
     (`...-.venv-ci-3.11`) never matches.
 
-    The uv wheel cache is managed ONLY with uv's own tool (`uv cache
-    prune` — never rm inside the cache, uv forbids it): the cache grew
-    to 16 GB on Dubai and filled the disk (2026-11-10) because the prune
-    never touched it. And the pytest temp top dir stays fresh, so its
-    SESSION subdirs must be pruned by age too (3.6 GB of stale Nov-9
-    sessions on Dubai).
+    The uv wheel cache is managed ONLY with uv's own tools (`uv cache
+    prune` for ordinary growth, `uv cache clean` as the emergency valve
+    when the disk is nearly full — never rm inside the cache, uv forbids
+    it): the cache grew to 16 GB on Dubai and filled the disk (2026-11-10)
+    because the prune never touched it. The clean valve is space-gated
+    (free < 5 GB) and safe: the venv stays intact, so the next sync
+    downloads only packages missing from the venv — a wipe can never
+    force a full re-download while the venv is warm. And the pytest
+    temp top dir stays fresh, so its SESSION subdirs must be pruned by
+    age too (3.6 GB of stale Nov-9 sessions on Dubai).
     """
     text = PRUNE_SCRIPT.read_text(encoding="utf-8")
     assert "-mtime" in text, "prune must be age-gated (mtime)"
@@ -290,6 +317,12 @@ def test_prune_script_is_age_gated_and_never_fatal() -> None:
     assert "uv cache prune" in text, (
         "prune must manage the uv wheel cache with `uv cache prune` (16 GB on Dubai, 2026-11-10)"
     )
+    assert "uv cache clean" in text, (
+        "prune must wipe the uv wheel cache when the disk is nearly full "
+        "(16 GB cache filled the 40 GB Dubai disk, 2026-11-10)"
+    )
+    assert "5242880" in text, "disk guard floor must be 5 GB (5242880 KB)"
+    assert "df -k" in text, "disk guard must check free space with df"
     assert ".cache/uv" not in text, (
         "prune must never address the uv cache directory directly "
         "(uv forbids touching the cache) — use `uv cache prune` only"

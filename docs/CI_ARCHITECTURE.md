@@ -342,7 +342,9 @@ Also automatic now (same commit):
   references them since the stable-venv switch) and nse-ci caches older
   than 30 days, /tmp test
   artifacts (`tmp*`, `pytest-*`, pytest session subdirs) older than 24h,
-  plus `uv cache prune` for the wheel cache. Age-gated and
+  plus `uv cache prune` for the wheel cache and a disk-space guard
+  (`uv cache clean` if free < 5 GB — the venv stays intact, so the
+  next sync is a delta). Age-gated and
   failure-proof; it never touches the current venv or anything a live
   job could own. (The Dubai box held 107 tmp* dirs,
   1687 model.pt files, 3.5G of pytest sessions on 2026-11-09 — and a
@@ -565,7 +567,7 @@ do not run on the runner at all; they run in the local gate.
 
 | Lane | Cache | Notes |
 | :--- | :--- | :--- |
-| Self-hosted legs | local uv cache in the runner user's home (`~/.cache/uv`), managed by `uv cache prune` at the start of every lane | No GitHub Actions cache (`enable-cache: false` on self-hosted — uploading a multi-GB cache from a tethered box burns Post time); no `setup-python` pip cache (it would key on the system Python the lane does not use). |
+| Self-hosted legs | local uv cache in the runner user's home (`~/.cache/uv`), managed by `uv cache prune` at the start of every lane | No GitHub Actions cache (`enable-cache: false` on self-hosted — uploading a multi-GB cache from a tethered box burns Post time); no `setup-python` pip cache (it would key on the system Python the lane does not use). Per-runner primary index (2026-11-10, measured on Dubai): Dubai (RUNNER_NAME nexus-*) uses PyPI (3.4 MB/s vs TUNA/Aliyun 1.6 MB/s for the same 14 MB wheel); tier-1 keeps TUNA (files.pythonhosted.org unreachable there). Disk guard: `uv cache clean` if free < 5 GB (venv intact, next sync is a delta). |
 | GitHub-hosted legs | none | Ephemeral runners; any Actions cache is inert there and would alias the self-hosted machine's key. |
 
 Cleanup/invalidation stays bounded by `requirements.lock`
