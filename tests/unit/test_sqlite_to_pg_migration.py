@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sqlite3
 from collections.abc import Generator
 from pathlib import Path
@@ -44,6 +45,15 @@ from nexus_scalp.database.migration.sqlite_to_pg import (
     source_columns,
     source_tables,
 )
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
 
 # The lane's ISOLATED PostgreSQL instance. NEVER the live localhost:5432 —
 # that one holds live engine tables and its credentials are not repo values.
@@ -493,9 +503,10 @@ def test_cli_help_lists_the_option_names() -> None:
     runner = CliRunner()
     outcome = runner.invoke(app, ["db", "migrate-sqlite-to-pg", "--help"])
     assert outcome.exit_code == 0
-    assert "--sqlite-dir" in outcome.stdout
-    assert "--pg-url" in outcome.stdout
-    assert "--dry-run" in outcome.stdout
+    out = _plain(outcome.stdout)
+    assert "--sqlite-dir" in out
+    assert "--pg-url" in out
+    assert "--dry-run" in out
 
 
 @needs_pg

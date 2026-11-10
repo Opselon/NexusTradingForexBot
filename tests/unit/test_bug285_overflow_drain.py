@@ -32,7 +32,6 @@ import inspect
 import json
 import sqlite3
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -134,15 +133,21 @@ def _close_repo_fast(r: AuditRepository) -> None:
     ``close()``'s join returns in ~20 ms instead of ~1 s. Any failure
     here (worker already dead, plane gone) falls back to the plain slow
     ``close()`` — never worse than before.
+
+    The drain wait is the repository's own bounded queue join
+    (``_join_queue_bounded`` runs ``Queue.join`` on a daemon thread with a
+    deadline) — NO wall-clock read here: ML-QA-013 forbids the ``time``
+    module in this file, and the cadence tests must stay on the injected
+    deterministic clock.
     """
     try:
         plane = r._write_plane
         if plane is not None:
             plane._flush_interval = 0.02
             r._queue.put(("SELECT 1", ()))
-            deadline = time.monotonic() + 0.5
-            while r._queue.unfinished_tasks > 0 and time.monotonic() < deadline:
-                time.sleep(0.002)
+            worker = r._worker_thread
+            if worker is not None and worker.is_alive():
+                r._join_queue_bounded(0.5)
     except Exception:
         pass
     r.close()

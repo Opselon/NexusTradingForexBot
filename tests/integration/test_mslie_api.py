@@ -79,10 +79,21 @@ def _make_app() -> Any:
 # ---------------------------------------------------------------------------
 
 
+WEB_TOKEN = "mslie-test-token"
+
+
 @pytest.fixture
-def client() -> TestClient:
+def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """Authenticated client: create_app installs WEB-AUTH-P0 unconditionally,
+    so /api/mslie/* + /api/debug/state 401 without a token (CI run #3330).
+    The token is set BEFORE create_app — the middleware resolves its token
+    at install time from the live env — and sent as a Bearer header, the
+    same pattern tests/unit/test_live_state_contract.py uses."""
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", WEB_TOKEN)
     app = _make_app()
-    return TestClient(app)
+    c = TestClient(app)
+    c.headers.update({"Authorization": f"Bearer {WEB_TOKEN}"})
+    return c
 
 
 def test_mslie_status_endpoint(client: TestClient) -> None:
@@ -113,15 +124,19 @@ def test_mslie_features_endpoint(client: TestClient) -> None:
     assert "smart_money" in vec
 
 
-def test_mslie_features_not_ready() -> None:
+def test_mslie_features_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fresh engine without a computation reports NO_MSLIE_VECTOR."""
     from nexus_scalp.web import server as server_module
 
+    # WEB-AUTH-P0: token before create_app (middleware resolves at install)
+    # + Bearer header, as in the client fixture above.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", WEB_TOKEN)
     app = server_module.create_app()
     state = _AppState()
     state.engine.mslie_engine = MarketStructureEngine()  # never analyzed
     app.state.engine = state.engine
     client = TestClient(app)
+    client.headers.update({"Authorization": f"Bearer {WEB_TOKEN}"})
     r = client.get("/api/mslie/features")
     assert r.status_code == 200
     data = r.json()

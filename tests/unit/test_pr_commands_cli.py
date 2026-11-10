@@ -6,11 +6,22 @@ The command must exist on the real app, discover a PR automatically when
 
 from __future__ import annotations
 
+import re
+
 from typer.testing import CliRunner
 
 from nexus_scalp.cli.app_factory import app
 
 _RUNNER = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
 
 
 def _find(cmd_name: str) -> bool:
@@ -44,7 +55,7 @@ class TestPrReportHelp:
     def test_help_lists_core_flags(self) -> None:
         result = _RUNNER.invoke(app, ["pr", "report", "--help"])
         assert result.exit_code == 0
-        out = result.stdout
+        out = _plain(result.stdout)
         assert "--watch" in out
         assert "--refresh" in out
         assert "--json" in out

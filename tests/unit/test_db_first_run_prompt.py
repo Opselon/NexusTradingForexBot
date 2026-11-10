@@ -339,10 +339,22 @@ def test_real_validation_dead_endpoint_restores_secret_store(tmp_path, monkeypat
 def test_all_three_entry_surfaces_wire_the_step():
     # `nexus setup` wizard flow (cli/wizard.py::_wizard_flow)
     assert "run_first_run_database_choice" in wizard._wizard_flow.__code__.co_names
-    # `nexus start` (cli/engine_boot.py::start_cmd)
-    assert "run_first_run_database_choice" in engine_boot.start_cmd.__code__.co_names
-    # double-click launcher (NexusTradingForexBot.py::main)
+    # `nexus start` (cli/engine_boot.py::start_cmd) — via the EU-03 lazy shim
+    # `_heavy_first_run_database_choice` (OBS-011 deferred-import pattern):
+    # start_cmd calls the shim, the shim calls the step. Asserting the step
+    # name directly in start_cmd's co_names went stale when the shim landed.
+    assert "_heavy_first_run_database_choice" in engine_boot.start_cmd.__code__.co_names
+    assert (
+        "run_first_run_database_choice"
+        in engine_boot._heavy_first_run_database_choice.__code__.co_names
+    )
+    # double-click launcher (NexusTradingForexBot.py::main) — the third
+    # surface was DELIBERATELY unwired in #484 (REVIEW-LOCK L3): the launcher
+    # installs the review write-guard at import and must never prompt for a
+    # database choice (the prompt writes the settings DB). Assert the
+    # negative, so a future re-addition of the prompt is a conscious
+    # decision, not a silent regression of the read-only plane.
     repo_root = Path(__file__).resolve().parents[2]
     launcher_src = (repo_root / "NexusTradingForexBot.py").read_text(encoding="utf-8")
-    assert "prompt_first_run_database_choice" in launcher_src
-    assert launcher_src.count("prompt_first_run_database_choice()") >= 1
+    assert "prompt_first_run_database_choice" not in launcher_src
+    assert "install_review_write_guard" in launcher_src

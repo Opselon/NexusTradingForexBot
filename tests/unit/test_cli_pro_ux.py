@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 
 from typer.testing import CliRunner
 
@@ -10,6 +11,15 @@ from nexus_scalp.cli.main import app
 from nexus_scalp.release import exit_codes as xc
 
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
 
 
 def test_start_defaults_paper_and_welcome_has_paper_xauusd() -> None:
@@ -26,7 +36,7 @@ def test_start_defaults_paper_and_welcome_has_paper_xauusd() -> None:
 def test_doctor_fix_flag_exists_and_json_still_works() -> None:
     res = runner.invoke(app, ["doctor", "--help"])
     assert res.exit_code == 0
-    assert "--fix" in res.stdout
+    assert "--fix" in _plain(res.stdout)
     # json mode must still parse
     res2 = runner.invoke(app, ["doctor", "--json"])
     assert res2.exit_code == 0
@@ -55,7 +65,8 @@ def test_config_missing_pretty_hint() -> None:
 def test_repair_verify_flag_and_banner() -> None:
     res = runner.invoke(app, ["repair", "--help"])
     assert res.exit_code == 0
-    assert "--verify" in res.stdout or "--no-verify" in res.stdout
+    out = _plain(res.stdout)
+    assert "--verify" in out or "--no-verify" in out
 
 
 def test_version_banner_has_gradient_markers() -> None:

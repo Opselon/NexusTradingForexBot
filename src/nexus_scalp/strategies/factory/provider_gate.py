@@ -775,11 +775,22 @@ def execute_http_post(
             )
         try:
             resp = httpx.post(url, json=payload, headers=headers, timeout=timeout)
-        except httpx.TimeoutException as e:
-            return GateResult(
-                ok=False, category=FailureCategory.TIMEOUT, reason=f"timeout: {type(e).__name__}"
-            )
         except Exception as e:
+            # The timeout branch must not depend on the httpx module
+            # carrying ``TimeoutException``: a partial/minimal httpx
+            # replacement (a test double exposing only ``post``) raises
+            # AttributeError while the ``except httpx.TimeoutException``
+            # clause itself is evaluated, and the gate then recorded the
+            # failure as UNKNOWN "gate internal error" instead of the
+            # timeout the caller actually hit. Resolve the type
+            # defensively; a real timeout (httpx.ReadTimeout and friends
+            # subclass TimeoutException) still classifies TIMEOUT, and an
+            # unresolvable type degrades to NETWORK_ERROR — never UNKNOWN.
+            timeout_exc = getattr(httpx, "TimeoutException", None)
+            if timeout_exc is not None and isinstance(e, timeout_exc):
+                return GateResult(
+                    ok=False, category=FailureCategory.TIMEOUT, reason=f"timeout: {type(e).__name__}"
+                )
             return GateResult(
                 ok=False,
                 category=FailureCategory.NETWORK_ERROR,

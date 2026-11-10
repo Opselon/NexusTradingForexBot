@@ -437,11 +437,25 @@ def test_speedup_ratio_contract_is_structural() -> None:
     than the canonical one". Removing the ratio/leg comparison while keeping
     only a generous budget would leave the builder free to regress to
     canonical speed unnoticed.
+
+    SHAPE (round 2): both builders run ONCE per module in the shared
+    ``built_frames`` fixture (``_build_both``) — the speedup test consumes
+    their back-to-back per-leg timings instead of re-running both builders.
+    The legs must therefore be pinned where they now live (the builder),
+    and the test itself must still unpack per-leg timings and compare them
+    directly; either half missing is the same regression the old shape
+    caught.
     """
     code = _code_lines(_slice(_MODULE, "test_bug106_incremental_speedup"))
     assert code, "test_bug106_incremental_speedup must exist"
-    assert "compute_70d_frame(" in code, "the canonical leg must run"
-    assert "compute_70d_frame_fast(" in code, "the incremental leg must run"
+    assert "built_frames" in code, (
+        "the speedup test must consume the shared back-to-back timings "
+        "(re-running both builders would double the module's build count)"
+    )
+    builder = _code_lines(_slice(_MODULE, "_build_both"))
+    assert builder, "_build_both must exist (shared canonical+fast build)"
+    assert "compute_70d_frame(" in builder, "the canonical leg must run"
+    assert "compute_70d_frame_fast(" in builder, "the incremental leg must run"
     # The structural contract: a direct comparison of the two legs' CPU cost.
     # ``consumed_ms`` is the single-shot stopwatch total (both legs summed,
     # indistinguishable); the ratio contract needs per-leg figures.

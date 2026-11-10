@@ -128,7 +128,11 @@ class TestModelGenerationEndToEnd:
         finally:
             builtins.__import__ = real_import
         assert 0 <= pred["argmax"] <= 3
-        assert len(pred["probabilities"]) >= 4  # legacy 4-head geometry
+        # The probabilities vector is the softmax over the model's actual
+        # head: class_count == 3 here (triple_barrier_3class_v1), so exactly
+        # 3 probabilities. The old ">= 4 (legacy 4-head geometry)" assertion
+        # is stale from the 4-class era and can never hold for a 3-class head.
+        assert len(pred["probabilities"]) == mm["class_count"]
 
         # 7. 3-class label contract enforced
         schema = default_label_schema()

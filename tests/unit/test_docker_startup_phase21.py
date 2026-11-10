@@ -77,11 +77,17 @@ def compose_services(compose_data: dict) -> dict:
 
 
 def test_docker_01_compose_parses() -> None:
-    """docker compose config --quiet exits 0 (skip when docker unavailable)."""
+    """docker compose config exits 0 (skip when docker unavailable).
+
+    No --quiet: the flag does not exist on `docker compose config` in the
+    Compose version on the Dubai runner (exit 125 "unknown flag: --quiet").
+    Plain `config` still validates + renders the file; its stdout is
+    captured, not printed.
+    """
     if shutil.which("docker") is None:
         pytest.skip("docker CLI not available")
     proc = subprocess.run(
-        ["docker", "compose", "config", "--quiet"],
+        ["docker", "compose", "config"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,

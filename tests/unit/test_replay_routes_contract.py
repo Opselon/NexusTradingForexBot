@@ -48,6 +48,9 @@ from nexus_scalp.web.replay_routes import (
 REPO = Path(__file__).resolve().parents[2]
 M1 = REPO / "data" / "raw" / "XAUUSD_M1.parquet"
 MODEL = REPO / "artifacts" / "models" / "scalp" / "XAUUSD" / "70d_liquidity" / "model.pt"
+# Unpatched repo path (the autouse fixture below repoints MODEL at a tmp
+# checkpoint; _local_dataset_ready must keep judging the REAL bundle).
+_REPO_MODEL = MODEL
 T0 = datetime(2026, 7, 1, 0, 0, tzinfo=UTC)
 N = 300  # synthetic bars; >= FEATURE_WARMUP_BARS so decisions really trace
 WEB_TOKEN = "impld-replay-contract-token"
@@ -77,6 +80,29 @@ def _synth_records(contract: Any, config: Any) -> list[dict[str, Any]]:
         ts += timedelta(minutes=1)
         n += 1
     return out
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_model(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Point the session config at a deterministic checkpoint in tmp.
+
+    The live 70d_liquidity champion is a RELEASE ASSET and is absent from a
+    fresh checkout, so the route-layer contracts (C-3/C-4/C-9/H-15) died with
+    FileNotFoundError before any assertion ran (CI run #3330: all 10 failed
+    in _make_session with 500 OPERATION_FAILED). The checkpoint is minted
+    in the test's tmp dir on purpose — see tests/helpers/synthetic_checkpoint
+    (writing a synthetic model.pt into artifacts/ would install a fake
+    champion in the tree the runtime reads). The suites inject their own
+    records loader, so the model is loaded but the route mechanics under
+    test do not depend on its weights; num_features=70 matches the
+    engine's 70D feature vector (build_70d_vector).
+    """
+    import sys
+
+    from tests.helpers.synthetic_checkpoint import write_trained_checkpoint
+
+    artifact = write_trained_checkpoint(tmp_path / "model.pt", num_features=70)
+    monkeypatch.setattr(sys.modules[__name__], "MODEL", str(artifact))
 
 
 @pytest.fixture(scope="module")
@@ -346,7 +372,7 @@ def test_c9_reset_after_end_is_not_end_of_data(client: TestClient) -> None:
 
 
 def _local_dataset_ready() -> bool:
-    return M1.exists() and MODEL.exists()
+    return M1.exists() and _REPO_MODEL.exists()
 
 
 def _real_window(hours: int = 6) -> dict[str, Any]:

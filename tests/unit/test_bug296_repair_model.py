@@ -164,6 +164,27 @@ def _populate_cache(ws: Path, cache: Path) -> None:
         shutil.copy2(art.parent / name, cache / name)
 
 
+def _provision_clone_audit_db() -> None:
+    """Create the clone's canonical audit DB (+ registry schema).
+
+    A live `repair --model` mint provisions it as a side effect (BUG-146:
+    the repair path constructs an AuditRepository against the clone's
+    NEXUS_AUDIT_DB seam); a cache copy of the four bundle files does not.
+    Tests that seed from the cache and then read the registry (the governed-
+    champion refusal) need the DB to exist with its schema, so reproduce
+    that side effect here. Constructing the repository creates the file and
+    runs the schema migration; it is closed immediately (the conftest
+    autouse fixture also reaps it at teardown).
+    """
+    from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+    repo = AuditRepository(flush_interval_sec=0.05)
+    try:
+        repo.close()
+    except Exception:
+        pass
+
+
 def _seed_or_mint_bundle(ws: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
     """Place a repair-minted starter bundle in this workspace's artifact dir.
 
@@ -177,6 +198,10 @@ def _seed_or_mint_bundle(ws: Path, tmp_path_factory: pytest.TempPathFactory) -> 
         art.parent.mkdir(parents=True, exist_ok=True)
         for name in _BUNDLE_FILES:
             shutil.copy2(cache / name, art.parent / name)
+        # The live mint provisions the canonical audit DB (BUG-146); the
+        # byte copy does not — restore that side effect so seeded workspaces
+        # are indistinguishable from freshly minted ones.
+        _provision_clone_audit_db()
     else:
         res = _invoke(["repair", "--model", "--json", "--no-verify"])
         assert res.exit_code == 0, (res.stdout or "")[-500:]
