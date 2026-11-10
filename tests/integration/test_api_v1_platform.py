@@ -31,11 +31,13 @@ from tests.helpers.authenticated_client import authenticated_test_client
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def seeded_repo(tmp_path: Any) -> AuditRepository:
+@pytest.fixture(scope="module")
+def seeded_repo(tmp_path_factory: pytest.TempPathFactory) -> AuditRepository:
     from nexus_scalp.database.config import DatabaseConfig
 
-    cfg = DatabaseConfig(provider="sqlite", sqlite_path=str(tmp_path / "audit.db"))
+    cfg = DatabaseConfig(
+        provider="sqlite", sqlite_path=str(tmp_path_factory.mktemp("audit") / "audit.db")
+    )
     repo = AuditRepository(config=cfg)
     # Seed audit_signals deterministically (12 rows, mixed actions/stages/symbols).
     # Timestamps are anchored to the CURRENT UTC time, not a fixed calendar
@@ -125,8 +127,15 @@ def seeded_repo(tmp_path: Any) -> AuditRepository:
     return repo
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def v1_client(seeded_repo: AuditRepository) -> TestClient:
+    # MODULE scope (was function scope): building the seeded repo (~0.7s)
+    # + create_v1_app + the repo's graceful-shutdown teardown (~1s each)
+    # cost ~2s PER TEST, i.e. ~32s for 17 tests, for identical state.
+    # Safe to share: every test here is read-only over the seeded rows —
+    # the only non-GETs are 405 rejections and a 503 ENGINE_UNAVAILABLE,
+    # none of which writes to the repo — so no test can observe another's
+    # writes. The legacy-app test below reuses the same seeded repo.
     app = create_v1_app()
     # Bind the shared audit accessor to the SEEDED repo (same lazy attribute the
     # routes use via get_audit_repo) — full request path over real SQLite.

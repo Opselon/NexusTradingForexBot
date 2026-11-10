@@ -400,11 +400,19 @@ def test_cli_setup_contract_and_web_endpoints(monkeypatch: object) -> None:
     from typer.testing import CliRunner
 
     import nexus_scalp.release.evaluate as reval
+    from nexus_scalp.cli import wizard
     from nexus_scalp.cli.main import app
     from nexus_scalp.release import exit_codes as xc
 
     # Ensure evaluation verdict is never BLOCKED in this contract unit test
     monkeypatch.setattr(reval, "overall_verdict", lambda results: ("PASS", []))
+    # PERF (round 2): the human-mode wizard ends with _auto_close(15.0),
+    # which sleeps the full 15s under CliRunner (stdin is not a tty) — a
+    # first-run UX countdown, not behavior this contract asserts (it only
+    # checks the emitted JSON fields and the human stdout text, both
+    # produced before the countdown). Stub the sleep so the test does not
+    # burn 15s per run; production behavior is untouched.
+    monkeypatch.setattr(wizard, "_sleep_quiet", lambda seconds: None)
 
     runner = CliRunner()
     user_input = chr(10).join(["PAPER", "XAUUSD", ""])
