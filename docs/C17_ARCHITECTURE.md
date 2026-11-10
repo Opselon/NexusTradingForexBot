@@ -107,6 +107,21 @@ resolves the submodule.
 3. A test whose only dependency on a changed module is a **non-literal**
    dynamic import is not selected (counted in the plan notes).
 
+Measured exposure (2026-11-10, AST metadata over the whole repo,
+`scripts/ci/ast_extract.py`): **40 hubs** (>25 importers) across 1684
+modules. The transitive-only test set — tests that reach a hub only
+through a non-test intermediate and are therefore skipped by the
+bounded one-hop — totals **740 distinct test files** across all hubs
+(upper bound: the union, assuming a change below every hub at once).
+It is concentrated in 6 foundational hubs that import almost nothing
+themselves, so a change below them is rare: `observability/logging.py`
+(711), `database/config.py` (688), `configuration/config.py` (652),
+`domain/enums.py` (631), `domain/models.py` (612),
+`adapters/database/audit_repository.py` (571). A hub with 0 skipped
+tests exists too (`cli/main.py`: 27 importers, all 24 direct tests).
+The residual is therefore real but concentrated, and the scheduled full
+suite (semi-monthly + dispatch) is the backstop that catches any miss.
+
 Why this is the accepted trade-off: import reachability is a static
 over-approximation, and full transitive closure through composition
 roots is unaffordable (779/860 tests for one research leaf before hub
