@@ -281,6 +281,19 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(monkeypatch: pytest.MonkeyPatc
     calls: list[tuple[object, ...]] = []
 
     def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        # The contract is about the LEDGER (audit) read path: a non-SQLite
+        # repo must never reach the SQLite audit accessor. The app's settings
+        # store (app_settings.db) is ALWAYS SQLite by design, and the read
+        # plane bootstrap legitimately opens it to resolve persisted pool
+        # config — that is a config lookup, not a ledger read, and it must
+        # not trip this gate. So the spy ignores settings-DB connections and
+        # only records any OTHER SQLite open (which would be a real violation).
+        # Without this scoping the test is environment-dependent: on a fresh
+        # runner the bootstrap reads the settings DB during this very call
+        # and the test fails even though no ledger data touched SQLite.
+        path = args[0] if args else kwargs.get("database", "")
+        if str(path).endswith("app_settings.db"):
+            return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
         calls.append((args, kwargs))
         return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
 

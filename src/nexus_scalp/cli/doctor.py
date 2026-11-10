@@ -1369,9 +1369,15 @@ def _validate_restored_bars(path: Path) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# diagnostics
+# diagnostics (export)
 # ---------------------------------------------------------------------------
-@app.command("diagnostics")
+# NOTE: this command is registered ONLY as "export-diagnostics". The bare
+# name "diagnostics" belongs to the opt-in log-shipping group
+# (cli/diagnostics_commands.py, `nexus diagnostics status|enable|disable|test`,
+# added via app_factory.add_typer). Registering this export under "diagnostics"
+# too shadowed it: `nexus diagnostics` resolved to the group, which needs a
+# subcommand, so invoking it bare raised NoArgsIsHelpError (exit code 2) and
+# the e2e export test failed on every runner. The alias is gone on purpose.
 @app.command("export-diagnostics")
 def diagnostics_cmd() -> None:
     """Export a sanitized diagnostics archive (never contains secrets)."""
