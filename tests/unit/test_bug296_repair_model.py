@@ -125,17 +125,102 @@ def _artifact(ws: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Shared-starter cache (speed: one live mint per module, the rest copy bytes)
+# ---------------------------------------------------------------------------
+# The seed-999 starter mint is DETERMINISTIC (BUG-154: manual_seed BEFORE
+# ScalpNet construction, fixed data generator, 30 AdamW steps), so a bundle
+# minted once is byte-identical to one minted fresh in the same run — and
+# every gate the tests pin (digest, canary, behavioral probe) reads only the
+# bytes + sidecars, never the mint history. Each live mint costs a full
+# 30-step training run plus the serving-gate probes (the file's slowest
+# tests did 2-3 mints each), while copying the four bundle files (~1 MB)
+# is milliseconds. So the FIRST test that needs a starter mints it live
+# (or seeds it from the cache when the file runs standalone / out of
+# order) and every other test copies the bytes into its own throwaway
+# workspace. Tests whose POINT is the mint itself (option_exists, the
+# idempotent mint+skip, the force re-mint) still mint live; tests whose
+# point is what happens to an already-minted bundle (second construction,
+# foreign-keep, champion-refuse, sidecar marker, bare-mint repair input)
+# reuse the cached bytes instead of paying for another training run.
+# The cache lives under pytest's session basetemp (one per xdist worker)
+# and is never mutated in place: seeders copy OUT of it, mutations happen
+# on the per-test copy.
+_BUNDLE_FILES = ("model.pt", "manifest.json", "model.meta.json", "model.scaler.npz")
+
+
+def _cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.getbasetemp() / "bug296_shared_starter_bundle"
+
+
+def _bundle_cached(cache: Path) -> bool:
+    return all((cache / name).exists() for name in _BUNDLE_FILES)
+
+
+def _populate_cache(ws: Path, cache: Path) -> None:
+    """Copy this workspace's freshly minted bundle into the shared cache."""
+    cache.mkdir(parents=True, exist_ok=True)
+    art = _artifact(ws)
+    for name in _BUNDLE_FILES:
+        shutil.copy2(art.parent / name, cache / name)
+
+
+def _seed_or_mint_bundle(ws: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Place a repair-minted starter bundle in this workspace's artifact dir.
+
+    Copy from the shared cache when present; otherwise mint live via the CLI
+    (the exact path under test) and populate the cache from it, so the test
+    also passes standalone / out of order.
+    """
+    cache = _cache_dir(tmp_path_factory)
+    art = _artifact(ws)
+    if _bundle_cached(cache):
+        art.parent.mkdir(parents=True, exist_ok=True)
+        for name in _BUNDLE_FILES:
+            shutil.copy2(cache / name, art.parent / name)
+    else:
+        res = _invoke(["repair", "--model", "--json", "--no-verify"])
+        assert res.exit_code == 0, (res.stdout or "")[-500:]
+        _populate_cache(ws, cache)
+    return art
+
+
+def _seed_bare_model(ws: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Place a BARE model.pt (weights only, NO sidecars) in the artifact dir.
+
+    Byte-identical to what mint_trained_starter() would train fresh (the
+    seed-999 recipe is deterministic), so the E8 brick shape is exact
+    without paying for a second 30-step training run. Fallback when no
+    cache exists yet: mint live via the CLI, cache the full bundle, then
+    strip the sidecars — the remaining bare weights are the same bytes.
+    """
+    cache = _cache_dir(tmp_path_factory)
+    art = _artifact(ws)
+    art.parent.mkdir(parents=True, exist_ok=True)
+    if _bundle_cached(cache):
+        shutil.copy2(cache / "model.pt", art)
+    else:
+        res = _invoke(["repair", "--model", "--json", "--no-verify"])
+        assert res.exit_code == 0, (res.stdout or "")[-500:]
+        _populate_cache(ws, cache)
+        for name in ("manifest.json", "model.meta.json", "model.scaler.npz"):
+            (art.parent / name).unlink()
+    return art
+
+
+# ---------------------------------------------------------------------------
 # 1. repair --model mints + stamps sidecars + boot #2 loads (E4/E8/Z-B1)
 # ---------------------------------------------------------------------------
 
 
 def test_repair_model_option_exists_and_mints_full_bundle(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E4-RED: at base, `repair --model` exited 2 ("No such option").
     GREEN: rc=0, MINTED verdict, and ALL FOUR bundle files exist."""
     ws = _clone_ws(tmp_path, monkeypatch)
-    res = _invoke(["repair", "--model", "--json"])
+    # --no-verify: the post-repair doctor run (25 health checks incl. a
+    # network probe) is not what this test pins; payload["model"] is.
+    res = _invoke(["repair", "--model", "--json", "--no-verify"])
     assert res.exit_code == 0, res.stdout[-500:]
     payload = _parse_json_output(res)
     model = payload["model"]
@@ -148,10 +233,11 @@ def test_repair_model_option_exists_and_mints_full_bundle(
     manifest = json.loads((art.parent / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["model_sha256"] == _sha256(art)
     assert manifest["scaler_sha256"] == _sha256(art.parent / "model.scaler.npz")
+    _populate_cache(ws, _cache_dir(tmp_path_factory))
 
 
 def test_repair_model_bundle_passes_integrity_and_second_construction_load(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E8 PIN (the bricked second boot): after the sidecar-stamped mint, a
     FRESH non-force load — verify_artifact_integrity + a second LiveEngine
@@ -164,8 +250,10 @@ def test_repair_model_bundle_passes_integrity_and_second_construction_load(
     )
 
     ws = _clone_ws(tmp_path, monkeypatch)
-    assert _invoke(["repair", "--model", "--json"]).exit_code == 0
-    art = _artifact(ws)
+    # The mint itself is pinned by test_repair_model_option_exists...; this
+    # test's point is the SECOND load, so it reuses the shared minted bundle
+    # (byte-identical to a fresh CLI mint) instead of training a second one.
+    art = _seed_or_mint_bundle(ws, tmp_path_factory)
 
     verdict = verify_artifact_integrity(art)
     assert verdict.status is ArtifactIntegrityStatus.VERIFIED
@@ -193,7 +281,9 @@ def test_repair_model_bundle_passes_integrity_and_second_construction_load(
     assert Path(engine._bundle.artifact_path) == art
 
 
-def test_repair_model_repairs_legacy_bare_mint_brick(tmp_path, monkeypatch) -> None:
+def test_repair_model_repairs_legacy_bare_mint_brick(
+    tmp_path, tmp_path_factory: pytest.TempPathFactory, monkeypatch
+) -> None:
     """E8 shape at rest: a bare model.pt with NO sidecars is exactly what a
     force_fresh mint leaves behind — verify refuses it (LEGACY_UNVERIFIED) and
     repair --model must restore a verified bundle."""
@@ -204,9 +294,10 @@ def test_repair_model_repairs_legacy_bare_mint_brick(tmp_path, monkeypatch) -> N
     )
 
     ws = _clone_ws(tmp_path, monkeypatch)
-    art = _artifact(ws)
-    art.parent.mkdir(parents=True, exist_ok=True)
-    model_bootstrap.mint_trained_starter(art)  # bare weights, NO sidecars
+    # Bare weights only: the cached model.pt bytes ARE the deterministic
+    # seed-999 mint output, so no second 30-step training run is needed to
+    # build the brick shape — the repair mint below is the live one.
+    art = _seed_bare_model(ws, tmp_path_factory)
     ok, _detail = model_bootstrap.bundle_is_servable(art)
     assert ok, (
         "bare seed-999 mint passes the content probes; it is the MISSING SIDECARS that brick boot #2"
@@ -217,7 +308,7 @@ def test_repair_model_repairs_legacy_bare_mint_brick(tmp_path, monkeypatch) -> N
         verify_artifact_integrity(art)
     assert integ.value.verdict.status is ArtifactIntegrityStatus.LEGACY_UNVERIFIED
 
-    res = _invoke(["repair", "--model", "--json"])
+    res = _invoke(["repair", "--model", "--json", "--no-verify"])
     assert res.exit_code == 0
     assert _parse_json_output(res)["model"]["status"] == "MINTED"
     verdict = verify_artifact_integrity(art)
@@ -232,31 +323,46 @@ def test_repair_model_repairs_legacy_bare_mint_brick(tmp_path, monkeypatch) -> N
 def test_repair_model_idempotent_second_run_skips_untouched(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Was one test doing mint + skip + force re-mint (3 CLI invokes, 2 live
+    # trainings, 32.6s on CI run #3319). Split: this half pins mint + skip;
+    # test_repair_model_force_reprovisions_declared_starter pins --force.
     ws = _clone_ws(tmp_path, monkeypatch)
-    assert _invoke(["repair", "--model", "--json"]).exit_code == 0
+    assert _invoke(["repair", "--model", "--json", "--no-verify"]).exit_code == 0
     art = _artifact(ws)
     before = _sha256(art)
     mtime = art.stat().st_mtime_ns
-    res = _invoke(["repair", "--model", "--json"])
+    res = _invoke(["repair", "--model", "--json", "--no-verify"])
     assert res.exit_code == 0
     payload = _parse_json_output(res)
     assert payload["model"]["status"] == "SKIPPED"
     assert _sha256(art) == before
     assert art.stat().st_mtime_ns == mtime, "skip must not rewrite the bundle"
-    # --force on the DECLARED non-champion starter may re-provision (E9 clause)
-    res_f = _invoke(["repair", "--model", "--force", "--json"])
+
+
+def test_repair_model_force_reprovisions_declared_starter(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """E9 clause (split out of the idempotence test): --force on the DECLARED
+    non-champion starter may re-provision. The starter under test is the
+    shared minted bundle (byte-identical to a fresh CLI mint); the --force
+    re-mint below is the live one this test pins."""
+    ws = _clone_ws(tmp_path, monkeypatch)
+    _seed_or_mint_bundle(ws, tmp_path_factory)
+    res_f = _invoke(["repair", "--model", "--force", "--json", "--no-verify"])
     assert res_f.exit_code == 0
     assert _parse_json_output(res_f)["model"]["status"] == "MINTED"
 
 
 def test_repair_model_keeps_verified_foreign_bundle_byte_identical(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """E9 clobber class: a digest-VERIFIED + servable artifact that is NOT a
     declared starter (trained bundle mounted by the operator) must be KEPT —
     bytes AND manifest unchanged, even with --force."""
     ws = _clone_ws(tmp_path, monkeypatch)
-    assert _invoke(["repair", "--model", "--json"]).exit_code == 0
+    # The bundle under test is the shared minted starter (byte-identical to
+    # a fresh CLI mint); the KEPT verdicts below are the live behavior.
+    _seed_or_mint_bundle(ws, tmp_path_factory)
     art = _artifact(ws)
     manifest = art.parent / "manifest.json"
     record = json.loads(manifest.read_text(encoding="utf-8"))
@@ -267,12 +373,12 @@ def test_repair_model_keeps_verified_foreign_bundle_byte_identical(
         _sha256(manifest),
         _sha256(art.parent / "model.scaler.npz"),
     )
-    res = _invoke(["repair", "--model", "--json"])
+    res = _invoke(["repair", "--model", "--json", "--no-verify"])
     assert res.exit_code == 0
     payload = _parse_json_output(res)
     assert payload["model"]["status"] == "KEPT", payload["model"]
     assert payload["model"]["reason"] == "VERIFIED_ARTIFACT_PRESENT"
-    res_f = _invoke(["repair", "--model", "--force", "--json"])
+    res_f = _invoke(["repair", "--model", "--force", "--json", "--no-verify"])
     assert _parse_json_output(res_f)["model"]["status"] == "KEPT", (
         "--force must NOT override a verified foreign (non-champion-marker) bundle"
     )
@@ -281,12 +387,16 @@ def test_repair_model_keeps_verified_foreign_bundle_byte_identical(
     assert _sha256(art.parent / "model.scaler.npz") == sca_sha
 
 
-def test_repair_model_refuses_governed_champion(tmp_path, monkeypatch) -> None:
+def test_repair_model_refuses_governed_champion(
+    tmp_path, tmp_path_factory: pytest.TempPathFactory, monkeypatch
+) -> None:
     """Registry-truth refusal (reuse of the BUG-278 protected-artifact class):
     with a CHAMPION row bound to the artifact fingerprint, provisioning is
     REFUSED — never clobbered — even with --force."""
     ws = _clone_ws(tmp_path, monkeypatch)
-    assert _invoke(["repair", "--model", "--json"]).exit_code == 0
+    # The governed bundle under test is the shared minted starter; the
+    # REFUSED verdict below is the live behavior.
+    _seed_or_mint_bundle(ws, tmp_path_factory)
     art = _artifact(ws)
     audit_db = ws / "artifacts" / "audit.db"
     assert audit_db.exists(), "repair provisions the canonical audit DB (BUG-146)"
@@ -315,7 +425,7 @@ def test_repair_model_refuses_governed_champion(tmp_path, monkeypatch) -> None:
     finally:
         conn.close()
     art_sha, man_sha = _sha256(art), _sha256(art.parent / "manifest.json")
-    res = _invoke(["repair", "--model", "--force", "--json"])
+    res = _invoke(["repair", "--model", "--force", "--json", "--no-verify"])
     payload = _parse_json_output(res)
     assert payload["model"]["status"] == "REFUSED", payload["model"]
     assert payload["model"]["reason"] == "CHAMPION_GOVERNED"
@@ -463,9 +573,14 @@ def test_load_rejected_path_names_repair_model_hint() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_sidecar_note_marker_written_by_repair_model(tmp_path, monkeypatch) -> None:
+def test_sidecar_note_marker_written_by_repair_model(
+    tmp_path, tmp_path_factory: pytest.TempPathFactory, monkeypatch
+) -> None:
     ws = _clone_ws(tmp_path, monkeypatch)
-    assert _invoke(["repair", "--model", "--json"]).exit_code == 0
+    # The bundle under test is the shared one minted by `repair --model`
+    # (live in test_repair_model_option_exists..., or in the seed fallback);
+    # the marker + note assertions below read what that repair wrote.
+    _seed_or_mint_bundle(ws, tmp_path_factory)
     record = json.loads((_artifact(ws).parent / "manifest.json").read_text(encoding="utf-8"))
     assert record["provisioner"] == model_bootstrap.PROVISIONER_MARKER
     assert "nexus repair --model" in record["note"]

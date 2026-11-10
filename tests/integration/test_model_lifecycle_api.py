@@ -22,7 +22,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
@@ -42,13 +41,25 @@ def _flush(repo) -> None:
     repo._queue.join()
 
 
-@pytest.fixture
-def wired_engine(tmp_path, verified_test_model_bundle):
-    """A full LiveEngine wired against a paper adapter and temp DB."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'models_api.db'}")
+@pytest.fixture(scope="module")
+def wired_engine(tmp_path_factory, verified_test_model_bundle):
+    """A full LiveEngine wired against a paper adapter and temp DB.
+
+    Module-scoped on purpose: constructing a LiveEngine loads + verifies
+    the champion bundle (torch.load, scaler, registry sync, governance
+    engine, training worker/orchestrator) and building the FastAPI app +
+    TestClient adds more — ~4s per test on the Dubai runner when repeated
+    25x (107s for this file). The endpoints under test are read-only
+    against engine state except for the tests that explicitly reset what
+    they change (mode tests restore PAPER, the freeze test unfreezes,
+    the worker test stops/cancels, the missing-manager test restores
+    ``champion_manager``), so one shared engine is safe here.
+    """
+    workdir = tmp_path_factory.mktemp("model_lifecycle_api")
+    repo = AuditRepository(db_url=f"sqlite:///{workdir / 'models_api.db'}")
     from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
+    model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
     cfg = AppConfig(
         execution={
             "symbol": "XAUUSD",
@@ -62,6 +73,22 @@ def wired_engine(tmp_path, verified_test_model_bundle):
     engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
     yield repo, engine
     repo.close()
+
+
+@pytest.fixture(scope="module")
+def api_client(wired_engine):
+    """One FastAPI app + authenticated client for the whole module.
+
+    ``create_app`` registers every router/middleware and the TestClient
+    builds the ASGI stack; rebuilding both per test was a second copy of
+    the per-test setup cost. Endpoints resolve the engine from app state
+    at request time, so the shared client observes engine mutations
+    (freeze, mode change, deleted champion_manager) exactly as a
+    per-test client would.
+    """
+    _repo, engine = wired_engine
+    app = create_app(engine)
+    return authenticated_test_client(app)
 
 
 def seed_experiences(engine, repo, count=40):
@@ -129,20 +156,16 @@ class TestModelLifecycleAPI:
         ):
             assert hasattr(engine, attr), f"LiveEngine missing {attr}"
 
-    def test_models_summary_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_models_summary_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/summary")
         assert resp.status_code == 200
         body = resp.json()
         assert body["available"] is True
         assert "summary" in body
 
-    def test_models_list_and_champion(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_models_list_and_champion(self, api_client):
+        client = api_client
         resp = client.get("/api/models")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -150,18 +173,15 @@ class TestModelLifecycleAPI:
         assert champ.status_code == 200
         assert champ.json()["available"] is True
 
-    def test_training_run_endpoints(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_training_run_endpoints(self, api_client):
+        client = api_client
         runs = client.get("/api/models/runs")
         assert runs.status_code == 200
         assert runs.json()["available"] is True
 
-    def test_worker_start_stop_cancel(self, wired_engine):
+    def test_worker_start_stop_cancel(self, wired_engine, api_client):
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
         assert client.post("/api/models/worker/start").json()["available"] is True
         assert engine._training_worker_started is True
 
@@ -172,12 +192,11 @@ class TestModelLifecycleAPI:
     # and report the REAL runtime state (never fake LIVE).
     # ------------------------------------------------------------------
 
-    def test_engine_mode_apply_and_persist(self, wired_engine, tmp_path):
+    def test_engine_mode_apply_and_persist(self, wired_engine, api_client, tmp_path):
         from nexus_scalp.settings.service import load_settings_service
 
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
 
         # LIVE requested through the UI path.
         resp = client.post("/api/engine/mode", json={"mode": "LIVE"})
@@ -198,10 +217,9 @@ class TestModelLifecycleAPI:
         if prior_row is not None:
             svc.db.set("execution.mode", "PAPER", value_type="str", actor="test_cleanup")
 
-    def test_engine_mode_rejects_invalid(self, wired_engine):
+    def test_engine_mode_rejects_invalid(self, wired_engine, api_client):
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
         # The engine boots with the mode the PERSISTED settings already
         # contain (boot override). Record it so the rejected request is
         # verified to leave it untouched.
@@ -219,11 +237,10 @@ class TestModelLifecycleAPI:
         assert engine.config.execution.mode.value == before
         assert prior_mode.upper() in {"LIVE", "PAPER", "REPLAY", "SHADOW", "BACKTEST"}
 
-    def test_engine_mode_off_cycle(self, wired_engine):
+    def test_engine_mode_off_cycle(self, wired_engine, api_client):
         """ON then OFF: mode toggles persist and engine config follows."""
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
 
         r1 = client.post("/api/engine/mode", json={"mode": "LIVE"})
         assert r1.status_code == 200 and r1.json()["mode"] == "LIVE"
@@ -249,10 +266,8 @@ class TestModelLifecycleAPI:
 
 
 class TestGovernanceAPI:
-    def test_governance_health_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_governance_health_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/health")
         assert resp.status_code == 200
         body = resp.json()
@@ -260,10 +275,8 @@ class TestGovernanceAPI:
         assert "champion" in body["health"]
         assert "shadow" in body["health"]
 
-    def test_governance_registry_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_governance_registry_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/registry")
         assert resp.status_code == 200
         body = resp.json()
@@ -271,36 +284,28 @@ class TestGovernanceAPI:
         cats = body["registry"]["categories"]
         assert "CURRENT_CHAMPION" in cats
 
-    def test_governance_events_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_governance_events_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/events")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
 
-    def test_registry_reconcile_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_registry_reconcile_endpoint(self, api_client):
+        client = api_client
         resp = client.post("/api/models/registry/reconcile")
         assert resp.status_code == 200
         body = resp.json()
         assert body["available"] is True
 
-    def test_promotion_requires_actor(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_promotion_requires_actor(self, api_client):
+        client = api_client
         resp = client.post("/api/models/promotion/approve", json={})
         assert resp.status_code == 200
         body = resp.json()
         assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
 
-    def test_shadow_outcomes_endpoint_safe(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_shadow_outcomes_endpoint_safe(self, api_client):
+        client = api_client
         resp = client.post("/api/models/shadow/outcomes", json={"run_id": ""})
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -320,10 +325,8 @@ class TestModelLifecycleSafety:
 class TestGovernance70API:
     """TASK-08 governance API surface (spec 28/29/30/31/32)."""
 
-    def test_status_endpoint_matches_backend(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_status_endpoint_matches_backend(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/status")
         assert resp.status_code == 200
         body = resp.json()
@@ -333,10 +336,8 @@ class TestGovernance70API:
         )
         assert body["promotion"]["frozen"] is False  # UI badge truth (spec 33)
 
-    def test_promotion_preview_read_only(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_promotion_preview_read_only(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/promotion-preview?model_id=cand_x")
         assert resp.status_code == 200
         body = resp.json()
@@ -346,10 +347,8 @@ class TestGovernance70API:
         assert "gates" in preview
         assert "rollback" in preview
 
-    def test_promotion_execute_requires_token(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_promotion_execute_requires_token(self, api_client):
+        client = api_client
         resp = client.post(
             "/api/models/promotion/execute",
             json={"actor": "op", "model_id": "cand_x", "model_version": "v1", "reason": "x"},
@@ -358,20 +357,17 @@ class TestGovernance70API:
         body = resp.json()
         assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
 
-    def test_rollback_preview_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_rollback_preview_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/rollback-preview?failed_model_id=fail_x")
         assert resp.status_code == 200
         body = resp.json()
         assert body["available"] is True
         assert "rollback_candidate" in body["preview"]
 
-    def test_emergency_freeze_blocks_promotion(self, wired_engine):
+    def test_emergency_freeze_blocks_promotion(self, wired_engine, api_client):
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
         resp = client.post(
             "/api/models/governance/emergency/freeze",
             json={"actor": "operator_1", "reason": "test freeze"},
@@ -403,10 +399,8 @@ class TestGovernance70API:
         assert resp3.json()["available"] is True
         assert engine.governance_engine.promotion_frozen is False
 
-    def test_audits_endpoint(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+    def test_audits_endpoint(self, api_client):
+        client = api_client
         resp = client.get("/api/models/governance/audits")
         assert resp.status_code == 200
         body = resp.json()
@@ -424,17 +418,15 @@ class TestModelsIntegrityRegression:
     return NO_CHAMPION — never a 500.
     """
 
-    def test_integrity_endpoint_no_crash(self, wired_engine):
+    def test_integrity_endpoint_no_crash(self, api_client):
         """BUG-112 repro: the old code called `champ.info` on the
         ChampionManager (which has no `.info`) and 500'd EVERY /api
         request. The endpoint must answer 200 with a full payload
         regardless of champion availability."""
-        _repo, engine = wired_engine
+        client = api_client
         # LiveEngine auto-mints a fresh artifact on cold start, so the
         # fixture normally has a VALID champion — the important contract
         # is 200 + complete payload, never an AttributeError 500.
-        app = create_app(engine)
-        client = authenticated_test_client(app)
         resp = client.get("/api/models/integrity")
         assert resp.status_code == 200, resp.text
         body = resp.json()
@@ -443,19 +435,24 @@ class TestModelsIntegrityRegression:
         assert "compatibility" in body and "integrity" in body
         assert "model_id" in body and "artifact_path" in body
 
-    def test_integrity_endpoint_missing_manager(self, wired_engine):
+    def test_integrity_endpoint_missing_manager(self, wired_engine, api_client):
         _repo, engine = wired_engine
         # Defensive: a manager-less engine still answers 200 UNAVAILABLE.
-        del engine.champion_manager
-        app = create_app(engine)
-        client = authenticated_test_client(app)
-        resp = client.get("/api/models/integrity")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["available"] is True
-        assert body["state"] == "UNAVAILABLE"
+        # The engine is module-shared now, so the deleted attribute MUST
+        # be restored: the next test asserts on the real champion.
+        manager = engine.champion_manager
+        client = api_client
+        try:
+            del engine.champion_manager
+            resp = client.get("/api/models/integrity")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["available"] is True
+            assert body["state"] == "UNAVAILABLE"
+        finally:
+            engine.champion_manager = manager
 
-    def test_integrity_endpoint_valid_champion(self, wired_engine):
+    def test_integrity_endpoint_valid_champion(self, wired_engine, api_client):
         _repo, engine = wired_engine
         # The wired fixture (verified_test_model_bundle) provisions a REAL
         # verified 70D scalp_v3 champion (3-class contract). Assert the
@@ -465,8 +462,7 @@ class TestModelsIntegrityRegression:
         # row and the endpoint answers NO_CHAMPION (no 'compatibility'
         # key at all). The class count is part of the contract too
         # (EXPECTED_NUM_CLASSES=3) — a 4-class head can never be VALID.
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = api_client
         resp = client.get("/api/models/integrity")
         assert resp.status_code == 200, resp.text
         body = resp.json()
