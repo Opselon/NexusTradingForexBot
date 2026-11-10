@@ -71,25 +71,36 @@ def wired_engine(tmp_path_factory, verified_test_model_bundle):
       VALIDATED=2), so the ids must not collide across tests.
     * The summary test stops the research worker it starts, restoring
       the not-started state the restart test assumes.
+
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's verified bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
     """
-    workdir = tmp_path_factory.mktemp("research_api")
-    repo = AuditRepository(db_url=f"sqlite:///{workdir / 'research_api.db'}")
-    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
-    cfg = AppConfig(
-        execution={
-            "symbol": "XAUUSD",
-            "mode": "PAPER",
-        },
-        model={"model_artifact_path": str(model_path)},
-    )
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    with isolated_module_engine_env(tmp_path_factory, "research_api_env"):
+        workdir = tmp_path_factory.mktemp("research_api")
+        repo = AuditRepository(db_url=f"sqlite:///{workdir / 'research_api.db'}")
+        from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
-    yield repo, engine
-    repo.close()
+        model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
+        cfg = AppConfig(
+            execution={
+                "symbol": "XAUUSD",
+                "mode": "PAPER",
+            },
+            model={"model_artifact_path": str(model_path)},
+        )
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        yield repo, engine
+        repo.close()
 
 
 @pytest.fixture(scope="module")

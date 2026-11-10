@@ -101,43 +101,54 @@ def wired_env(tmp_path_factory: pytest.TempPathFactory):
 
     ``monkeypatch`` is function-scoped, so the auth token env var is set
     by hand (previous value saved and restored on teardown).
+
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
     """
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
+
     prev_token = os.environ.get("NSE_WEB_AUTH_TOKEN")
     os.environ["NSE_WEB_AUTH_TOKEN"] = FAKE_TOKEN
-    tmp_path = tmp_path_factory.mktemp("model_promotion_pipeline")
-    db_file = tmp_path / "models_promo.db"
-    repo = AuditRepository(db_url=f"sqlite:///{db_file}")
+    with isolated_module_engine_env(tmp_path_factory, "model_promotion_pipeline_env"):
+        tmp_path = tmp_path_factory.mktemp("model_promotion_pipeline")
+        db_file = tmp_path / "models_promo.db"
+        repo = AuditRepository(db_url=f"sqlite:///{db_file}")
 
-    model_dir = tmp_path / "models"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    model_file = model_dir / "scalpnet_active.pt"
-    rb.mint_starter_bundle(model_file)
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_file = model_dir / "scalpnet_active.pt"
+        rb.mint_starter_bundle(model_file)
 
-    cfg = AppConfig(
-        execution={"symbol": "XAUUSD", "mode": "PAPER"},
-        model={"model_artifact_path": str(model_file)},
-    )
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        cfg = AppConfig(
+            execution={"symbol": "XAUUSD", "mode": "PAPER"},
+            model={"model_artifact_path": str(model_file)},
+        )
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
 
-    app = create_app(engine)
-    client = TestClient(app)
-    client.headers["Authorization"] = f"Bearer {FAKE_TOKEN}"
+        app = create_app(engine)
+        client = TestClient(app)
+        client.headers["Authorization"] = f"Bearer {FAKE_TOKEN}"
 
-    try:
-        yield {
-            "engine": engine,
-            "repo": repo,
-            "client": client,
-            "tmp_path": tmp_path,
-            "model_file": model_file,
-        }
-    finally:
-        repo.close()
-        if prev_token is None:
-            os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
-        else:
-            os.environ["NSE_WEB_AUTH_TOKEN"] = prev_token
+        try:
+            yield {
+                "engine": engine,
+                "repo": repo,
+                "client": client,
+                "tmp_path": tmp_path,
+                "model_file": model_file,
+            }
+        finally:
+            repo.close()
+            if prev_token is None:
+                os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+            else:
+                os.environ["NSE_WEB_AUTH_TOKEN"] = prev_token
 
 
 @pytest.fixture(scope="module")

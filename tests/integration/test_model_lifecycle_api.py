@@ -54,25 +54,36 @@ def wired_engine(tmp_path_factory, verified_test_model_bundle):
     they change (mode tests restore PAPER, the freeze test unfreezes,
     the worker test stops/cancels, the missing-manager test restores
     ``champion_manager``), so one shared engine is safe here.
+
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's verified bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
     """
-    workdir = tmp_path_factory.mktemp("model_lifecycle_api")
-    repo = AuditRepository(db_url=f"sqlite:///{workdir / 'models_api.db'}")
-    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
-    cfg = AppConfig(
-        execution={
-            "symbol": "XAUUSD",
-            "mode": "PAPER",
-        },
-        model={"model_artifact_path": str(model_path)},
-    )
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    with isolated_module_engine_env(tmp_path_factory, "model_lifecycle_api_env"):
+        workdir = tmp_path_factory.mktemp("model_lifecycle_api")
+        repo = AuditRepository(db_url=f"sqlite:///{workdir / 'models_api.db'}")
+        from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
-    yield repo, engine
-    repo.close()
+        model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
+        cfg = AppConfig(
+            execution={
+                "symbol": "XAUUSD",
+                "mode": "PAPER",
+            },
+            model={"model_artifact_path": str(model_path)},
+        )
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        yield repo, engine
+        repo.close()
 
 
 @pytest.fixture(scope="module")
@@ -193,8 +204,6 @@ class TestModelLifecycleAPI:
     # ------------------------------------------------------------------
 
     def test_engine_mode_apply_and_persist(self, wired_engine, api_client, tmp_path):
-        from nexus_scalp.settings.service import load_settings_service
-
         _repo, engine = wired_engine
         client = api_client
 
@@ -207,8 +216,12 @@ class TestModelLifecycleAPI:
         assert body["persisted"] is True
         # Engine config applied.
         assert engine.config.execution.mode.value == "LIVE"
-        # Settings DB persisted (canonical store).
-        svc = load_settings_service()
+        # Settings DB persisted (canonical store). Read through the
+        # ENGINE's own service: it is bound to the settings DB the
+        # engine was constructed with, while a fresh
+        # load_settings_service() here would resolve via the per-test
+        # env override to a different, empty DB.
+        svc = engine.settings_service
         row = svc.db.get("execution.mode")
         assert row is not None and str(row.value).upper() == "LIVE"
         # Restore the prior mode so other fixtures boot from a clean
@@ -222,10 +235,10 @@ class TestModelLifecycleAPI:
         client = api_client
         # The engine boots with the mode the PERSISTED settings already
         # contain (boot override). Record it so the rejected request is
-        # verified to leave it untouched.
-        from nexus_scalp.settings.service import load_settings_service
-
-        svc = load_settings_service()
+        # verified to leave it untouched. Read through the ENGINE's own
+        # service (see test_engine_mode_apply_and_persist): a fresh
+        # load_settings_service() would resolve to a different DB.
+        svc = engine.settings_service
         prior_row = svc.db.get("execution.mode")
         prior_mode = (
             str(prior_row.value).strip().upper() if prior_row and prior_row.value else "PAPER"
@@ -247,9 +260,9 @@ class TestModelLifecycleAPI:
         r2 = client.post("/api/engine/mode", json={"mode": "PAPER"})
         assert r2.status_code == 200 and r2.json()["mode"] == "PAPER"
         assert engine.config.execution.mode.value == "PAPER"
-        from nexus_scalp.settings.service import load_settings_service
-
-        svc = load_settings_service()
+        # Read through the ENGINE's own service (see
+        # test_engine_mode_apply_and_persist).
+        svc = engine.settings_service
         row = svc.db.get("execution.mode")
         assert str(row.value).upper() == "PAPER"
         svc.db.set("execution.mode", "PAPER", value_type="str", actor="test_cleanup")

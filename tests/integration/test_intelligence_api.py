@@ -59,27 +59,38 @@ def wired_engine(tmp_path_factory, verified_test_model_bundle):
     isolated state (distinct tickets: lifecycle 501, autopsy ticket_api_1,
     anomaly 501 on a separate table) or reads, and the worker test
     start/stops its worker; no test asserts a global count or emptiness.
+
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's verified bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
     """
-    tmp_path = tmp_path_factory.mktemp("intel_api")
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
-    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
-    cfg = AppConfig(
-        execution={
-            "symbol": "XAUUSD",
-            "mode": "PAPER",
-        },
-        model={"model_artifact_path": str(model_path)},
-    )
-    # Use a lightweight adapter (paper) so no MT5 is required.
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    with isolated_module_engine_env(tmp_path_factory, "intel_api_env"):
+        tmp_path = tmp_path_factory.mktemp("intel_api")
+        repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
+        from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
 
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
-    client = authenticated_test_client(create_app(engine))
-    yield repo, engine, client
-    repo.close()
+        model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
+        cfg = AppConfig(
+            execution={
+                "symbol": "XAUUSD",
+                "mode": "PAPER",
+            },
+            model={"model_artifact_path": str(model_path)},
+        )
+        # Use a lightweight adapter (paper) so no MT5 is required.
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        client = authenticated_test_client(create_app(engine))
+        yield repo, engine, client
+        repo.close()
 
 
 def seed_lifecycle(repo, tracker):
