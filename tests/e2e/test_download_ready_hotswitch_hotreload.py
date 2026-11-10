@@ -123,34 +123,81 @@ def _app_config_paper() -> AppConfig:
     )
 
 
-def _engine_and_client(
-    monkeypatch: pytest.MonkeyPatch | None = None,
-    tmp_path: Path | None = None,
-):  # type: ignore[no-untyped-def]
+def _build_engine_and_client(model_path: Path):  # type: ignore[no-untyped-def]
     """Build a LiveEngine + TestClient pair (paper mock, no MT5, no file IO).
 
     BUG-278: force_fresh mints weights to the configured artifact path — the
-    pair must mint into a per-test tmp dir, never the production bundle.
+    pair must mint into a tmp dir, never the production bundle. The path is
+    module-scoped (one mint per module, shared by the engine tests) rather
+    than per-test: the artifact is identical for every test, only the
+    runtime algo config varies, and that is reset per test by the
+    ``engine_client`` fixture.
     """
     from nexus_scalp.application.live_engine import LiveEngine
     from nexus_scalp.web.server import create_app
     from tests.helpers.authenticated_client import authenticated_test_client
 
     cfg = _app_config_paper()
-    if tmp_path is not None:
-        cfg = cfg.model_copy(
-            update={
-                "model": cfg.model.model_copy(
-                    update={"model_artifact_path": str(tmp_path / "model.pt")}
-                )
-            }
-        )
+    cfg = cfg.model_copy(
+        update={"model": cfg.model.model_copy(update={"model_artifact_path": str(model_path)})}
+    )
     adapter = _PaperPort()
     engine = LiveEngine(config=cfg, adapter=adapter, force_fresh_model=True)
     app = create_app(engine_ref=engine)
     engine.server_state = app.state.server_state  # type: ignore[attr-defined]
     client = authenticated_test_client(app, raise_server_exceptions=False)
     return engine, client, cfg
+
+
+# The algo config the engine boots with (see _app_config_paper) — the
+# per-test reset target. Kept in one place so the fixture and the tuner
+# test can never drift apart.
+_DEFAULT_ALGO_CONFIG = {
+    "atr_sl_buffer_multiplier": 1.5,
+    "min_risk_reward_ratio": 1.8,
+    "ai_zone_confidence_threshold": 0.60,
+    "fvg_mitigation_sensitivity": 0.5,
+    "order_block_lookback_bars": 30,
+}
+
+
+@pytest.fixture(scope="module")
+def _shared_engine_client(tmp_path_factory: pytest.TempPathFactory):  # type: ignore[no-untyped-def]
+    """One LiveEngine + TestClient for the whole module.
+
+    WHY module scope: building the pair (torch import, model mint into a
+    tmp artifact path, AuditRepository, create_app + lifespan) costs
+    several seconds, and four tests built it four times — the file's whole
+    18.8 s. The pair is shareable: the mode-switch test returns to PAPER,
+    and the per-test ``engine_client`` fixture below resets the algo config
+    to defaults before every test, so each test still sees the documented
+    initial state whatever order it runs in. (The risk-config test's POST
+    is deliberately NOT reset: no test asserts risk values, and the unified
+    config POST may 422 on partial payloads, so a reset could not be
+    relied on.)
+    """
+    engine, client, cfg = _build_engine_and_client(
+        tmp_path_factory.mktemp("hotswitch") / "model.pt"
+    )
+    yield engine, client, cfg
+
+
+@pytest.fixture
+def engine_client(_shared_engine_client):  # type: ignore[no-untyped-def]
+    """The shared engine/client, with the algo config reset to defaults.
+
+    The hot-reload tests mutate the algo config through the API; without
+    this reset a test would inherit the previous test's values and the
+    ``== 1.5`` initial-state assertions would depend on run order. The
+    reset is a real PUT through the same endpoint the tests exercise, and
+    it only bumps ``configuration_version`` — the tuner/invalid tests read
+    the version fresh, so they are unaffected.
+    """
+    engine, client, _cfg = _shared_engine_client
+    r = client.put("/api/algo/config", json=_DEFAULT_ALGO_CONFIG)
+    assert r.status_code == 200, r.text
+    assert r.json()["success"] is True, r.text
+    yield engine, client
 
 
 # ---------------------------------------------------------------------------
@@ -307,11 +354,11 @@ class TestDownloadReadyNoConfig:
 
 class TestHotSwitchE2E:
     def test_mode_switch_paper_to_live_and_back(
-        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+        self, monkeypatch: pytest.MonkeyPatch, engine_client
     ) -> None:
         """Hot-switch PAPER -> LIVE -> PAPER via set_execution_mode keeps the
         same process; runtime_mode follows config and adapter boundaries swap."""
-        engine, client, _ = _engine_and_client(monkeypatch, tmp_path)
+        engine, _ = engine_client
         pid_before = os.getpid()
 
         # Baseline: paper
@@ -375,9 +422,9 @@ class TestHotSwitchE2E:
 
 
 class TestHotReloadE2E:
-    def test_algo_tuner_hot_reload_via_api(self, tmp_path: Path) -> None:
+    def test_algo_tuner_hot_reload_via_api(self, engine_client) -> None:
         """PUT /api/algo/config changes runtime behavior without restart."""
-        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
+        engine, client = engine_client
         pid_before = os.getpid()
 
         r0 = client.get("/api/algo/config")
@@ -407,9 +454,9 @@ class TestHotReloadE2E:
         r2 = client.get("/api/algo/config")
         assert r2.json()["atr_sl_buffer_multiplier"] == 2.0
 
-    def test_risk_config_hot_reload_via_api(self, tmp_path: Path) -> None:
+    def test_risk_config_hot_reload_via_api(self, engine_client) -> None:
         """POST /api/config hot-reloads risk fields without restart."""
-        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
+        engine, client = engine_client
         pid_before = os.getpid()
 
         r = client.post(
@@ -422,9 +469,9 @@ class TestHotReloadE2E:
         assert r.status_code in (200, 422)
         assert os.getpid() == pid_before
 
-    def test_invalid_hot_reload_leaves_last_known_good(self, tmp_path: Path) -> None:
+    def test_invalid_hot_reload_leaves_last_known_good(self, engine_client) -> None:
         """An invalid PUT must be rejected and the old snapshot stays."""
-        engine, client, _ = _engine_and_client(tmp_path=tmp_path)
+        engine, client = engine_client
         v_before = client.get("/api/algo/config").json()["configuration_version"]
         r = client.put(
             "/api/algo/config",

@@ -26,8 +26,34 @@ from nexus_scalp.web import auth as web_auth
 TOKEN = "bug293-test-token-12345"
 
 
+@pytest.fixture(scope="module")
+def _shared_app():
+    """One FastAPI app for the whole module.
+
+    create_app() re-registers every router/middleware per call (~1s on CI),
+    but the provisioning routes resolve the auth token, the settings DB and
+    the runtime workspace per request, so tests can share the app while each
+    still sets its own env vars / workspace patch (function-scoped
+    monkeypatch, below). The auth token is set before the build so app
+    creation never falls back to generating/persisting a token.
+    """
+    import os
+
+    tok = os.environ.get("NSE_WEB_AUTH_TOKEN")
+    os.environ["NSE_WEB_AUTH_TOKEN"] = TOKEN
+    try:
+        from nexus_scalp.web.server import create_app
+
+        yield create_app(engine_ref=None)
+    finally:
+        if tok is None:
+            os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+        else:
+            os.environ["NSE_WEB_AUTH_TOKEN"] = tok
+
+
 @pytest.fixture()
-def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
+def client(monkeypatch: pytest.MonkeyPatch, tmp_path, _shared_app) -> TestClient:
     from nexus_scalp.release import paths as rpaths
 
     monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", TOKEN)
@@ -37,10 +63,7 @@ def client(monkeypatch: pytest.MonkeyPatch, tmp_path) -> TestClient:
     # Anchor all runtime/workspace roots into tmp so the routes never touch
     # the developer's real artifacts tree during tests.
     monkeypatch.setattr(rpaths, "get_runtime_workspace", lambda: tmp_path)
-    from nexus_scalp.web.server import create_app
-
-    app = create_app(engine_ref=None)
-    return TestClient(app)
+    return TestClient(_shared_app)
 
 
 def _cookie(client: TestClient) -> dict[str, str]:

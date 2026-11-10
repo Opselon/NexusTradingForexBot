@@ -43,10 +43,11 @@ from nexus_scalp.research.scoring import (
 )
 from tests.e2e.chain_clock import budget_cpu_ms
 
-# ML-QA-018: sized-path measurement budget. The 4000-sample leg is the larger
-# one; measured cost on a 2-core CPU-only host is ~43 ms CPU, so the budget only
-# has to be generous enough that a slower interpreter or a big-O regression
-# inside one leg reports a real figure instead of timing out.
+# ML-QA-018: sized-path measurement budget. The 12000-sample leg is the larger
+# one; measured cost is ~18 us CPU per sample (~54 ms at 3000, ~217 ms at
+# 12000 on this host), so the budget only has to be generous enough that a
+# slower interpreter or a big-O regression inside one leg reports a real
+# figure instead of timing out.
 _SIZED_PATH_BUDGET_CPU_MS = 5000.0
 
 # ---------------------------------------------------------------------------
@@ -249,7 +250,7 @@ factor (``big/small / (big_n/small_n)``): a linear function reads ~1.0 on every
 host, while a genuine O(n^2) regression reads ~4.0 (the sample factor itself).
 
 The raw ratio this replaces was ``big/small <= 6.0`` against legs of 4000/16000
-samples: a true quadratic measures ~16x there, so the bound had to sit far above
+samples (now 3000/12000 — same 4x factor): a true quadratic measures ~16x there, so the bound had to sit far above
 the linear factor of 4x to leave margin, and anything in between — the constant
 per-sample cost drifting under cache pressure on a shared runner — could wander
 past it. PR #554 flaked at raw 6.27 (per-sample cost up 1.57x) on a busy Linux
@@ -284,14 +285,19 @@ def test_sized_path_performance_is_linear() -> None:
     # Size each leg above the process-time tick so the ratio measures the
     # algorithm, not the clock's quantization (see ML-QA-018 for the proof that
     # the 1000-sample leg degenerates to a single tick and the ratio to
-    # tick-count arithmetic).
-    small_n = 4000
-    big_n = 16000
+    # tick-count arithmetic). The 3000-sample leg costs ~54 ms CPU here,
+    # ~3.5x the ~15.6 ms Windows tick, so it stays well above that floor;
+    # the 4x factor between the legs is unchanged. Three reps (was five):
+    # the legs are CPU-time measured, so rep-to-rep variance is small and
+    # the median of three already tolerates one slow rep; the two dropped
+    # reps were ~40% of this test's wall time for no signal.
+    small_n = 3000
+    big_n = 12000
 
     def _cost(n: int) -> float:
         samples = _mk_samples(n)
         times: list[float] = []
-        for _ in range(5):
+        for _ in range(3):
             gc.collect()
             with budget_cpu_ms(_SIZED_PATH_BUDGET_CPU_MS) as sw:
                 compute_sized_economic_pnl(samples, econ)

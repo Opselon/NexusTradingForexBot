@@ -55,6 +55,7 @@ Run:
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -187,16 +188,90 @@ def _auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
 
 
-def _client(
-    tmp_path: Path, rows: list[tuple[Any, ...]], monkeypatch: pytest.MonkeyPatch
-) -> TestClient:
-    db = tmp_path / "audit.db"
-    _seed(db, rows)
+@pytest.fixture(scope="module")
+def _module_auth_env():
+    """Module-level auth env, applied BEFORE the shared app is built.
+
+    ``create_app`` installs the auth middleware, which resolves and caches
+    the token at install time — so the token must already be in the
+    environment when the module-scoped app is created, not only when the
+    first test's function-scoped ``_auth_env`` runs.
+    """
+    with pytest.MonkeyPatch.context() as mp:
+        mp.delenv("NSE_WEB_AUTH_DISABLE", raising=False)
+        mp.setenv("NSE_WEB_AUTH_TOKEN", FAKE_WEB_AUTH_TOKEN)
+        yield
+
+
+@pytest.fixture(scope="module")
+def app(_module_auth_env):
+    """One FastAPI app for the whole module.
+
+    ``create_app`` re-registers every route and middleware on each call, so
+    a fresh app per test was the file's main cost. The no-trade route is
+    read-only against the audit DB and resolves ``_audit_db_path`` per
+    request (``_ledger_reader`` is built fresh per call), so sharing the app
+    changes nothing the tests observe; each test still gets its own
+    TestClient and its own ``_audit_db_path``.
+    """
+    return create_app(engine_ref=None)
+
+
+#: The discriminating ledger: a deep NO_TRADE history behind a BUY tail that
+#: exceeds the ``window * factor`` fetch bound.
+_BIG_HISTORY = 6_000
+_BIG_TAIL = _NO_TRADE_WINDOW * _NO_TRADE_SCAN_FACTOR + 1_000
+
+
+@pytest.fixture(scope="module")
+def _big_rows() -> list[tuple[Any, ...]]:
+    # Insert order == id order: NO_TRADE history first, then a BUY tail
+    # whose length exceeds ``window * factor``. So the newest
+    # ``window * factor`` rows contain ZERO NO_TRADE rows.
+    return [
+        *_production_shaped_ledger(_BIG_HISTORY, 0),
+        *_production_shaped_ledger(0, _BIG_TAIL),
+    ]
+
+
+@pytest.fixture(scope="module")
+def _big_db(tmp_path_factory: pytest.TempPathFactory, _big_rows: list[tuple[Any, ...]]) -> Path:
+    """The 11,000-row discriminating ledger, seeded once.
+
+    The pre-fix shape walks arbitrarily far back, so this fixture must stay
+    larger than the fetch bound — but building + seeding it per test paid
+    twice (once per test in the class). The route only reads, so one seeded
+    file serves both tests.
+    """
+    db = tmp_path_factory.mktemp("r3-big") / "audit.db"
+    _seed(db, _big_rows)
+    return db
+
+
+@pytest.fixture(scope="module")
+def _small_db(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """The 660-row production-shaped ledger shared by the read-only tests."""
+    db = tmp_path_factory.mktemp("r3-small") / "audit.db"
+    _seed(db, _production_shaped_ledger(600, 60))
+    return db
+
+
+def _client_for_db(db: Path, monkeypatch: pytest.MonkeyPatch, app: Any) -> TestClient:
     monkeypatch.setattr(operator_routes, "_audit_db_path", lambda: str(db))
-    app = create_app(engine_ref=None)
     c = TestClient(app)
     c.headers.update({"Authorization": f"Bearer {FAKE_WEB_AUTH_TOKEN}"})
     return c
+
+
+def _client(
+    tmp_path: Path,
+    rows: list[tuple[Any, ...]],
+    monkeypatch: pytest.MonkeyPatch,
+    app: Any,
+) -> TestClient:
+    db = tmp_path / "audit.db"
+    _seed(db, rows)
+    return _client_for_db(db, monkeypatch, app)
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +290,11 @@ class TestNoMajorityPredicateReachesSql:
     """
 
     def test_no_majority_predicate_reaches_sql(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        _auth_env: None,
+        app: Any,
+        _small_db: Path,
     ) -> None:
         calls: list[dict[str, Any]] = []
         real_select = operator_routes.LedgerReader.select
@@ -225,7 +304,7 @@ class TestNoMajorityPredicateReachesSql:
             return real_select(self, proj, table, limit, **kw)
 
         monkeypatch.setattr(operator_routes.LedgerReader, "select", spy)
-        client = _client(tmp_path, _production_shaped_ledger(600, 60), monkeypatch)
+        client = _client_for_db(_small_db, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert body["available"] is True
 
@@ -250,10 +329,10 @@ class TestNoMajorityPredicateReachesSql:
         assert tail_calls[0]["limit"] > _NO_TRADE_WINDOW
 
     def test_scanned_rows_never_exceeds_the_fetch_bound(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any, _small_db: Path
     ) -> None:
         """``scanned_rows`` is the disclosed bound — it must be the REAL bound."""
-        client = _client(tmp_path, _production_shaped_ledger(600, 60), monkeypatch)
+        client = _client_for_db(_small_db, monkeypatch, app)
         body = client.get("/api/operator/no-trade?limit=8").json()
         assert body["scanned_rows"] <= _NO_TRADE_WINDOW
         assert body["window"] == _NO_TRADE_WINDOW
@@ -277,31 +356,19 @@ class TestTailReadIsBounded:
     ever see its own slice, so the same ledger yields 0.
     """
 
-    _HISTORY = 6_000  # deep NO_TRADE history, well past the fetch bound
-    _TAIL = _NO_TRADE_WINDOW * _NO_TRADE_SCAN_FACTOR + 1_000  # newest rows
-
-    @pytest.fixture
-    def rows(self) -> list[tuple[Any, ...]]:
-        # Insert order == id order: NO_TRADE history first, then a BUY tail
-        # whose length exceeds ``window * factor``. So the newest
-        # ``window * factor`` rows contain ZERO NO_TRADE rows.
-        return [
-            *_production_shaped_ledger(self._HISTORY, 0),
-            *_production_shaped_ledger(0, self._TAIL),
-        ]
-
     def test_tail_read_is_bounded_when_the_tail_is_not_no_trade(
         self,
-        tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         _auth_env: None,
-        rows: list[tuple[Any, ...]],
+        app: Any,
+        _big_rows: list[tuple[Any, ...]],
+        _big_db: Path,
     ) -> None:
-        assert len(rows) > _NO_TRADE_WINDOW * _NO_TRADE_SCAN_FACTOR, (
+        assert len(_big_rows) > _NO_TRADE_WINDOW * _NO_TRADE_SCAN_FACTOR, (
             "fixture must be larger than the fetch bound or the pre-fix shape "
             "and the bounded shape are indistinguishable (false green)"
         )
-        client = _client(tmp_path, rows, monkeypatch)
+        client = _client_for_db(_big_db, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert body["available"] is True
         # Reverting the fix returns total=2000 here (the old shape walked back
@@ -322,11 +389,21 @@ class TestTailReadIsBounded:
         tmp_path: Path,
         monkeypatch: pytest.MonkeyPatch,
         _auth_env: None,
-        rows: list[tuple[Any, ...]],
+        app: Any,
+        _big_db: Path,
     ) -> None:
         """One NO_TRADE row inside the slice is enough — the bound is honest."""
-        rows = [*rows, *_production_shaped_ledger(1, 0)]
-        client = _client(tmp_path, rows, monkeypatch)
+        # Copy the shared ledger and append a single newest NO_TRADE row
+        # instead of re-seeding all 11,001 rows.
+        db = tmp_path / "audit.db"
+        shutil.copyfile(_big_db, db)
+        con = sqlite3.connect(db)
+        try:
+            con.executemany(_INSERT, _production_shaped_ledger(1, 0))
+            con.commit()
+        finally:
+            con.close()
+        client = _client_for_db(db, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert body["total"] == 1
         assert sum(g["count"] for g in body["gates"]) == 1
@@ -357,14 +434,14 @@ class TestPayloadUnchanged:
     }
 
     def test_key_set_is_stable(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any, _small_db: Path
     ) -> None:
-        client = _client(tmp_path, _production_shaped_ledger(600, 60), monkeypatch)
+        client = _client_for_db(_small_db, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert set(body) == self._KEYS, set(body) ^ self._KEYS
 
     def test_distributions_match_the_unbounded_reference(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any
     ) -> None:
         """Every Counter equals an independent in-test computation over the
         newest ``window`` NO_TRADE rows — i.e. the pre-fix shape's answer.
@@ -375,7 +452,7 @@ class TestPayloadUnchanged:
         import collections
 
         rows = _production_shaped_ledger(_NO_TRADE_WINDOW + 200, 100)
-        client = _client(tmp_path, rows, monkeypatch)
+        client = _client(tmp_path, rows, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
 
         # Reference: the SQL predicate the pre-fix code used, computed here
@@ -427,7 +504,7 @@ class TestPayloadUnchanged:
         assert body["total"] == sum(x["count"] for x in body["reasons"])
 
     def test_case_insensitive_action_filter_is_preserved(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any
     ) -> None:
         """The pre-fix predicate was ``UPPER(action) = 'NO_TRADE'``.
 
@@ -449,12 +526,12 @@ class TestPayloadUnchanged:
             gate="SPREAD_GATE",
             regime="RANGING_MEAN_REVERSION",
         )
-        client = _client(tmp_path, rows, monkeypatch)
+        client = _client(tmp_path, rows, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert body["total"] == 300
 
     def test_hours_filter_still_applies_after_the_slice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any
     ) -> None:
         """The time filter stays a Python-side filter on the bounded rows.
 
@@ -482,7 +559,6 @@ class TestPayloadUnchanged:
         old_db = old_dir / "audit.db"
         _seed(fresh_db, all_fresh)
         _seed(old_db, mixed)
-        app = create_app(engine_ref=None)
         c = TestClient(app)
         c.headers.update({"Authorization": f"Bearer {FAKE_WEB_AUTH_TOKEN}"})
 
@@ -503,7 +579,7 @@ class TestPayloadUnchanged:
         assert m_one["total"] <= m_full["total"]
 
     def test_hourly_trend_buckets_come_from_the_slice(
-        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _auth_env: None, app: Any
     ) -> None:
         """The trend is derived in memory — no second query, bounded buckets."""
         rows: list[tuple[Any, ...]] = []
@@ -520,7 +596,7 @@ class TestPayloadUnchanged:
                         generated_at=ts,
                     )
                 )
-        client = _client(tmp_path, rows, monkeypatch)
+        client = _client(tmp_path, rows, monkeypatch, app)
         body = client.get("/api/operator/no-trade").json()
         assert body["total"] == len(rows)
         trend = body["hourly_trend"]

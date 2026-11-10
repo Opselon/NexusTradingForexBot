@@ -24,6 +24,7 @@ Invariants under test:
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -84,16 +85,51 @@ except ImportError:  # pragma: no cover - fallback for direct pytest cwd
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def repo(tmp_path):
-    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'bug140.db'}")
+@pytest.fixture(scope="module")
+def repo(tmp_path_factory):
+    """One repository for the whole module.
+
+    Per-test repositories cost ~0.1s of schema init plus ~0.5-1.0s of
+    teardown: ``AuditRepository.close()`` joins the background writer, which
+    idles in ``q.get(timeout=flush_interval_sec)`` — the 1.0s default parks
+    every close for the remainder of that interval. ``flush_interval_sec``
+    only bounds idle wakeups (arrivals still dispatch immediately), so 20ms
+    is a fixture tuning knob, not a behaviour change. Per-test isolation
+    comes from ``_reset_ledger_state`` below, not from a fresh database.
+    """
+    r = AuditRepository(
+        db_url=f"sqlite:///{tmp_path_factory.mktemp('bug140') / 'bug140.db'}",
+        flush_interval_sec=0.02,
+    )
     yield r
     r.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def ledger(repo):
     return ExperienceLedger(repo)
+
+
+@pytest.fixture(autouse=True)
+def _reset_ledger_state(repo):
+    """Wipe the experience tables before each test.
+
+    The ledger/dataset read only ``audit_experiences``,
+    ``audit_experience_outcomes`` and ``audit_experience_corrections``
+    (all reads go through the DB — the ledger keeps no in-memory cache),
+    so deleting those three tables restores the exact isolation a fresh
+    per-test repository gave, without paying its init/close on every test.
+    """
+    repo._queue.join()
+    con = sqlite3.connect(repo._db_path)
+    try:
+        con.execute("DELETE FROM audit_experience_corrections")
+        con.execute("DELETE FROM audit_experience_outcomes")
+        con.execute("DELETE FROM audit_experiences")
+        con.commit()
+    finally:
+        con.close()
+    yield
 
 
 def make_tracked_record(

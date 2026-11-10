@@ -32,6 +32,7 @@ import inspect
 import json
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -114,6 +115,36 @@ _ORDERS_SQL = """
 def repo(tmp_path):
     r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'bug278.db'}")
     yield r
+    _close_repo_fast(r)
+
+
+def _close_repo_fast(r: AuditRepository) -> None:
+    """Close a per-test repo without paying the worker's 1 s idle wait.
+
+    WHY: ``AuditRepository.close()`` joins the plane's ``AuditDB_Worker``,
+    which sits parked in ``queue.get(timeout=<flush_interval>)`` with the
+    1.0 s default — so every per-test close burned ~0.7-1.0 s of wall time
+    doing nothing (19 tests x ~1 s = the whole file). The worker's next
+    blocking wait is fixed when the ``get`` call starts, so shortening the
+    interval alone cannot wake it; a queue item can. ``("SELECT 1", ())``
+    is a no-op through the batch path (``execute_batch`` runs it as a
+    single-row ``execute``; it touches no table, no counter, no dead
+    letter — verified: ``audit_dead_letter_rows`` stays 0) and the
+    shortened interval makes the worker's *next* wait 20 ms, so
+    ``close()``'s join returns in ~20 ms instead of ~1 s. Any failure
+    here (worker already dead, plane gone) falls back to the plain slow
+    ``close()`` — never worse than before.
+    """
+    try:
+        plane = r._write_plane
+        if plane is not None:
+            plane._flush_interval = 0.02
+            r._queue.put(("SELECT 1", ()))
+            deadline = time.monotonic() + 0.5
+            while r._queue.unfinished_tasks > 0 and time.monotonic() < deadline:
+                time.sleep(0.002)
+    except Exception:
+        pass
     r.close()
 
 
