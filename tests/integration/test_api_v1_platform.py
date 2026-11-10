@@ -448,3 +448,64 @@ def test_register_api_v1_on_legacy_app_additive(seeded_repo: AuditRepository) ->
     assert r2.status_code in (200, 503)
     # every v1 route is unique (no double-mount)
     assert len(before_paths) >= 60
+
+
+def test_health_block_concurrent_calls_run_single_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: concurrent _health_block calls must serialize the sweep.
+
+    PR #740 run 42846477184 segfaulted xdist worker gw0 at ~86% when four
+    prewarm daemon threads ran full health sweeps (subprocess git,
+    importlib.metadata, polars collect) concurrently in one process. The
+    process-wide sweep lock + double-checked cache must make N concurrent
+    callers share exactly ONE sweep. Without the lock this test sees N sweeps.
+    """
+    import threading
+    import time as _time
+
+    from nexus_scalp.web.api_v1.system import _health_block
+
+    calls = {"n": 0}
+
+    class _FakeEntry:
+        def __init__(self, category: str) -> None:
+            self.category = category
+            self.verdict = "PASS"
+
+        def to_dict(self) -> dict[str, object]:
+            return {"category": self.category, "verdict": self.verdict}
+
+    class _FakeEngine:
+        def overall(self) -> tuple[str, list[_FakeEntry]]:
+            calls["n"] += 1
+            _time.sleep(0.05)  # overlap window: threads genuinely race without the lock
+            return "READY", [_FakeEntry("SYSTEM")]
+
+    class _State:
+        pass
+
+    class _App:
+        def __init__(self) -> None:
+            self.state = _State()
+
+    class _Req:
+        def __init__(self, app: _App) -> None:
+            self.app = app
+
+    monkeypatch.setattr("nexus_scalp.release.health.HealthEngine", _FakeEngine)
+    app = _App()
+    req = _Req(app)
+    barrier = threading.Barrier(8)
+    results: list[tuple[str | None, list[dict[str, Any]], list[str]]] = []
+
+    def _call() -> None:
+        barrier.wait(timeout=10)
+        results.append(_health_block(req))
+
+    threads = [threading.Thread(target=_call) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert len(results) == 8
+    assert all(r[0] == "READY" for r in results)
+    assert calls["n"] == 1, f"expected exactly 1 sweep, got {calls['n']}"
