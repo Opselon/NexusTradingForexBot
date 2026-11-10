@@ -1,3 +1,4 @@
+# proof (2026-11-10): C17 leaf-selection probe — comment-only, no behavior change.
 """Config section for the storage-hygiene policy (2026-09-09 pass).
 
 Mirrors the `storage:` YAML section; consumed by

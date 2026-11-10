@@ -1,3 +1,4 @@
+# proof (2026-11-10): C17 leaf-selection probe — comment-only, no behavior change.
 """News source adapters (PHASE 12).
 
 A common Source -> Fetcher -> Normalizer -> Canonical Article contract so the

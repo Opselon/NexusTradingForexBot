@@ -1,3 +1,4 @@
+# proof (2026-11-10): C17 leaf-selection probe — comment-only, no behavior change.
 """Behavior intelligence — FACADE over cohesive modules.
 
 Modularization (Agent-5): public surface unchanged — every name resolves

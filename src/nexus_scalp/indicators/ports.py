@@ -1,3 +1,4 @@
+# proof (2026-11-10): C17 leaf-selection probe — comment-only, no behavior change.
 """Indicators domain — SOLID building blocks.
 
 Design
