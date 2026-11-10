@@ -365,6 +365,24 @@ def test_pyproject_scope_classification(tmp_path):
         ),
         (PYPROJECT_BASE + "\n[tool.unknown]\nfoo = 1\n", "unknown"),
         (PYPROJECT_BASE.replace('version = "9.0.24"', '# bump\nversion = "9.0.24"'), ""),
+        # [tool.uv] resolution keys change what gets installed -> deps.
+        (
+            PYPROJECT_BASE + '\n[tool.uv]\nconstraint-dependencies = ["filelock==4.2.9"]\n',
+            "deps",
+        ),
+        # [tool.uv] cache-keys only changes uv's cache fingerprint -> meta.
+        (PYPROJECT_BASE + '\n[tool.uv]\ncache-keys = ["pyproject.toml"]\n', "meta"),
+        # An unrecognised uv key fails closed to unknown.
+        (PYPROJECT_BASE + "\n[tool.uv]\nsome-future-key = true\n", "unknown"),
+        # Pure formatters: no CI gate reads their config -> meta.
+        (PYPROJECT_BASE + "\n[tool.black]\nline-length = 100\n", "meta"),
+        (PYPROJECT_BASE + '\n[tool.isort]\nprofile = "black"\n', "meta"),
+        # Mixed mypy + uv-constraint change -> both scopes, sorted.
+        (
+            PYPROJECT_BASE.replace('python_version = "3.11"', 'python_version = "3.12"')
+            + '\n[tool.uv]\nconstraint-dependencies = ["filelock==4.2.9"]\n',
+            "deps,mypy",
+        ),
     ]
     for idx, (mutated, want) in enumerate(cases):
         repo, base, head = _pyproject_repo(tmp_path, mutated, str(idx))
@@ -413,6 +431,67 @@ def test_mypy_only_pyproject_selects_tooling_suite(tmp_path, engine_binary):
         assert plan["selection_mode"] == "expanded", scope
         assert plan["fallback_reason"] is not None
         assert "pyproject.toml" in plan["fallback_reason"]
+
+
+def test_plan_only_writes_plan_without_running_pytest(tmp_path, engine_binary):
+    """--plan-only is the routing preflight: it must compute the plan
+    (selection mode + selected files) and exit 0 WITHOUT executing
+    pytest. The test file below would FAIL if executed, so a zero exit
+    proves pytest never ran."""
+    repo = _scratch_repo(
+        tmp_path,
+        {
+            "src/nexus_scalp/mod.py": "VALUE = 1\n",
+            "tests/unit/test_mod.py": (
+                "from nexus_scalp.mod import VALUE\n\n\n"
+                "def test_value():\n    assert VALUE == 2  # would fail if executed\n"
+            ),
+            "tests/critical_suite.txt": "tests/unit/test_mod.py\n",
+            "tests/fast_suite.txt": "tests/unit/test_mod.py\n",
+        },
+    )
+    _git(repo, "init", "-q")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    base = _git(repo, "rev-parse", "HEAD")
+    _write(repo, "src/nexus_scalp/mod.py", "VALUE = 1\n# leaf change\n")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "leaf")
+    head = _git(repo, "rev-parse", "HEAD")
+    out_dir = repo / "plan-out"
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(REPO / "scripts" / "ci" / "run_test_plan.py"),
+            "--plan-only",
+            "--repo-root",
+            str(repo),
+            "--base",
+            base,
+            "--head",
+            head,
+            "--event",
+            "pull_request",
+            "--mode",
+            "targeted",
+            "--native-binary",
+            str(engine_binary),
+            "--out-dir",
+            str(out_dir),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    plan = json.loads((out_dir / "plan.json").read_text(encoding="utf-8"))
+    assert plan["selection_mode"] == "targeted"
+    assert "tests/unit/test_mod.py" in [t["id"] for t in plan["selected_tests"]]
+    manifest = json.loads((out_dir / "execution-manifest.json").read_text(encoding="utf-8"))
+    assert manifest["pytest_not_run"] is True
+    assert manifest["pytest_exit_code"] is None
+    assert manifest["plan_selection_mode"] == "targeted"
 
 
 # ----------------------------------------------------------------------

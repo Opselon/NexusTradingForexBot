@@ -188,6 +188,29 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Classify plan mode (targeted vs expanded)
+        id: classify
+        # Fail-open routing hint: the plan mode only decides WHERE the
+        # Quality job runs (expanded -> GitHub-hosted, so the full suite
+        # fits the 10-min cap). If classification fails for ANY reason,
+        # plan_selection_mode stays empty and routing is unchanged. This
+        # step must never fail the preflight: a failed preflight means
+        # zero jobs (cf. the ${{ runner.temp }} parse-kill). Same
+        # base/head computation as the Quality job's planner-history step.
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}"
+          head="${{ github.event.pull_request.head.sha || github.sha }}"
+          bash scripts/ci/fetch_planner_history.bash "$base" "$head" || echo "planner history fetch failed — routing unchanged"
+          MODE=targeted
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
+          python3 scripts/ci/run_test_plan.py --plan-only \
+            --base "$base" --head "$head" \
+            --event "${{ github.event_name }}" --mode "$MODE" \
+            --native-binary "$HOME/.nse-native/nse-ci-engine" \
+            --out-dir ci-results/plan-classify || echo "plan classification failed — routing unchanged"
+
       - name: Select runner (availability preflight)
         id: select
         uses: ./.github/actions/runner-select
@@ -197,6 +220,7 @@ jobs:
           platform: linux
           labels: "self-hosted,Linux,X64,opselon-vm"
           fallback_labels: "self-hosted,Linux,X64,nexus-2core"
+          plan_mode: ${{ steps.classify.outputs.plan_selection_mode }}
 
           # A fork PR (head repo != this repo) is untrusted: never
           # self-hosted, never exposed to runner credentials.

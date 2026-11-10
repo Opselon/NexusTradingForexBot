@@ -403,6 +403,18 @@ GitHub event (push / PR / schedule / dispatch)
   after 24 h). We mitigate by (a) checking at the last possible moment in a
   fast preflight, (b) never using `timeout-minutes` as a runner-assignment
   timer, and (c) documenting it instead of pretending to eliminate it.
+* **Plan-aware routing (2026-11-10).** Before selecting a runner, the
+  `runner-select` job classifies the C17 plan with
+  `run_test_plan.py --plan-only` and passes the selection mode to the
+  preflight. An **expanded** plan (global invalidation → the full suite)
+  routes to GitHub-hosted: the suite needs ~11 min on the shared tier-1
+  box (measured 2026-11-09: 91% at 9m38s, killed at the 10-min cap
+  twice) vs 6–7 min on GitHub-hosted, so only hosted holds the 10-min
+  cap. A **targeted** plan keeps the self-hosted tiers (1–2 min). The
+  classification is fail-open: if it fails for any reason the mode is
+  empty and routing falls back to the availability logic above. It
+  changes WHERE the suite runs, never WHAT runs — the Quality job still
+  runs the full plan + pytest and owns the verdict.
 * **Credential.** `NSE_RUNNER_STATUS_TOKEN` (a fine-grained PAT or GitHub
   App installation token with repository **Administration: read**) is the
   ONLY consumed secret, and only by the preflight. It is never printed,

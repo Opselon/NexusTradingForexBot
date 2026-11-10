@@ -74,12 +74,17 @@ def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
     comma-joined scope set drawn from:
       pytest — [tool.pytest.ini_options] (collection/behaviour for every test)
       deps   — [project] dependencies / requires-python / optional-dependencies
+        / [tool.uv] resolution keys (constraint-dependencies,
+        override-dependencies, sources, default-groups, dev-dependencies,
+        package, managed — they change what gets installed)
       build  — [build-system] / [tool.setuptools.*]
       scripts — [project.scripts] (console entry points; the CLI tests must
         run — no finer selection exists, so fail closed to global)
       mypy   — [tool.mypy.*] only
       lint   — [tool.ruff.*] only
-      meta   — [project] name/version/description only
+      meta   — [project] name/version/description only / [tool.black],
+        [tool.isort] (pure formatters; no CI gate reads their config) /
+        [tool.uv] cache-keys (cache fingerprint only, never installed code)
       unknown — an unrecognised section, or the diff could not be classified
     "" (empty) means the two versions are semantically identical
     (comment/whitespace-only diff). The C engine owns the final verdict:
@@ -118,6 +123,34 @@ def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
                 else:
                     scopes.add("meta")
 
+    def _uv_scope(ou: dict | None, nu: dict | None) -> None:
+        # [tool.uv] is mostly resolution: pins, sources and groups change
+        # what gets installed, so they are deps (global). cache-keys only
+        # changes uv's cache fingerprint, never installed code, so it is
+        # meta. Any unrecognised uv key fails closed to unknown — a future
+        # uv feature must not silently stop invalidating.
+        if not isinstance(ou, dict):
+            ou = {}
+        if not isinstance(nu, dict):
+            nu = {}
+        for k in set(ou) | set(nu):
+            if ou.get(k) == nu.get(k):
+                continue
+            if k in (
+                "constraint-dependencies",
+                "override-dependencies",
+                "sources",
+                "default-groups",
+                "dev-dependencies",
+                "package",
+                "managed",
+            ):
+                scopes.add("deps")
+            elif k == "cache-keys":
+                scopes.add("meta")
+            else:
+                scopes.add("unknown")
+
     op, np = old.get("project"), new.get("project")
     if isinstance(op, dict) and isinstance(np, dict):
         _project_scope(op, np)
@@ -141,6 +174,13 @@ def classify_pyproject_diff(repo_root: str, base: str, head: str) -> str:
             scopes.add("lint")
         elif key == "setuptools":
             scopes.add("build")
+        elif key == "uv":
+            _uv_scope(ot.get("uv"), nt.get("uv"))
+        elif key in ("black", "isort"):
+            # Pure formatters: no CI gate reads their config (ruff is the
+            # linter and has its own section), so they cannot change test
+            # outcomes or any gate verdict.
+            scopes.add("meta")
         else:
             scopes.add("unknown")
     for key in (set(old) | set(new)) - {"project", "build-system", "tool"}:
@@ -407,6 +447,13 @@ def main() -> int:
     ap.add_argument("--out-dir", default="ci-results/test-plan")
     ap.add_argument("--runner-name", default=os.environ.get("RUNNER_NAME", "unknown"))
     ap.add_argument("--attempt", default="1")
+    ap.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="compute the plan and exit 0 without running pytest "
+        "(routing preflight: the plan's selection mode is the only "
+        "output the caller needs)",
+    )
     args = ap.parse_args()
 
     repo_root = os.path.abspath(args.repo_root)
@@ -542,7 +589,59 @@ def main() -> int:
             f"(fallback: {plan_obj.get('fallback_reason') or 'none'})"
         )
 
-    # 4. execute with REAL pytest
+    # 4. execute with REAL pytest — unless this is a plan-only routing
+    # preflight: then the plan (and its selection mode) is the only
+    # output. Write plan.json + a manifest with the pytest fields marked
+    # not-run, publish the mode, and exit 0 WITHOUT executing pytest.
+    # The Quality job still runs the full pipeline (plan + pytest) and
+    # owns the final verdict; this flag never changes what gets tested.
+    if args.plan_only:
+        with open(os.path.join(out_dir, "plan.json"), "w", encoding="utf-8") as fh:
+            json.dump(plan_obj, fh, indent=2)
+        manifest = {
+            "commit_head": args.head,
+            "commit_base": args.base,
+            "plan_digest": plan_obj["plan_digest"],
+            "plan_selection_mode": plan_obj["selection_mode"],
+            "plan_fallback_reason": plan_obj.get("fallback_reason"),
+            "plan_metadata_used": plan_obj.get("metadata_used"),
+            "plan_pyproject_scope": plan_obj.get("pyproject_scope"),
+            "metadata_path": metadata_path,
+            "metadata_schema": "nse-ast-meta-v1",
+            "metadata_files": len(meta["files"]),
+            "pyproject_scope": pyproject_scope,
+            "planner": {
+                "primary_impl": planner_impl,
+                "engine_version": ENGINE_VERSION,
+                "degraded": False,
+                "native_reason": args.native_binary,
+            },
+            "selected_tests": selected_ids,
+            "selected_count": len(selected_ids),
+            "total_test_files": total_tests,
+            "changed_file_count": len(changed),
+            "pytest_argv": None,
+            "pytest_exit_code": None,
+            "pytest_seconds": None,
+            "pytest_not_run": True,
+            "runner_name": args.runner_name,
+            "attempt": args.attempt,
+            "started_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started)),
+            "ended_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        }
+        with open(os.path.join(out_dir, "execution-manifest.json"), "w", encoding="utf-8") as fh:
+            json.dump(manifest, fh, indent=2)
+        gout = os.environ.get("GITHUB_OUTPUT")
+        if gout:
+            with open(gout, "a", encoding="utf-8") as fh:
+                fh.write(f"plan_selection_mode={plan_obj['selection_mode']}\n")
+                fh.write(f"selected_count={len(selected_ids)}\n")
+        log(
+            f"plan-only: mode={plan_obj['selection_mode']} "
+            f"selected={len(selected_ids)} — pytest not run"
+        )
+        return 0
+
     pytest_argv = [sys.executable, "-m", "pytest", *selected_ids]
     if args.xdist > 0:
         pytest_argv += ["-n", str(args.xdist), "--dist", "loadgroup"]
