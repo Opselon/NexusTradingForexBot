@@ -357,7 +357,15 @@ class TestSSESanitization:
                     assert "Traceback" not in body
                     assert "RuntimeError" not in body
                     assert "file://" not in body
-                    for raw_frame in body.split("\n\n"):
+                    # Only parse frames terminated by "\n\n". The trailing
+                    # segment after the last terminator is a partial frame
+                    # still in flight — a recv() boundary can fall inside
+                    # the multi-KB state snapshot (CI cut it at char 4064,
+                    # inside a JSON string) — so never json.loads() it.
+                    # It stays in `buf` and is parsed once the next chunk
+                    # completes it.
+                    frames = body.split("\n\n")
+                    for raw_frame in frames[:-1]:
                         frame = raw_frame.strip()
                         if not frame:
                             continue
