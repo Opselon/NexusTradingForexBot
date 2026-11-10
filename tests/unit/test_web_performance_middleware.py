@@ -112,6 +112,64 @@ async def test_sse_streams_are_never_buffered_or_gzipped():
 
 
 @pytest.mark.asyncio
+async def test_infinite_sse_stream_flows_live_without_waiting_for_completion():
+    """SSE-STREAMING-001: an endless SSE generator must stream its first
+    frame immediately. The middleware used to await the whole downstream
+    app before sending anything, then check _is_cacheable — but an
+    infinite generator never returns, so the client saw no response
+    start, no hello, nothing, until it timed out (CI run #3334: the
+    trace hello and the ticks heartbeat both starved for 20s/15s).
+    This test drives an endless generator and asserts the hello frame
+    arrives while the app is still running.
+    """
+    import asyncio
+
+    hello = b"event: hello\ndata: {}\n\n"
+
+    async def endless_sse_app(scope, receive, send):
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream")],
+            }
+        )
+        await send({"type": "http.response.body", "body": hello, "more_body": True})
+        # Never ends: the live feed keeps the connection open.
+        await asyncio.sleep(3600)
+
+    sent: list[dict] = []
+    hello_seen = asyncio.Event()
+
+    async def send(message):
+        sent.append(message)
+        if message.get("type") == "http.response.body" and b"hello" in message.get("body", b""):
+            hello_seen.set()
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/api/trace/stream",
+        "headers": [],
+        "query_string": b"",
+    }
+    app = PerfMiddleware(endless_sse_app, config())
+    task = asyncio.create_task(app(scope, receive, send))
+    try:
+        await asyncio.wait_for(hello_seen.wait(), timeout=5)
+    finally:
+        task.cancel()
+        with __import__("contextlib").suppress(asyncio.CancelledError):
+            await task
+    assert hello_seen.is_set(), "SSE hello frame must stream live, not wait for the app to return"
+    assert sent[0]["type"] == "http.response.start"
+    assert sent[0]["status"] == 200
+
+
+@pytest.mark.asyncio
 async def test_the_second_poll_is_a_bodyless_304():
     app = PerfMiddleware(make_app(), config())
     _status, headers, body = await run(app, headers=[(b"accept-encoding", b"gzip")])
