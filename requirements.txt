@@ -36,8 +36,8 @@ rich==15.0.0
 ruff==0.17.3
 structlog==26.1.0
 torch==2.15.0
-typer==0.29.1
-types-pyyaml==6.0.12.20261111
+typer==0.29.0
+types-pyyaml==6.0.12.20261103
 types-requests==2.33.0.20261030
 types-setuptools==84.2.0.20261104
 tzdata==2026.6
