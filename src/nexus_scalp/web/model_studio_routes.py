@@ -56,6 +56,48 @@ if TYPE_CHECKING:
     from nexus_scalp.model_lab.model_builder import ModelBuilderConfig
     from nexus_scalp.models.scalp_net import ScalpNet
 
+
+def __getattr__(name: str) -> Any:
+    """Module-level lazy resolution for the heavy scientific imports.
+
+    create_app() imports this module at every app boot, and torch/polars at
+    module level made every boot pay their multi-second import. They now
+    import lazily inside the functions that use them (annotations ride the
+    TYPE_CHECKING block above). External callers and tests still reach them
+    as MODULE ATTRIBUTES (e.g. ``monkeypatch.setattr(model_studio_routes,
+    "torch", stub)``), which intra-module LOAD_GLOBAL cannot serve — resolve
+    on first attribute access and cache into the module namespace so the
+    attribute-level contract is preserved at zero boot cost.
+    """
+    if name == "torch":
+        import torch
+
+        globals()["torch"] = torch
+        return torch
+    if name == "pl":
+        import polars as pl
+
+        globals()["pl"] = pl
+        return pl
+    if name == "ScalpNet":
+        from nexus_scalp.models.scalp_net import ScalpNet
+
+        globals()["ScalpNet"] = ScalpNet
+        return ScalpNet
+    if name in ("get_model_registry", "ModelRecord"):
+        # model_registry pulls model_generation/__init__ -> architectures ->
+        # torch, so it rides the same lazy treatment as the scientific names.
+        from nexus_scalp.model_generation.model_registry import (
+            ModelRecord,
+            get_model_registry,
+        )
+
+        globals()["ModelRecord"] = ModelRecord
+        globals()["get_model_registry"] = get_model_registry
+        return globals()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
