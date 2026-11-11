@@ -3220,7 +3220,9 @@ def execute_verify_load_contract(req: ModelStudioLoadContractRequest) -> dict[st
 
 def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     """Registers Deep Learning / Model Studio REST endpoints on the FastAPI app."""
-    from nexus_scalp.model_generation.model_registry import ModelRecord, get_model_registry
+    # NOTE: model_registry imports model_generation/__init__ -> architectures
+    # -> torch, so it is NOT imported here (this function runs at every
+    # create_app()); each endpoint handler imports it lazily on first call.
 
     def _fail_closed(
         endpoint: str,
@@ -3581,6 +3583,10 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
         selected_model_id: str = "",
         engine: Any = None,
     ) -> dict[str, Any]:
+        from nexus_scalp.model_generation.model_registry import (
+            ModelRecord,
+            get_model_registry,
+        )
         from nexus_scalp.model_lab.runtime_state import resolve_runtime_state
 
         registry = get_model_registry()
@@ -3610,6 +3616,8 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
 
     @app.get("/api/model-studio/models/{model_id}/detail")
     def route_model_detail(model_id: str) -> dict[str, Any]:
+        from nexus_scalp.model_generation.model_registry import get_model_registry
+
         registry = get_model_registry()
         rec = registry.get_model(model_id)
         if rec is None:
@@ -3630,6 +3638,7 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
     def route_switch_preview(model_id: str) -> dict[str, Any]:
         import torch
 
+        from nexus_scalp.model_generation.model_registry import get_model_registry
         from nexus_scalp.model_lab.contract_gate import (
             assert_model_weights_dimension,
             assert_scaler_file_compatibility,
@@ -3731,6 +3740,8 @@ def register_model_studio_routes(app: Any, _err: Any, _log_err: Any) -> None:
                     "GET /api/model-studio/models/switch/preview."
                 ),
             )
+        from nexus_scalp.model_generation.model_registry import get_model_registry
+
         registry = get_model_registry()
         rec = registry.get_model(req.model_id)
         if rec is None:

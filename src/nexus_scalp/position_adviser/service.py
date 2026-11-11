@@ -30,10 +30,9 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
-import torch
 
 from nexus_scalp.observability.logging import get_logger
 from nexus_scalp.position_adviser.features import (
@@ -53,9 +52,33 @@ from nexus_scalp.position_adviser.paths import (
     AdviserPathError,
     resolve_under_root,
 )
-from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
+
+if TYPE_CHECKING:
+    # trainer imports torch at module level; the service only needs its names
+    # for annotations here and at runtime inside load() (imported lazily
+    # there — see the module __getattr__ note).
+    from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
 
 logger = get_logger("nexus_scalp.position_adviser.service")
+
+
+def __getattr__(name: str) -> Any:
+    """Module-level lazy resolution for torch.
+
+    create_app() pulls this module through position_adviser_routes; the
+    torch import is deferred into the methods that use it so web-serving
+    workers stop paying the multi-second import at boot. External callers
+    that reach ``service.torch`` as a module attribute (monkeypatch,
+    interactive probes) still resolve through here and the import is cached
+    into the module namespace.
+    """
+    if name == "torch":
+        import torch
+
+        globals()["torch"] = torch
+        return torch
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 #: Trusted containment root for adviser artifacts. Request-supplied paths are
 #: resolved and MUST land inside this root or the sink refuses them (BUG-270
@@ -406,6 +429,14 @@ class PositionAdviserService:
         model_id: str | None = None,
     ) -> dict[str, Any]:
         """Load an adviser checkpoint + scaler sidecar into memory, atomically."""
+        # torch is imported lazily (see module __getattr__): create_app() pulls
+        # this module through position_adviser_routes, and a module-level
+        # torch import made every web-serving worker pay the multi-second
+        # torch import even when the adviser never loads a model.
+        import torch
+
+        from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
+
         # SANITIZER BARRIER (CodeQL py/path-injection): the request-supplied path
         # is reduced to a whitelist-only root-relative Path and anchored under
         # the trusted root BEFORE any Path expression a sink consumes. The
@@ -663,6 +694,8 @@ class PositionAdviserService:
         Returns REJECTED (leaving the current model in place) when there is
         nothing to roll back to or the retained model no longer serves.
         """
+        import torch  # lazy — see load()
+
         with self._lock:
             prev = self._previous
             if prev is None:
@@ -796,6 +829,8 @@ class PositionAdviserService:
         can never lock a ticket's throttle and swallow the next good evaluation.
         Every path that returns None leaves the hold score untouched.
         """
+        import torch  # lazy — see load()
+
         with self._lock:
             st = self._state
             if st.activation is AdviserActivation.DISABLED:
