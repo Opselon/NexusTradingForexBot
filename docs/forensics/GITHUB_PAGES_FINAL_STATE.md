@@ -52,3 +52,22 @@ On `main`: `grep -c FLAG_BUILD_INDEX` in `scripts/docs/build_site.py` = `0` (tai
 ## 10. Is any Pages deployment change still pending?
 
 **No deployment config change pending.** `docs.yml` already builds fresh in both `validate` and `deploy` jobs, uploads `site/_site` as `actions/upload-pages-artifact` path `site/_site`, and runs `live_smoke.py` post-deploy. The committed `_site` tracks the deployed output for preview but CI does not depend solely on committed output. No `.gitignore` change required during this cleanup (the task explicitly forbids a large Pages architecture change here).
+
+## 11. 2026-11-11 decision update: committed `site/_site` UNTRACKED
+
+Owner-directed repository slimming (agent-2 lane, PR "chore(repo): slim..."):
+the committed `site/_site` build output (609 files, ~20 MB, stale by 38
+source commits since ad90ad4a) is removed from git tracking and ignored.
+This supersedes §1's "intentionally tracked for PR preview" rationale:
+
+- CI deployment never depended on the committed copy (§10): `docs.yml`
+  builds fresh in both `validate` and `deploy` jobs and uploads
+  `site/_site` as the Pages artifact; the post-deploy `live_smoke.py`
+  still guards the served site.
+- PR preview remains available through the CI-built artifact; the in-tree
+  copy had drifted and could not serve as a truthful preview anyway.
+- Local rebuild: `python scripts/docs/build_site.py` (writes `site/_site/`,
+  now gitignored). `check_docs.py` / `check_landing.py` keep working after
+  a local build; on a fresh clone they self-report
+  "site/_site missing — run build_site.py first".
+- Site SOURCES under `site/` (assets/content/locales) stay tracked.

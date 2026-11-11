@@ -575,6 +575,11 @@ archive/
 site/_build/
 site/public/
 site/cache/
+# 2026-11-11 slimming (repo-owner decision): the committed _site build
+# output is untracked. docs.yml builds fresh in both validate and deploy
+# jobs and uploads site/_site as the Pages artifact — CI never depended on
+# the committed copy. Rebuild locally with scripts/docs/build_site.py.
+site/_site/
 
 # === Stray venv accidentally created in scripts/ (never commit binaries) ===
 scripts/python.exe
