@@ -59,6 +59,9 @@ export function registerMessages(msgs: Record<string, Partial<Record<Lang, strin
 const DICTS: Record<Lang, Dict | null> = {
   en: null, // English = source strings (identity)
   fa: {
+    // settings.density.opt_comfortable — used by pages/Positions (key moved
+    // here when the dead pages/Settings scope was removed, 2026-11-11 slimming)
+    "settings.density.opt_comfortable": "راحت",
     "ux.conn.title": "ارتباط قطع شد",
     "ux.conn.detail": "به‌روزرسانی زنده متوقف شد. داده‌های روی صفحه ممکن است قدیمی باشند.",
     "ux.conn.stale_title": "داده‌ها ممکن است قدیمی باشند",
@@ -179,6 +182,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "nav.feature.provisioning": "راه‌اندازی مدل",
   },
   de: {
+    "settings.density.opt_comfortable": "Komfortabel",
     "ux.conn.title": "VERBINDUNG VERLOREN",
     "ux.conn.detail": "Live-Aktualisierungen gestoppt. Angezeigte Daten können veraltet sein.",
     "ux.conn.stale_title": "DATEN KÖNNEN VERALTET SEIN",
@@ -298,6 +302,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "common.stale": "VERALTET",
   },
   es: {
+    "settings.density.opt_comfortable": "Cómodo",
     "ux.conn.title": "CONEXIÓN PERDIDA",
     "ux.conn.detail": "Las actualizaciones en vivo se detuvieron. Los datos en pantalla pueden estar desactualizados.",
     "ux.conn.stale_title": "LOS DATOS PUEDEN ESTAR DESACTUALIZADOS",
@@ -417,6 +422,7 @@ const DICTS: Record<Lang, Dict | null> = {
     "common.stale": "DESACTUALIZADO",
   },
   ar: {
+    "settings.density.opt_comfortable": "مريح",
     "ux.conn.title": "انقطاع الاتصال",
     "ux.conn.detail": "توقفت التحديثات المباشرة. قد تكون البيانات المعروضة قديمة.",
     "ux.conn.stale_title": "قد تكون البيانات قديمة",

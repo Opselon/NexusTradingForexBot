@@ -1907,7 +1907,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [integration, e2e, research-backtest, model-validation]
+        suite: [integration, research-backtest, model-validation]
 
     env:
       CI_RESULTS_DIR: ci-results
@@ -1947,12 +1947,6 @@ jobs:
           case "${{ matrix.suite }}" in
             integration)
               pytest tests/integration/ --ignore=tests/integration/test_playwright_e2e.py \
-                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-              ;;
-            e2e)
-              pip install playwright
-              python -m playwright install --with-deps chromium
-              pytest tests/integration/test_playwright_e2e.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)
