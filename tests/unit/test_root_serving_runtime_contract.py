@@ -58,9 +58,7 @@ def _no_v1_health_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
     asserts on it; the /health contract tests below exercise the REAL inline
     sweep through the real route, so no contract is touched.
     """
-    monkeypatch.setattr(
-        "nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None
-    )
+    monkeypatch.setattr("nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None)
 
 
 @pytest.fixture

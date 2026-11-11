@@ -42,6 +42,18 @@ from nexus_scalp.position_adviser.service import PositionAdviserService
 
 #: The 12D production checkpoint this contract is pinned to.
 PRODUCTION_MODEL_ID = "pos_adviser_1790954427"
+#: Trainer output, gitignored — present only on machines that minted it.
+_PRODUCTION_CHECKPOINT = Path("artifacts") / "position_adviser" / f"{PRODUCTION_MODEL_ID}.pt"
+
+pytestmark = pytest.mark.skipif(
+    not _PRODUCTION_CHECKPOINT.exists(),
+    reason=(
+        "production 12D checkpoint not minted on this machine "
+        "(artifacts/position_adviser is the trainer's gitignored output — "
+        "same artifact-conditional class as the M1-dataset / champion "
+        "artifact skips; CI has no such checkpoint)"
+    ),
+)
 
 
 @pytest.fixture

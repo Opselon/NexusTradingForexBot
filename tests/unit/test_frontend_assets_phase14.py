@@ -40,9 +40,7 @@ def _no_v1_health_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
     app-booting pass of this file. Failure-isolated by design; nothing
     asserts on it.
     """
-    monkeypatch.setattr(
-        "nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None
-    )
+    monkeypatch.setattr("nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None)
 
 
 @pytest.fixture(autouse=True)
