@@ -257,7 +257,11 @@ def test_audit_close_drains_pending_rows(tmp_path, monkeypatch):
     repo._queue.put(("_execute_schema", (schema,)))
     # Let the writer consume it (it only processes known shapes, so this
     # may stay queued — the contract is: close does not hang either way).
-    deadline = time.monotonic() + 2.0
+    # 0.2 s is plenty for that proof: this op is never consumed by design
+    # (no _execute_schema handler), so a longer poll is pure dead time; the
+    # real bounded-close budget is asserted by
+    # test_audit_close_is_bounded_against_a_stuck_writer.
+    deadline = time.monotonic() + 0.2
     while not repo._queue.empty() and time.monotonic() < deadline:
         time.sleep(0.02)
     repo.close()
@@ -269,25 +273,20 @@ def test_audit_close_drains_pending_rows(tmp_path, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def _launcher_module():
-    """Import the repo-root launcher for structural pins."""
-    import importlib.util
+def test_launcher_imports_shutdown_supervisor():
+    """The launcher must compose the supervisor (no shadow teardown).
+
+    Structural source pins only: the assertions read the launcher's text, so
+    the module is NOT exec'd. exec_module would import torch/uvicorn/fastapi
+    into this unit-test worker just to read the file it came from, and it
+    installs the launcher's process-global sqlite3.connect review-lock wrap
+    as an unrelated side effect — the pins need the source, not the module
+    object.
+    """
     from pathlib import Path
 
-    repo_root = Path(__file__).resolve().parents[2]
-    spec = importlib.util.spec_from_file_location(
-        "nse_launcher_bug304", repo_root / "NexusTradingForexBot.py"
-    )
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def test_launcher_imports_shutdown_supervisor():
-    """The launcher must compose the supervisor (no shadow teardown)."""
-    module = _launcher_module()
-    src = open(module.__file__, encoding="utf-8").read()
+    launcher = Path(__file__).resolve().parents[2] / "NexusTradingForexBot.py"
+    src = launcher.read_text(encoding="utf-8")
     assert "ShutdownSupervisor" in src
     assert "wait_for_shutdown" in src
     # The lying panel is gone: no unconditional "terminated cleanly".

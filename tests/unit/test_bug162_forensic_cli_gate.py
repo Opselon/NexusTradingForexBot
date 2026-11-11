@@ -21,6 +21,7 @@ pass after restoration.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -145,6 +146,11 @@ def test_forensic_deploy_gate_json_contract_subprocess(tmp_path) -> None:
     proc = subprocess.run(
         [sys.executable, "-m", "nexus_scalp.cli.main", "forensic", "--deploy-gate", "--json"],
         cwd=REPO_ROOT,
+        # Robust in every checkout: on CI the package is installed into the
+        # venv, in a source tree it is not — put THIS tree's src/ on the
+        # child's PYTHONPATH either way so the gate module resolves without
+        # depending on install state.
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT / "src")},
         check=False,
         capture_output=True,
         text=True,
@@ -161,22 +167,22 @@ def test_forensic_deploy_gate_json_contract_subprocess(tmp_path) -> None:
     assert payload["decision"] in VALID_DECISIONS, payload.get("decision")
     assert payload["exit_code"] == proc.returncode
 
-
-# ---------------------------------------------------------------------------
-# hook fail-safe hardening: gate artifacts must carry a real decision payload
-# (guards the fail-open regression where a typer usage error masqueraded as
-# REVIEW_REQUIRED and the hook still printed ALL CHECKS PASSED)
-# ---------------------------------------------------------------------------
-
-
-def test_deploy_gate_result_artifact_has_decision_payload(tmp_path) -> None:
-    """The persisted gate artifact (deploy_gate_result.json) must contain a
-    '"decision"' field — a typer usage-error panel is a fail-safe BLOCK."""
+    # Hook fail-safe hardening (BUG-162): the gate persists its result
+    # (run_deploy_gate persist=True default, result_dir = <cwd>/artifacts/
+    # forensics), and the Windows beforePush hook consumes that PERSISTED
+    # artifact. The fail-open regression this file guards produced a typer
+    # usage-error panel as the persisted artifact while stdout looked fine,
+    # so the artifact written by THIS gate run must carry a real decision
+    # payload too. (Previously asserted by a separate skip-when-absent test
+    # that silently depended on this test having run first — the dependency
+    # is now explicit, and the check runs in every checkout.)
     artifact = REPO_ROOT / "artifacts" / "forensics" / "deploy_gate_result.json"
-    if not artifact.exists():
-        pytest.skip("artifacts/forensics/deploy_gate_result.json not present in this checkout")
+    assert artifact.exists(), (
+        "run_deploy_gate(persist=True) must persist deploy_gate_result.json "
+        "under the invoking cwd — missing after a REPO_ROOT gate run"
+    )
     raw = artifact.read_text(encoding="utf-8", errors="replace")
     assert '"decision"' in raw, (
-        "BUG-162 fail-open signature: gate artifact lacks a decision payload "
-        "(typer usage error masqueraded as gate output)"
+        "BUG-162 fail-open signature: persisted gate artifact lacks a decision "
+        "payload (typer usage error masqueraded as gate output)"
     )
