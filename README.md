@@ -269,7 +269,7 @@ Every stage is isolated behind hexagonal ports — every promotion requires an o
 > Docs → [control-center-ui.md](docs/architecture/control-center-ui.md)
 
 <p align="center">
-  <img src="pics/_shot_final_1920.png" alt="Account Center — 1920px" width="49%">
+  <img src="pics/web.png" alt="Account Center — 1920px" width="49%">
   <img src="pics/_shot_final_768.png" alt="Account Center — 768px" width="49%">
   <img src="pics/_shot_deep_state.png" alt="Deep state" width="49%">
   <img src="pics/_case_many.png" alt="Many metrics" width="49%">

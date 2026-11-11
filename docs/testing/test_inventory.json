@@ -2567,70 +2567,6 @@
    "disposition": "KEEP"
   },
   {
-   "file": "tests/slow/test_70d_incremental.py",
-   "dir": "slow",
-   "n_tests": 10,
-   "loc": 252,
-   "in_critical_suite": false,
-   "in_slow_suite": false,
-   "measured": null,
-   "machine_flags": {
-    "mock_uses": 0,
-    "subproc": 0,
-    "sleep": 0,
-    "sqlite_real": 0,
-    "network": 0,
-    "mt5": 0,
-    "skips": 10,
-    "xfails": 0
-   },
-   "production_imports": [
-    "nexus_scalp.features.liquidity_engine",
-    "nexus_scalp.features.liquidity_engine_opt",
-    "nexus_scalp.features.schema_contract.NEWS_10D_NAMES",
-    "nexus_scalp.features.schema_contract.feature_schema_hash",
-    "nexus_scalp.model_generation.artifact_store.ArtifactStore",
-    "nexus_scalp.model_generation.schema_v2.build_70d_dataset",
-    "nexus_scalp.model_generation.schema_v2.compute_70d_frame",
-    "nexus_scalp.model_generation.schema_v2.verify_70d_artifact",
-    "nexus_scalp.model_generation.schema_v2_incremental.compute_70d_frame_fast"
-   ],
-   "judgment": {
-    "file": "tests/slow/test_70d_incremental.py",
-    "n_tests": 10,
-    "purpose": "BUG-106 heavy tier: incremental vs canonical 70D builder byte-identical parity, speed guard, dataset self-check parity, anti-leakage (future bars cannot alter T), 70D finite/clip bounds, news family neutrality, frozen liquidity v1.1 params, schema-hash stability, 4K-row benchmark bound",
-    "production_code": [
-     "model_generation.schema_v2(_incremental)",
-     "features.liquidity_engine(_opt)",
-     "schema_contract.feature_schema_hash"
-    ],
-    "mock_heaviness": "none",
-    "external_io": {
-     "subprocess": false,
-     "sqlite_real": false,
-     "network": false,
-     "mt5": false,
-     "files": false
-    },
-    "platform_dep": "none",
-    "determinism": "timing-sensitive",
-    "runtime_guess": "minutes",
-    "tier_suit": "T2",
-    "protects_invariant": "70D feature builder optimization preserves exact semantics and causality on real M5 data",
-    "classification": "KEEP",
-    "reason": "Correctly demoted to slow_suite (unit twin holds fast parity smoke); speed assertions are non-gating (documented); data-gated skipif honest"
-   },
-   "value": {
-    "production_relevance": 1.0,
-    "defect_detection": 0.8,
-    "determinism": 0.6,
-    "runtime_efficiency": 0.8,
-    "test_value": 0.384,
-    "cost_efficiency": null
-   },
-   "disposition": "KEEP"
-  },
-  {
    "file": "tests/unit/news/ingest/test_bug282_rfc822_and_identity.py",
    "dir": "unit",
    "n_tests": 10,
@@ -2817,7 +2753,7 @@
     "value_flags": {
      "failure_impact": "P0",
      "coverage_unique": false,
-     "stronger_exists": "tests/slow/test_70d_incremental.py"
+     "stronger_exists": "tests/unit/test_70d_bug106_incremental_phase19.py"
     },
     "replacement": "n/a",
     "reason": "T1 slot costs 0s (data-conditional skip on CI); BUG-106 documented; keep for machine runs"
