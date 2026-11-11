@@ -28,6 +28,13 @@ from nexus_scalp.release.state_truth import resolve_field
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# The module-scoped CLI-subprocess fixture (nexus version --json, ~4-10s
+# cold per interpreter) is instantiated per xdist WORKER unless the file's
+# tests share a loadgroup: without a group, each of the 4 workers that
+# receives any of these tests re-pays the spawn + cold import chain.
+# Precedent: tests/unit/test_bug307c_cli_logging_disable_leak.py.
+pytestmark = pytest.mark.xdist_group("state_truth")
+
 
 def _cli_version_payload(env: dict[str, str] | None = None) -> dict[str, Any]:
     """Fresh-subprocess ``nexus version --json`` (CLI surface of truth)."""
