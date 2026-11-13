@@ -1785,9 +1785,9 @@ typer==0.29.1 \
     --hash=sha256:00dbc549c13428bec1be55fe1f4d0fb8c6637a310e4f178ef14abe9534ee7b58 \
     --hash=sha256:ab6eb3880bf67ce96147734717f9ec333c06f66e361f3ea947d0be43da39f242
     # via nexus-scalp-engine (pyproject.toml)
-types-pyyaml==6.0.12.20261111 \
-    --hash=sha256:b7e46cbc847dc235305e95e3e3570792d72e6ccf64bf9b831306f48da490322d \
-    --hash=sha256:c511f563eaf820b948c4ff6f43fe0b9d48b227be442a69058d9f68f139cae1fb
+types-pyyaml==6.0.12.20261113 \
+    --hash=sha256:0828be2580fd94151182364f4d0158e4de62fdbeeb8d4296f7f7d2b6c22bb640 \
+    --hash=sha256:3600749e613748afdc4327f0b17c3296cf880cdbc7335f320007abd9dd815f67
     # via nexus-scalp-engine (pyproject.toml)
 types-requests==2.33.0.20261030 \
     --hash=sha256:06cfc2e92399bf46eda78a65cd0e2203d29ebbeede78b4ab0a5922f749ce1492 \
