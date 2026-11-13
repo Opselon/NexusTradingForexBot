@@ -37,6 +37,32 @@ outputs:
 runs:
   using: "composite"
   steps:
+    - name: Select primary index (per-runner network)
+      shell: bash
+      run: |
+        # Per-runner primary index (2026-11-13): the default primary is
+        # TUNA (tier-1 cannot reach files.pythonhosted.org), but the
+        # Dubai runner (nexus-*) and the Germany runner (germany-*)
+        # use PyPI. TUNA denies Germany's IP outright (HTTP 403 on
+        # /simple/pip/, measured 2026-11-13) so the setup-python pip
+        # upgrade fails there with "No matching distribution found for
+        # pip" — that is what killed PR #748's CI on germany-runner-bot
+        # (run 43384806795). PyPI is reachable and fast from both.
+        # Exported to GITHUB_ENV so setup-python's pip upgrade and
+        # setup-uv read the right primary; the install step's own case
+        # overrides again for uv (step env beats GITHUB_ENV there).
+        case "${RUNNER_NAME:-}" in
+          nexus-*|germany-*)
+            echo "PIP_INDEX_URL=https://pypi.org/simple/" >> "$GITHUB_ENV"
+            echo "UV_DEFAULT_INDEX=https://pypi.org/simple/" >> "$GITHUB_ENV"
+            echo "UV_INDEX_URL=https://pypi.org/simple/" >> "$GITHUB_ENV"
+            echo "Runner ${RUNNER_NAME}: PyPI primary (TUNA blocked/slow here)"
+            ;;
+          *)
+            echo "Runner ${RUNNER_NAME:-unknown}: TUNA primary (default)"
+            ;;
+        esac
+
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
@@ -110,13 +136,16 @@ runs:
         # also the origin, so it never lags a fresh release the way
         # mirrors do (filelock 4.2.10 lagged on Aliyun). The extra
         # stays Aliyun for both — a mirror that can serve wheels.
+        # 2026-11-13: the Germany runner (germany-*) joins PyPI —
+        # TUNA denies its IP outright (HTTP 403 on /simple/pip/),
+        # which killed PR #748's CI at the setup-python pip upgrade.
         case "${RUNNER_NAME:-}" in
-          nexus-*)
+          nexus-*|germany-*)
             export UV_DEFAULT_INDEX="https://pypi.org/simple/"
             export UV_INDEX_URL="https://pypi.org/simple/"
             export UV_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
             export PIP_EXTRA_INDEX_URL="https://mirrors.aliyun.com/pypi/simple/"
-            echo "Dubai runner (${RUNNER_NAME}): PyPI primary (measured fastest, 2026-11-10)"
+            echo "Dubai/Germany runner (${RUNNER_NAME}): PyPI primary (measured fastest, 2026-11-10; TUNA 403s Germany, 2026-11-13)"
             ;;
         esac
         # Self-hosted runners persist $HOME across jobs, but
