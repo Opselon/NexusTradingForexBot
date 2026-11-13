@@ -31,6 +31,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 @pytest.fixture(autouse=True)
+def _no_v1_health_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """create_app() spawns a background 24-check HealthEngine sweep per app.
+
+    None of these tests read ``/api/v1/*`` (their API probes are the legacy
+    ``/api/chart/history`` surface): every prewarm sweep is pure serialized
+    background CPU contending with the xdist workers — ~25 wasted sweeps per
+    app-booting pass of this file. Failure-isolated by design; nothing
+    asserts on it.
+    """
+    monkeypatch.setattr("nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None)
+
+
+@pytest.fixture(autouse=True)
 def _no_web_auth_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
     """A-6 determinism: forbid a cross-module WEB-AUTH opt-out fake-green.
 

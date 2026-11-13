@@ -46,6 +46,21 @@ _REACT_MARKER = "<!--NEXUS-REACT-INDEX-LANE-A-->"
 _LEGACY_TITLE = "Nexus Scalp Engine"
 
 
+@pytest.fixture(autouse=True)
+def _no_v1_health_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """create_app() spawns a background 24-check HealthEngine sweep per app.
+
+    None of these tests read ``/api/v1/*`` (grep-verified): every prewarm
+    sweep is pure serialized background CPU (1.5-4s each under
+    ``_HEALTH_SWEEP_LOCK``, including an HTTPS probe with a 4s timeout)
+    contending with the xdist workers — ~30 wasted sweeps per app-booting
+    pass of this file. The prewarm is failure-isolated by design and nothing
+    asserts on it; the /health contract tests below exercise the REAL inline
+    sweep through the real route, so no contract is touched.
+    """
+    monkeypatch.setattr("nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None)
+
+
 @pytest.fixture
 def clean_dist_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Forget every real dist candidate so a test controls what resolves.
@@ -314,10 +329,11 @@ def _health_payload(client: TestClient) -> dict[str, Any]:
     r = client.get("/health")
     assert r.status_code in (200, 503), r.text[:400]
     assert r.headers["content-type"] == "application/json"
-    if r.status_code == 200:
-        return r.json()
-    # 503 carries the verdict under FastAPI's `detail` envelope
-    return r.json()["detail"]
+    # Production returns the verdict TOP-LEVEL on both paths: the 503 branch
+    # was de-nested from FastAPI's `detail` envelope (see the route comment),
+    # and the old helper still read ["detail"] — KeyError on every non-READY
+    # checkout (DATA check FAILs where the canonical bars file is gitignored).
+    return r.json()
 
 
 def test_health_is_json_not_html(client: TestClient) -> None:
