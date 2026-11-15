@@ -757,7 +757,7 @@ jobs:
           echo "> Tests ran in this workflow (gates job). No claims beyond that." >> notes.md
       - name: Publish release
         id: publish
-        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3
         with:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
