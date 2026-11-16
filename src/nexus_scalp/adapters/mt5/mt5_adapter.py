@@ -194,6 +194,11 @@ class DirectMT5Adapter(IMT5Port):
         self._last_calls: dict[str, MT5CallDiagnostic] = {}
         self._last_call_ring: list[MT5CallDiagnostic] = []
         self._call_ring_max = 50
+        #: Discussion #107: configured alias -> broker-truth symbol name
+        #: (XAUUSD -> XAUUSD.p). Filled lazily by _broker_alias_for() on the
+        #: first failed symbol read; cleared on every connect() so a
+        #: reconnect to a different server never reuses stale aliases.
+        self._symbol_alias_cache: dict[str, str] = {}
 
         if not HAS_NATIVE_MT5 and sys.platform == "win32":
             logger.warning(
@@ -478,6 +483,9 @@ class DirectMT5Adapter(IMT5Port):
 
         self._connected = True
         self._conn_state.set_state(MT5ConnectionState.CONNECTED, "connected")
+        # A reconnect may target a different server/broker; alias resolution
+        # cached for the previous one must never leak into this session.
+        self._symbol_alias_cache.clear()
         logger.info("Successfully connected to MT5 Terminal process.")
         return True
 
@@ -699,6 +707,63 @@ class DirectMT5Adapter(IMT5Port):
             return self._symbol_name_of(by_name[substr[0]])
         return None
 
+    def _broker_alias_for(self, symbol: str) -> str | None:
+        """Broker-truth name usable for THIS session's symbol reads, cached.
+
+        Discussion #107 (vivekgohel27-collab): brokers spell the same
+        instrument with their own suffix (XAUUSD configured, XAUUSD.p /
+        XAUUSD.m / XAUUSD_i on the server) and some hide the symbol from
+        Market Watch until it is selected, which makes symbol_info /
+        symbol_info_tick return None (MT5 -4 "Terminal: Not found") even
+        though the instrument exists. Resolution flow:
+
+          1. cache hit (already resolved this session) -> broker name;
+          2. direct ``symbol_info`` probe succeeds -> the name works as-is;
+          3. ``resolve_symbol`` fuzzy-matches the server's own catalogue and
+             the winner is ``symbol_select``-ed into Market Watch so ticks
+             actually flow.
+
+        Fail-closed by construction: ``None`` when nothing tradeable matches,
+        and a failure is never cached (a later Market Watch change can still
+        take effect). Callers keep the original error when ``None``.
+        """
+        requested = (symbol or "").strip()
+        if not requested:
+            return None
+        cached = self._symbol_alias_cache.get(requested)
+        if cached:
+            return cached
+        if not HAS_NATIVE_MT5 or mt5 is None or not self._connected:
+            return None
+        try:
+            direct = mt5.symbol_info(requested)
+        except Exception as exc:  # driver-level fault, not a "not found"
+            logger.warning(
+                "[SYMBOL_RESOLVE] symbol_info probe raised (isolated) symbol=%s error=%s",
+                requested,
+                str(exc),
+            )
+            direct = None
+        if direct is not None:
+            name = self._symbol_name_of(direct) or requested
+            self._symbol_alias_cache[requested] = name
+            return name
+        resolved = self.resolve_symbol(requested)
+        if not resolved:
+            return None
+        # Market Watch visibility: several terminals serve symbol_info/tick
+        # only for symbols that were selected at least once.
+        with contextlib.suppress(Exception):
+            mt5.symbol_select(resolved, True)
+        self._symbol_alias_cache[requested] = resolved
+        logger.warning(
+            "[SYMBOL_RESOLVE] configured symbol not on this server; using broker name "
+            "requested=%s broker_symbol=%s",
+            requested,
+            resolved,
+        )
+        return resolved
+
     def connection_state(self) -> MT5ConnectionState:
         """Real MT5 connection state (never derived from config)."""
         return self._conn_state
@@ -761,20 +826,32 @@ class DirectMT5Adapter(IMT5Port):
         if not self._connected:
             return SymbolSnapshot().as_error("symbol_info", None, "adapter not connected")
 
-        raw_info, diag_info = run_mt5_call(
-            "symbol_info",
-            lambda: mt5.symbol_info(symbol),
-            mt5_module=mt5,
-            context={"symbol": symbol},
-        )
+        def _read(name: str) -> tuple[Any, MT5CallDiagnostic, Any, MT5CallDiagnostic]:
+            raw_info, diag_info = run_mt5_call(
+                "symbol_info",
+                lambda: mt5.symbol_info(name),
+                mt5_module=mt5,
+                context={"symbol": name},
+            )
+            raw_tick, diag_tick = run_mt5_call(
+                "symbol_info_tick",
+                lambda: mt5.symbol_info_tick(name),
+                mt5_module=mt5,
+                context={"symbol": name},
+            )
+            return raw_info, diag_info, raw_tick, diag_tick
+
+        raw_info, diag_info, raw_tick, diag_tick = _read(symbol)
         self._record_call(diag_info)
-        raw_tick, diag_tick = run_mt5_call(
-            "symbol_info_tick",
-            lambda: mt5.symbol_info_tick(symbol),
-            mt5_module=mt5,
-            context={"symbol": symbol},
-        )
         self._record_call(diag_tick)
+        if raw_info is None:
+            # Broker-suffix self-heal (discussion #107): retry once with the
+            # broker-truth spelling (XAUUSD -> XAUUSD.p) before failing.
+            alias = self._broker_alias_for(symbol)
+            if alias and alias != symbol:
+                raw_info, diag_info, raw_tick, diag_tick = _read(alias)
+                self._record_call(diag_info)
+                self._record_call(diag_tick)
 
         snap = build_symbol_snapshot(raw_info, raw_tick)
         if not snap.available:
@@ -804,14 +881,28 @@ class DirectMT5Adapter(IMT5Port):
             context={"symbol": symbol},
         )
         self._record_call(diag)
+        probe = symbol
+        if raw_tick is None:
+            # Broker-suffix self-heal (discussion #107): retry once with the
+            # broker-truth spelling (XAUUSD -> XAUUSD.p) before failing.
+            alias = self._broker_alias_for(symbol)
+            if alias and alias != symbol:
+                raw_tick, diag = run_mt5_call(
+                    "symbol_info_tick",
+                    lambda: mt5.symbol_info_tick(alias),
+                    mt5_module=mt5,
+                    context={"symbol": alias},
+                )
+                self._record_call(diag)
+                probe = alias
         snap = BrokerTickSnapshot()
         if raw_tick is None:
             snap.as_error("symbol_info_tick", diag.mt5_error_code, diag.mt5_error_message)
-            snap.symbol = symbol
+            snap.symbol = probe
             return snap
         snap.available = True
         snap.source = "BROKER_NATIVE"
-        snap.symbol = symbol
+        snap.symbol = probe
         snap.bid = float(getattr(raw_tick, "bid", 0.0) or 0.0)
         snap.ask = float(getattr(raw_tick, "ask", 0.0) or 0.0)
         snap.last = float(getattr(raw_tick, "last", 0.0) or 0.0)

@@ -73,6 +73,7 @@ import json
 import logging
 import math
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime, timedelta
@@ -770,6 +771,62 @@ class MCPMT5Adapter(IMT5Port):
     # ------------------------------------------------------------------
     # Symbol + tick
     # ------------------------------------------------------------------
+    @staticmethod
+    def _marketwatch_alias(symbol: str, symbols: Any) -> str | None:
+        """Broker-truth Market Watch name for `symbol`, None when absent.
+
+        Discussion #107 (suffix brokers: XAUUSD configured, XAUUSD.p served):
+        the exact (case-insensitive) name wins; otherwise the configured base
+        must appear as a whole word in the candidate and the shortest wins.
+        Fail-closed: no candidate -> None, never a fabricated name.
+        """
+        requested = (symbol or "").strip().upper()
+        if not requested:
+            return None
+        if not isinstance(symbols, list):
+            return None
+        names: list[str] = []
+        for row in symbols:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("symbol") or "").strip()
+            if name:
+                names.append(name)
+        if not names:
+            return None
+        exact = [n for n in names if n.upper() == requested]
+        if exact:
+            return exact[0]
+        base = re.split(r"[_\-.]", requested, maxsplit=1)[0]
+        if base:
+            word_re = re.compile(rf"(?:^|[_\-.]){re.escape(base)}(?:$|[_\-.])", re.IGNORECASE)
+            scored = [n for n in names if word_re.search(n)]
+            if scored:
+                scored.sort(key=lambda n: (len(n), n))
+                return scored[0]
+        substr = [n for n in names if requested in n.upper()]
+        if substr:
+            substr.sort(key=lambda n: (len(n), n))
+            return substr[0]
+        return None
+
+    def resolve_symbol(self, symbol: str) -> str | None:
+        """Market Watch resolution for the MCP transport (suffix brokers).
+
+        Same fail-closed contract as ``DirectMT5Adapter.resolve_symbol``:
+        the broker-truth name or ``None``; the boot auto-repair treats
+        ``None`` as "leave the configured symbol untouched". Market Watch is
+        the only symbol catalogue the MCP surface exposes.
+        """
+        if not self._connected:
+            return None
+        try:
+            payload = self._call_json("get_marketwatch_symbols") or {}
+        except Exception:
+            return None
+        symbols = payload.get("symbols") if isinstance(payload, dict) else None
+        return self._marketwatch_alias(symbol, symbols)
+
     def get_symbol_snapshot(self, symbol: str) -> SymbolSnapshot:
         """Symbol spec + current quote from get_marketwatch_symbols.
 
@@ -807,12 +864,24 @@ class MCPMT5Adapter(IMT5Port):
             (s for s in symbols if isinstance(s, dict) and s.get("symbol") == symbol),
             None,
         )
+        resolved_name = symbol
+        if match is None:
+            # Broker-suffix self-heal (discussion #107): Market Watch may
+            # spell the instrument differently (XAUUSD -> XAUUSD.p).
+            alias = self._marketwatch_alias(symbol, symbols)
+            if alias and alias != symbol:
+                match = next(
+                    (s for s in symbols if isinstance(s, dict) and s.get("symbol") == alias),
+                    None,
+                )
+                if match is not None:
+                    resolved_name = alias
         if match is None:
             return SymbolSnapshot().as_error(
                 "symbol_info", "NOT_FOUND", f"'{symbol}' not in Market Watch"
             )
 
-        spec: dict[str, Any] = {"name": symbol}
+        spec: dict[str, Any] = {"name": resolved_name}
         for mcp_key, native_key in (
             ("digits", "digits"),
             ("point", "point"),
@@ -936,6 +1005,18 @@ class MCPMT5Adapter(IMT5Port):
             if isinstance(symbols, list)
             else None
         )
+        resolved_name = symbol
+        if match is None and isinstance(symbols, list):
+            # Broker-suffix self-heal (discussion #107): Market Watch may
+            # spell the instrument differently (XAUUSD -> XAUUSD.p).
+            alias = self._marketwatch_alias(symbol, symbols)
+            if alias and alias != symbol:
+                match = next(
+                    (s for s in symbols if isinstance(s, dict) and s.get("symbol") == alias),
+                    None,
+                )
+                if match is not None:
+                    resolved_name = alias
         if match is None:
             return BrokerTickSnapshot().as_error(
                 "symbol_info_tick", "NOT_FOUND", f"'{symbol}' not in Market Watch"
@@ -943,7 +1024,7 @@ class MCPMT5Adapter(IMT5Port):
         snap = BrokerTickSnapshot()
         snap.available = True
         snap.source = "BROKER_NATIVE"
-        snap.symbol = symbol
+        snap.symbol = resolved_name
         snap.bid = float(match.get("bid") or 0.0)
         snap.ask = float(match.get("ask") or 0.0)
         #: last / volume / flags are UNSUPPORTED over MCP (evidence §2: tick
