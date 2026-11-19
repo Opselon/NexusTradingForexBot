@@ -20,6 +20,12 @@ from nexus_scalp.position_adviser.models import PositionAdvisory
 from nexus_scalp.position_adviser.service import PositionAdviserService
 from nexus_scalp.position_adviser.trainer import AdviserScaler, PositionAdviserNet
 
+# The runtime tests mint/load checkpoints under the cwd-relative
+# artifacts/position_adviser/ tree and assert cross-test persisted state
+# (rehydration, hot-swap rollback) — one xdist worker at a time, or the
+# sibling workers race on the same on-disk state.
+pytestmark = pytest.mark.xdist_group("position_adviser")
+
 FEATURE_DIM = 12
 ACTIONS = ("KEEP", "CLOSE", "REDUCE")
 

@@ -655,10 +655,17 @@ class TestTrainerSinkContainment:
     """CodeQL #1147/#1148 — trainer read/write sinks."""
 
     def test_sha256_file_rejects_outside_root(self) -> None:
+        import tempfile
+
         from nexus_scalp.position_adviser.trainer import AdviserFeatureError, _sha256_file
 
+        # Outside _ADVISER_ROOT on EVERY platform: the old literal "C:/..."
+        # was outside on Windows but a RELATIVE path on Linux (where it
+        # resolved under the repo root and leaked FileNotFoundError instead
+        # of the containment error).
+        outside = Path(tempfile.gettempdir()) / "nonexistent_outside_root" / "evil.pt"
         with pytest.raises(AdviserFeatureError):
-            _sha256_file(Path("C:/nonexistent_outside_root/evil.pt"))
+            _sha256_file(outside)
 
     def test_sha256_file_accepts_in_repo(self, tmp_path: Path) -> None:
         from nexus_scalp.position_adviser import trainer as tr

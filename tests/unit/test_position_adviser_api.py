@@ -26,6 +26,13 @@ from nexus_scalp.web import position_adviser_routes as par
 FEATURE_DIM = 12
 ACTIONS = ("KEEP", "CLOSE", "REDUCE")
 
+# The api tests mint/load checkpoints under the cwd-relative
+# artifacts/position_adviser/pa_api_tests tree and assert cross-test
+# persisted state (startup rehydration round-trips the persisted selection)
+# — one xdist worker at a time, or sibling workers race on the same
+# on-disk state file.
+pytestmark = pytest.mark.xdist_group("position_adviser")
+
 
 @pytest.fixture
 def app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FastAPI:

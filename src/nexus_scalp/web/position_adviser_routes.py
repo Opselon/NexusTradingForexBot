@@ -40,10 +40,6 @@ from nexus_scalp.position_adviser.settings_store import (
     AdviserSettings,
     AdviserSettingsStore,
 )
-from nexus_scalp.position_adviser.trainer import (
-    OOS_SPLITS,
-    train_position_adviser,
-)
 
 logger = get_logger("nexus_scalp.web.position_adviser_routes")
 
@@ -265,6 +261,10 @@ def route_train(req: AdviserTrainRequest) -> dict[str, Any]:
         )
     out_dir = root.resolve() / _sanitize_path_parts(svc.config.artifact_dir)
     try:
+        # trainer pulls torch at module level — imported lazily so create_app()
+        # (which registers this router) stays torch-free at boot.
+        from nexus_scalp.position_adviser.trainer import train_position_adviser
+
         res = train_position_adviser(
             ds,
             output_dir=out_dir,
@@ -683,6 +683,8 @@ def _majority_class_baseline(dataset_path: Path) -> float | None:
         if abs_path.suffix.lower() == ".parquet"
         else pl.read_csv(abs_path)
     )
+    from nexus_scalp.position_adviser.trainer import OOS_SPLITS
+
     labels = df.filter(pl.col("split").is_in(OOS_SPLITS))["optimal_action"]
     if labels.len() == 0:
         return None
@@ -744,6 +746,8 @@ def route_auto_tune(req: AdviserAutoTuneRequest) -> dict[str, Any]:
     # The majority-class baseline is the honest floor any constant classifier
     # reaches on the TRUE OOS labels — never a model's prediction distribution.
     majority_baseline = _majority_class_baseline(ds)
+
+    from nexus_scalp.position_adviser.trainer import train_position_adviser
 
     for seed, lr, bs in grid:
         mid = f"pos_adviser_tune_{int(time.time())}_{seed}_{abs(hash((lr, bs))) % 100000}"

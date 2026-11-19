@@ -39,6 +39,20 @@ from types import SimpleNamespace
 
 import pytest
 
+
+@pytest.fixture(autouse=True)
+def _no_v1_health_prewarm(monkeypatch: pytest.MonkeyPatch) -> None:
+    """create_app() spawns a background 24-check HealthEngine sweep per app.
+
+    These tests exercise the legacy ``/api/status`` route and
+    ``/api/debug/state`` — never ``/api/v1/*`` — so each of the ~23 apps
+    this file boots pays a wasted serialized background sweep (1.5-4s under
+    ``_HEALTH_SWEEP_LOCK``) contending with the xdist workers.
+    Failure-isolated by design; nothing asserts on it.
+    """
+    monkeypatch.setattr("nexus_scalp.web.api_v1_wiring._prewarm_health_cache", lambda app: None)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------

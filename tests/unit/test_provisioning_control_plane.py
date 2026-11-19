@@ -390,9 +390,22 @@ def test_inventory_studio_rows_never_claim_to_be_the_live_model(
 
     monkeypatch.setattr(inv, "_active_artifact_path", lambda: None)
     monkeypatch.setattr("nexus_scalp.release.paths.get_runtime_workspace", lambda: ws, raising=True)
+
+    class _EmptyRegistry:
+        def list_models(self) -> list[Any]:
+            return []
+
+    # Phase 1 needs an EMPTY registry: _studio_registry_rows imports
+    # get_model_registry from the live module (patchable), and under xdist a
+    # sibling worker's model-studio test may have already minted rows into
+    # the shared default registry DB.
+    monkeypatch.setattr(
+        "nexus_scalp.model_generation.model_registry.get_model_registry",
+        lambda: _EmptyRegistry(),  # noqa: PLW0108 — instance, not a callable factory
+    )
     rows = inv._studio_registry_rows(workspace=ws, active_artifact=None, seen=set())
     # _studio_registry_rows is the pure row builder; assert via it directly.
-    assert rows == []  # no live registry in this env -> fail-closed
+    assert rows == []  # empty registry -> fail-closed zero rows
 
     # Now exercise the row mapping logic itself with a stubbed registry.
     class _Reg:
