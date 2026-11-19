@@ -4,23 +4,27 @@ name: QA Deep Assurance
 # INDEPENDENT lane: does NOT touch ci.yml, security.yml, or beforePush.
 # fast lane  = --fast  (property + state machines + execution safety)
 # deep lane  = --json full layer + mutation proof (scheduled / dispatch)
-# Weekly mutation baseline: run_mutations.py is the canonical mutation
-# engine; the scheduled Sunday run IS the weekly critical-surface mutation
+# Mutation baseline: run_mutations.py is the canonical mutation engine;
+# the scheduled 1st & 15th run IS the bi-monthly critical-surface mutation
 # gate (full catalog, pristine-battery-checked, JSON artifact 90 days).
-# A weekly full-repo pytest-mutation sweep is NOT practical (the engine's
-# honest runner takes ~3min for 9 anchor mutations; whole-repo would be
-# hours); the anchor catalog IS the tracked critical production surface.
+# A full-repo pytest-mutation sweep is NOT practical (the engine's honest
+# runner takes ~3min for 9 anchor mutations; whole-repo would be hours);
+# the anchor catalog IS the tracked critical production surface.
 #
 # 2026-09-14 test reconstruction: PR/push triggers REMOVED. This lane is not
 # a required check, yet it fired a windows-latest runner with a full torch
 # install on EVERY PR/main push to run an ~8-second fast battery — pure waste
-# (measured in the CI cost report). The weekly schedule + manual dispatch
-# cover it honestly; a cheaper scoped mutation pass (--changed) already runs
-# per-PR via dependency-lock.yml's migration-safety job.
+# (measured in the CI cost report). The semi-monthly schedule + manual
+# dispatch cover it honestly; a cheaper scoped mutation pass (--changed)
+# already runs per-PR via dependency-lock.yml's migration-safety job.
+# 2026-11-11 slimming: the fast-lane step (gated on pull_request||push) was
+# dead since that trigger removal — removed.
 
 on:
   schedule:
-    # weekly, Sundays 03:30 UTC (off-peak; Iran local ~07:00)
+    # 1st & 15th monthly, 03:30 UTC (off-peak; Iran local ~07:00) —
+    # comment previously said "weekly, Sundays", which never matched this
+    # cron (bi-monthly since the 2026-11-10 PR/push trigger removal).
     - cron: "30 3 1,15 * *"
   workflow_dispatch:
     inputs:
@@ -54,12 +58,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -e ".[dev,web]"
-
-      - name: Deep assurance (fast lane)
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        run: |
-          python scripts/qa/deep_assurance.py --fast --json > qa-deep-fast.json
-          Get-Content qa-deep-fast.json
 
       - name: Deep assurance (full lane)
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

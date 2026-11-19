@@ -25,6 +25,7 @@ after the suite and asserted unchanged.
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from pathlib import Path
 
@@ -150,22 +151,53 @@ def _schema_version(db_path: Path) -> int:
     return engine.current_version()
 
 
-def _build_two_pending_migrations_db(db_path: Path) -> Path:
-    """Build an isolated DB one migration-version pair behind current.
+def _build_db_templates(base: Path) -> dict[str, Path]:
+    """Build the (full, two-pending) template DBs under `base`, once.
 
-    ``db_path`` is the caller's handle (tests may overwrite it to corrupt the
-    file), so the DB is assembled in a private sibling path and copied into
-    place — destroying ``db_path`` never destroys the fixture's source.
+    One full ``DatabaseMigrationEngine`` run (all audit migrations +
+    fsyncs) plus one rewind of the latest two — the per-test cost this
+    replaces (~0.3s locally, ~2-3s on the loaded self-hosted runner).
+    The full template is a byte copy of the migrated DB before the
+    rewind, so the idempotency test's "freshly migrated" precondition
+    is a copy too, not a second full migrate.
     """
-    src = db_path.parent / "_two_pending_src.db"
-    full = _migrate_to_full(src)
-    expected = _expected_audit_version()
-    assert full == expected, f"expected schema {expected}, got {full}"
-    _rewind_to_two_pending_migrations(src)
-    assert _schema_version(src) == expected - 2
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    db_path.write_bytes(src.read_bytes())
-    return db_path
+    full_src = base / "full_src.db"
+    assert _migrate_to_full(full_src) == _expected_audit_version()
+    templates = {
+        "full": base / "full_template.db",
+        "two_pending": base / "two_pending_template.db",
+    }
+    shutil.copyfile(full_src, templates["full"])
+    shutil.copyfile(full_src, templates["two_pending"])
+    _rewind_to_two_pending_migrations(templates["two_pending"])
+    assert _schema_version(templates["two_pending"]) == _expected_audit_version() - 2
+    return templates
+
+
+# ---------------------------------------------------------------------------
+# Shared DB templates (speed: one full migration per module, the rest copy)
+# ---------------------------------------------------------------------------
+# Every test used to build its own audit DB from scratch: a full
+# DatabaseMigrationEngine run (all audit migrations + fsyncs) plus a
+# rewind of the latest two, ~0.3s locally and ~2-3s on the loaded
+# self-hosted runner — times 7 tests, plus one more full migrate for the
+# idempotency test. The template DBs are built ONCE per module and each
+# test copies the bytes into its own throwaway path. Copies are
+# byte-identical to a freshly built DB and tests mutate only their own
+# copy (apply, corrupt, truncate, lock). The templates live under
+# pytest's session basetemp (one per xdist worker) and are never opened
+# read-write after construction.
+@pytest.fixture(scope="module")
+def _db_templates(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
+    return _build_db_templates(tmp_path_factory.mktemp("healthfix_templates"))
+
+
+def _fresh_db(tmp_path: Path, template: Path) -> Path:
+    """Copy a template DB into this test's throwaway dir."""
+    db = tmp_path / "audit.db"
+    db.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(template, db)
+    return db
 
 
 # ---------------------------------------------------------------------------
@@ -174,8 +206,10 @@ def _build_two_pending_migrations_db(db_path: Path) -> Path:
 
 
 class TestAppliesPendingMigrations:
-    def test_latest_two_migrations_reach_current_version(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_latest_two_migrations_reach_current_version(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         assert _schema_version(db) == _expected_audit_version() - 2
 
         status, detail = apply_pending_audit_migrations(db)
@@ -195,8 +229,10 @@ class TestAppliesPendingMigrations:
         expected_ids = {migration.migration_id for migration in _latest_two_audit_migrations()}
         assert expected_ids <= ids, (expected_ids, ids)
 
-    def test_integrity_is_ok_after_applying(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_integrity_is_ok_after_applying(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         status, detail = apply_pending_audit_migrations(db)
         assert status == "OK", detail
 
@@ -213,8 +249,8 @@ class TestAppliesPendingMigrations:
 
 
 class TestIdempotent:
-    def test_second_call_is_skipped(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_second_call_is_skipped(self, tmp_path: Path, _db_templates: dict[str, Path]) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
 
         first_status, first_detail = apply_pending_audit_migrations(db)
         assert first_status == "OK", first_detail
@@ -227,9 +263,11 @@ class TestIdempotent:
         # Still at 9 — the second call changed nothing.
         assert _schema_version(db) == _expected_audit_version()
 
-    def test_freshly_migrated_db_needs_no_step(self, tmp_path: Path) -> None:
-        db = tmp_path / "audit.db"
-        assert _migrate_to_full(db) == _expected_audit_version()
+    def test_freshly_migrated_db_needs_no_step(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["full"])
+        assert _schema_version(db) == _expected_audit_version()
 
         status, detail = apply_pending_audit_migrations(db)
 
@@ -242,8 +280,10 @@ class TestIdempotent:
 
 
 class TestCorruptionAborts:
-    def test_garbage_bytes_abort_before_applying(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_garbage_bytes_abort_before_applying(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         assert _schema_version(db) == _expected_audit_version() - 2
 
         # Overwrite with garbage: not a database at all.
@@ -268,8 +308,10 @@ class TestCorruptionAborts:
                 pass
         assert rows is None, "a corrupt DB must never gain a schema_migrations table"
 
-    def test_truncated_db_aborts_without_applying(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_truncated_db_aborts_without_applying(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         assert _schema_version(db) == _expected_audit_version() - 2
 
         # Truncate to a header-ish fragment: SQLite reports a corruption, and
@@ -282,8 +324,10 @@ class TestCorruptionAborts:
         assert status in ("SKIPPED", "FAILED"), detail
         assert _schema_version(db) != _expected_audit_version() or status != "OK"
 
-    def test_corruption_after_a_valid_header_is_caught(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_corruption_after_a_valid_header_is_caught(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         raw = bytearray(db.read_bytes())
         # Keep the 16-byte SQLite header, corrupt the page map area.
         if len(raw) > 128:
@@ -333,8 +377,16 @@ class TestMissingDatabase:
 
 
 class TestLiveDatabaseNotRaced:
-    def test_held_write_lock_reports_skipped(self, tmp_path: Path) -> None:
-        db = _build_two_pending_migrations_db(tmp_path / "audit.db")
+    def test_held_write_lock_reports_skipped(
+        self, tmp_path: Path, _db_templates: dict[str, Path]
+    ) -> None:
+        # NOTE (speed): the ~2s here is the production lock probe's
+        # sqlite busy-timeout (db_commands._write_lock_acquireable
+        # connects with timeout=2) — the test cannot shorten it without
+        # changing production behavior. Sharing the template DB removes
+        # the other ~2-3s (the per-test full migrate), which is what
+        # pushed this test to 6.1s in CI.
+        db = _fresh_db(tmp_path, _db_templates["two_pending"])
         assert _schema_version(db) == _expected_audit_version() - 2
 
         holder = sqlite3.connect(str(db), timeout=2)

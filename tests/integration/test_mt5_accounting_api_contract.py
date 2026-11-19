@@ -9,13 +9,23 @@ closed-history endpoints must contain real points.
 from __future__ import annotations
 
 import gc
+import os
 from datetime import UTC, datetime
 
 import pytest
+from fastapi.testclient import TestClient
 
 from nexus_scalp.accounting import AccountingCore
 from nexus_scalp.accounting import periods as _accounting_periods
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
+
+# Pre-imported on purpose: create_app() lazily imports this module (line
+# ~3586), which pulls in position_adviser -> torch — a one-time, per-worker
+# import of several seconds. Warming it here keeps that cost in collection
+# instead of charging it to the first test's setup; total job time is
+# unchanged (the import is paid once either way).
+from nexus_scalp.web.provisioning_routes import register_provisioning_routes
+from nexus_scalp.web.server import create_app
 from tests.helpers.mt5_fixtures import EXPECTED, fixture_objects
 
 
@@ -28,11 +38,9 @@ class _FakeEngine:
         self.accounting_worker = None
 
 
-def _make_app(tmp_path):
+def _make_app(run_dir):
     """Builds the FastAPI app with the fixture-seeded engine in app.state."""
-    from nexus_scalp.web.server import create_app
-
-    audit = AuditRepository(db_url=f"sqlite:///{tmp_path / 'api.db'}", flush_interval_sec=0.05)
+    audit = AuditRepository(db_url=f"sqlite:///{run_dir / 'api.db'}", flush_interval_sec=0.05)
     audit.sync_broker_history(
         orders=fixture_objects("history_orders"),
         deals=fixture_objects("history_deals"),
@@ -45,19 +53,37 @@ def _make_app(tmp_path):
     return app, audit
 
 
-@pytest.fixture()
-def client(tmp_path, monkeypatch):
+@pytest.fixture(scope="module")
+def client(tmp_path_factory):
+    """One app + one seeded DB for the whole module.
+
+    Was: every test rebuilt the FastAPI app (route registration + TestClient
+    lifespan) and re-seeded the broker history — ~2.4s per test — and the
+    first test additionally paid the server import chain (incl. torch,
+    ~10s). The tests are read-only GETs against the same seeded history;
+    the equity test only appends snapshot rows it alone reads, so sharing
+    one client is safe. The torch import chain is pre-imported at module
+    top level (see above) so its one-time cost lands in collection, not
+    in the first test's setup.
+    The token is pinned with os.environ (module scope cannot use the
+    function-scoped monkeypatch fixture) and restored afterwards; the
+    conftest auth-isolation hooks preserve module-scoped pins by design.
+    """
     # WEB-AUTH-P0: the control plane requires a bearer token; integration
     # clients authenticate exactly like production consumers.
-    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", "integration-test-token")
-    app, audit = _make_app(tmp_path)
-    from fastapi.testclient import TestClient
-
+    run_dir = tmp_path_factory.mktemp("mt5_api")
+    previous_token = os.environ.get("NSE_WEB_AUTH_TOKEN")
+    os.environ["NSE_WEB_AUTH_TOKEN"] = "integration-test-token"
+    app, audit = _make_app(run_dir)
     with TestClient(app) as c:
         c.headers.update({"Authorization": "Bearer integration-test-token"})
         yield c
     audit.close()
     gc.collect()
+    if previous_token is None:
+        os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+    else:
+        os.environ["NSE_WEB_AUTH_TOKEN"] = previous_token
 
 
 class TestAccountPerformanceEndpoint:

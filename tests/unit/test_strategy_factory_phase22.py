@@ -84,7 +84,14 @@ from nexus_scalp.strategies.factory.worker import AutonomousLoopWorker
 @pytest.fixture
 def audit_repo(tmp_path):
     db_file = tmp_path / "test_strategy_factory_phase22.db"
-    repo = AuditRepository(db_url=f"sqlite:///{db_file}")
+    # Perf: the writer thread polls every flush_interval_sec, and
+    # AuditRepository() construction blocks ~1s on the default 1.0s cadence
+    # (measured: init 1.007s @ 1.0s vs 0.068s @ 0.01s). 16 fixture uses cost
+    # ~16s of this file's CI time for nothing — every test that needs
+    # durability already joins the queue explicitly via flush(). A 10ms
+    # cadence keeps the same flush semantics; the production default is
+    # untouched.
+    repo = AuditRepository(db_url=f"sqlite:///{db_file}", flush_interval_sec=0.01)
     yield repo
     repo.close()
 

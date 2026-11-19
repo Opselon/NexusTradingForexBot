@@ -470,6 +470,52 @@ def test_no_production_file_changed() -> None:
 # 4. Behavioral: the CPU-time budgets hold on the real production paths
 # ===========================================================================
 
+# Shared leg measurements (perf): the two linearity tests below measure the
+# same production path on the same leg sizes (4000/8000/16000 samples), so
+# measuring each leg once per session instead of once per test removes 16 of
+# the 25 timed executions (5 reps x 5 legs) without changing what either
+# test asserts — both still assert their own invariant on real measurements
+# of compute_sized_economic_pnl. Sample lists are built once per leg and
+# cached for the same reason: building 16k ResearchSamples per test is pure
+# fixture cost, not measured work. Reps is 3: the median of 3 still rejects
+# a single slow rep, and the _PROCESS_TIME_FLOOR_MS floor keeps the ratio
+# honest on tick-quantized clocks. A test run in isolation (pytest -k ...)
+# measures whatever legs it needs itself, so there is no dependence on the
+# other test having run first.
+_LEG_CPU_MS: dict[int, float] = {}
+_LEG_SAMPLES: dict[int, list] = {}
+
+
+def _median_leg_cpu_ms(n: int, reps: int = 3) -> float:
+    """Median CPU time (ms) of one ``compute_sized_economic_pnl`` call on ``n``
+    samples, floored at the process-time tick. Measured once per leg size per
+    session and shared by the linearity tests (see above)."""
+    if n in _LEG_CPU_MS:
+        return _LEG_CPU_MS[n]
+    import gc
+    import statistics
+
+    from nexus_scalp.research.metrics import compute_sized_economic_pnl
+    from nexus_scalp.research.models import EconomicAssumptions, ResearchSample
+    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
+
+    econ = EconomicAssumptions()
+    if not _LEG_CPU_MS:
+        # Warm up function dispatch, imports, and caches once per session
+        # (before the first leg is measured).
+        compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
+    samples = _LEG_SAMPLES.setdefault(n, _mk_research_samples(ResearchSample, n))
+    budget = _budget_constant("_SIZED_PATH_BUDGET_CPU_MS")
+    times: list[float] = []
+    for _ in range(reps):
+        gc.collect()
+        with budget_cpu_ms(budget) as sw:
+            compute_sized_economic_pnl(samples, econ)
+        times.append(sw.consumed_ms)
+    med = max(statistics.median(times), _PROCESS_TIME_FLOOR_MS)
+    _LEG_CPU_MS[n] = med
+    return med
+
 
 def test_uniqueness_cpu_budget_holds_on_50k_rows() -> None:
     """Executes the real 50k-row vectorized path and asserts the declared
@@ -520,33 +566,19 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
     6.67 on a shared Linux runner). Proven linear on this box at
     0.015625 ms/sample constant from n=1000 to n=8000; the O(n^2) class is 16x
     at 4x samples and stays far outside any bound the tick could fabricate.
+
+    Legs are measured through the shared ``_median_leg_cpu_ms`` helper
+    (3 reps, median, floored at the process-time tick; sample lists built
+    once per leg and cached), so this test and
+    ``test_sized_path_per_sample_cost_is_constant`` split the cost of the
+    legs they share instead of each paying for all of them.
     """
-    import gc
-    import statistics
-
-    from nexus_scalp.research.metrics import compute_sized_economic_pnl
-    from nexus_scalp.research.models import EconomicAssumptions, ResearchSample
-    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
-
-    econ = EconomicAssumptions()
-    # Warm up function dispatch, imports, and caches
-    compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
-
     # Size each leg so its median spans several ticks; the ratio is then
     # dominated by the algorithm rather than by the clock's resolution.
+    # (Warm-up happens once per session inside _median_leg_cpu_ms.)
     small_n = 4000
     big_n = 16000
-    base_costs: dict[int, float] = {}
-    for n in (small_n, big_n):
-        samples = _mk_research_samples(ResearchSample, n)
-        times: list[float] = []
-        for _ in range(5):
-            gc.collect()
-            with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
-                compute_sized_economic_pnl(samples, econ)
-            times.append(sw.consumed_ms)
-        med = statistics.median(times)
-        base_costs[n] = max(med, _PROCESS_TIME_FLOOR_MS)
+    base_costs: dict[int, float] = {n: _median_leg_cpu_ms(n) for n in (small_n, big_n)}
     assert base_costs[big_n] > 0.0 and base_costs[small_n] > 0.0
     # Normalize by the sample factor: a linear function reads ~1.0 on every
     # host, a quadratic reads ~big_n/small_n. A raw ratio against 4000/16000
@@ -566,33 +598,19 @@ def test_sized_path_is_linear_in_cpu_time() -> None:
 def test_sized_path_per_sample_cost_is_constant() -> None:
     """The structural form of linearity: per-sample CPU cost is constant, so
     asserting it directly is the sharpest form of the invariant (a ratio can
-    absorb noise in the small leg; per-unit cost cannot)."""
-    import gc
-    import statistics
+    absorb noise in the small leg; per-unit cost cannot).
 
-    from nexus_scalp.research.metrics import compute_sized_economic_pnl
-    from nexus_scalp.research.models import EconomicAssumptions, ResearchSample
-    from tests.e2e.chain_clock import _PROCESS_TIME_FLOOR_MS
-
-    econ = EconomicAssumptions()
-    # Warm up function dispatch, imports, and caches
-    compute_sized_economic_pnl(_mk_research_samples(ResearchSample, 100), econ)
-
+    Legs are measured through the shared ``_median_leg_cpu_ms`` helper
+    (3 reps, median, floored at the process-time tick; sample lists built
+    once per leg and cached) — the 4000/16000 legs are the same measurements
+    ``test_sized_path_is_linear_in_cpu_time`` already paid for, so this test
+    only measures the 8000 leg itself.
+    """
     # Size every leg above the process-time tick: the per-sample cost is a
     # division, so a leg that reads as exactly one tick injects a whole tick
     # into its own per-sample figure and the worst/best bound measures the
     # clock rather than the algorithm (see test_sized_path_is_linear_in_cpu_time).
-    per_unit: dict[int, float] = {}
-    for n in (4000, 8000, 16000):
-        samples = _mk_research_samples(ResearchSample, n)
-        times: list[float] = []
-        for _ in range(5):
-            gc.collect()
-            with budget_cpu_ms(_budget_constant("_SIZED_PATH_BUDGET_CPU_MS")) as sw:
-                compute_sized_economic_pnl(samples, econ)
-            times.append(sw.consumed_ms)
-        med = statistics.median(times)
-        per_unit[n] = max(med, _PROCESS_TIME_FLOOR_MS) / float(n)
+    per_unit: dict[int, float] = {n: _median_leg_cpu_ms(n) / float(n) for n in (4000, 8000, 16000)}
     assert min(per_unit.values()) > 0.0, "every leg must actually execute"
     worst = max(per_unit.values())
     best = min(per_unit.values())

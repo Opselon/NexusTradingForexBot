@@ -99,11 +99,6 @@ PUBLIC_PATHS: frozenset[str] = frozenset(
         # file. Static script asset, no state or credentials — same contract as
         # the entries above (routes in web/model_studio_routes.py stay gated).
         "/model_studio_ui.js",
-        "/dependency_api.js",
-        "/dependency_graph.js",
-        "/dependency_ui.js",
-        "/dependency.html",
-        "/dependency",
         "/command_center.html",
         # BUG-293 first-setup wizard: static shell only (same contract as
         # the other entry documents); every /api/provisioning/* call it

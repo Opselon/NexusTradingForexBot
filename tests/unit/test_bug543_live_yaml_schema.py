@@ -52,26 +52,46 @@ _SECTIONS = {
 }
 
 
-@pytest.fixture
-def yaml_client(tmp_path, monkeypatch):
-    """A client whose cwd (and so configs/live.yaml) is a tmp directory."""
-    monkeypatch.chdir(tmp_path)
+@pytest.fixture(scope="module")
+def yaml_tmp(tmp_path_factory):
+    """One tmp cwd shared by the whole module (see yaml_client)."""
+    return tmp_path_factory.mktemp("bug543-yaml")
+
+
+@pytest.fixture(scope="module")
+def yaml_client(yaml_tmp):
+    """A client whose cwd (and so configs/live.yaml) is a tmp directory.
+
+    Module-scoped: create_app() + _DrawdownEngine() are built ONCE. The
+    per-test rebuild was the file's whole cost on CI (21s for 8 tests, ~2s
+    of app/engine construction per test) and every test re-establishes its
+    preconditions — each one rewrites configs/live.yaml fresh via the
+    live_yaml fixture, and no test asserts on engine state another test
+    could have mutated (engine.config is the bootstrap, never mutated by
+    a save; the settings DB only ever carries values the test itself just
+    posted). Sharing the client therefore cannot leak between tests.
+    """
+    old_cwd = Path.cwd()
+    os.chdir(yaml_tmp)
     tok = os.environ.get("NSE_WEB_AUTH_TOKEN")
     os.environ["NSE_WEB_AUTH_TOKEN"] = "web-yaml-test-token"
-    db = tmp_path / "app_settings.db"
-    client = TestClient(create_app(engine_ref=_DrawdownEngine(db)))
-    client.headers.update({"Authorization": "Bearer web-yaml-test-token"})
-    yield client
-    if tok is None:
-        os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
-    else:
-        os.environ["NSE_WEB_AUTH_TOKEN"] = tok
+    try:
+        db = yaml_tmp / "app_settings.db"
+        client = TestClient(create_app(engine_ref=_DrawdownEngine(db)))
+        client.headers.update({"Authorization": "Bearer web-yaml-test-token"})
+        yield client
+    finally:
+        if tok is None:
+            os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+        else:
+            os.environ["NSE_WEB_AUTH_TOKEN"] = tok
+        os.chdir(old_cwd)
 
 
 @pytest.fixture
-def live_yaml(tmp_path, yaml_client) -> Path:
+def live_yaml(yaml_tmp, yaml_client) -> Path:
     """A schema-valid configs/live.yaml, as a clean checkout ships it."""
-    p = tmp_path / "configs" / "live.yaml"
+    p = yaml_tmp / "configs" / "live.yaml"
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(yaml.safe_dump(_SECTIONS), encoding="utf-8")
     return p

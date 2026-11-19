@@ -76,6 +76,29 @@ from nexus_scalp.adapters.paper.paper_adapter import (
 from nexus_scalp.domain.models import TickData
 from nexus_scalp.market_data.bar_aggregator import BarAggregator, BarData
 
+
+@pytest.fixture(autouse=True)
+def _capture_per_bar_structlog_events():
+    """Keep per-bar / per-row INFO events off the terminal renderer.
+
+    BarAggregator logs "Bar completed" once per completed bar and the paper
+    ledger appends at INFO; this file streams ~110k such events across its
+    26 tests. The suite's default structlog backend in tests is
+    PrintLoggerFactory (stderr, ConsoleRenderer, unfiltered — no conftest
+    configures logging), so on CI each event was fully rendered and written,
+    which dominated the file's runtime. ``structlog.testing.capture_logs``
+    keeps every log call executing through the real structlog pipeline at
+    the same call sites while swapping only the terminal sink for an
+    in-memory list. Nothing here asserts on rendered log content: the
+    caplog-based test below already receives nothing from PrintLogger
+    today, so its observable semantics are unchanged.
+    """
+    import structlog
+
+    with structlog.testing.capture_logs():
+        yield
+
+
 _BASE = datetime(2026, 1, 1, tzinfo=UTC)
 
 #: Fields every ledger entry must carry (documented at the declaration site in

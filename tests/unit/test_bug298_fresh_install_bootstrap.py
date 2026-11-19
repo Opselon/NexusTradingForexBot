@@ -21,6 +21,7 @@ Covers the fix surface:
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -33,36 +34,100 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
+# Shared-starter cache (speed: one live mint per module, the rest copy bytes)
+# ---------------------------------------------------------------------------
+# The seed-999 starter mint is DETERMINISTIC (BUG-154: manual_seed BEFORE
+# ScalpNet construction, fixed data generator, 30 AdamW steps), so a bundle
+# minted once is byte-identical to one minted fresh in the same run — and
+# every gate the tests pin (digest, canary, behavioral probe) reads only the
+# bytes + sidecars, never the mint history. Each live mint costs a full
+# 30-step training run plus the serving-gate probes (bundle_status runs the
+# three gates before AND after the mint, and the tests re-ran them again),
+# while copying the four bundle files (~1 MB) is milliseconds. So the
+# first test that needs a starter mints it live and every other test copies
+# the bytes into its own throwaway dir. Tests whose POINT is the mint
+# itself (gates, unservable replacement, first-run paper mint) still mint
+# live; tests whose point is the minted bundle (sidecar contents,
+# idempotency, bundle-store load) reuse the cached bytes. The cache lives
+# under pytest's session basetemp (one per xdist worker) and is never
+# mutated in place: seeders copy OUT of it.
+_BUNDLE_FILES = ("model.pt", "manifest.json", "model.meta.json", "model.scaler.npz")
+
+
+def _cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.getbasetemp() / "bug298_shared_starter_bundle"
+
+
+def _bundle_cached(cache: Path) -> bool:
+    return all((cache / name).exists() for name in _BUNDLE_FILES)
+
+
+def _populate_cache(model: Path, cache: Path) -> None:
+    """Copy a freshly minted bundle into the shared cache."""
+    cache.mkdir(parents=True, exist_ok=True)
+    for name in _BUNDLE_FILES:
+        shutil.copy2(model.parent / name, cache / name)
+
+
+def _seed_starter(model: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Place a minted starter bundle at `model`.
+
+    Copy from the shared cache when present; otherwise mint live via the
+    canonical seam and populate the cache from it, so the test also passes
+    standalone / out of order.
+    """
+    cache = _cache_dir(tmp_path_factory)
+    if _bundle_cached(cache):
+        model.parent.mkdir(parents=True, exist_ok=True)
+        for name in _BUNDLE_FILES:
+            shutil.copy2(cache / name, model.parent / name)
+    else:
+        rb.mint_starter_bundle(model)
+        _populate_cache(model, cache)
+    return model
+
+
+# ---------------------------------------------------------------------------
 # 1 — starter mint: passes EXACTLY the engine's load gates
 # ---------------------------------------------------------------------------
-def test_starter_mint_passes_engine_serving_gates(tmp_path: Path) -> None:
+def test_starter_mint_passes_engine_serving_gates(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     """The minted starter must satisfy verify_artifact_integrity + the
     fresh-init canary + the behavioral probe — the same three gates
-    _load_or_create_bundle applies (fix the fixture, never the gate)."""
+    _load_or_create_bundle applies (fix the fixture, never the gate).
+
+    The canary is NOT re-run directly here: mint_starter_bundle already runs
+    it inside bundle_is_servable and raises PROVISIONING_ERROR on failure,
+    so a successful mint provably passed it — re-running it a third time
+    (after the mint's own pre/post gate rounds) only re-paid a full
+    torch-load + reference-construction round. The digest verify and the
+    behavioral probe below are still direct, independent pins."""
     model = tmp_path / "artifacts/models/scalp/XAUUSD/70d_liquidity/model.pt"
     assert rb.bundle_status(model)["state"] == rb.STATE_MISSING
 
     result = rb.mint_starter_bundle(model)
     assert result["provisioned"] is True
     assert result["state"] == rb.STATE_OK
+    _populate_cache(model, _cache_dir(tmp_path_factory))
 
-    from nexus_scalp.model_lifecycle.integrity import (
-        check_model_behavioral_health,
-        detect_untrained_fresh_init,
-    )
+    from nexus_scalp.model_lifecycle.integrity import check_model_behavioral_health
     from nexus_scalp.model_lifecycle.load_integrity import verify_artifact_integrity
 
     verdict = verify_artifact_integrity(model)  # raises on any integrity failure
     assert verdict.status.value == "VERIFIED"
-    is_fresh, _d = detect_untrained_fresh_init(model, None)
-    assert is_fresh is False, "starter must NOT be the canonical fresh init"
     healthy, detail, _m = check_model_behavioral_health(model, None)
     assert healthy is True, f"starter failed behavioral health: {detail}"
 
 
-def test_starter_bundle_files_complete(tmp_path: Path) -> None:
+def test_starter_bundle_files_complete(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     model = tmp_path / "bundle/model.pt"
-    rb.mint_starter_bundle(model)
+    # Sidecar contents are the point here, not the mint (pinned by
+    # test_starter_mint_passes_engine_serving_gates): reuse the shared
+    # minted bundle, byte-identical to a fresh mint.
+    _seed_starter(model, tmp_path_factory)
     manifest = json.loads((model.parent / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["model_sha256"] == rb.sha256_file(model)
     # Canonical seam ownership marker (BUG-296 model_bootstrap) + bound scaler
@@ -74,10 +139,15 @@ def test_starter_bundle_files_complete(tmp_path: Path) -> None:
     assert meta["feature_schema_dimension"] == rb.STARTER_DIM
 
 
-def test_mint_is_idempotent_and_never_reclobbers_ok_bundle(tmp_path: Path) -> None:
+def test_mint_is_idempotent_and_never_reclobbers_ok_bundle(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     model = tmp_path / "bundle/model.pt"
-    first = rb.mint_starter_bundle(model)
-    assert first["provisioned"] is True
+    # The "first mint provisions" half is pinned by
+    # test_starter_mint_passes_engine_serving_gates; this test's point is
+    # the second call keeping a verified bundle, so the first bundle comes
+    # from the shared cache (byte-identical to a fresh mint).
+    _seed_starter(model, tmp_path_factory)
     digest = rb.sha256_file(model)
     second = rb.mint_starter_bundle(model)
     assert second["provisioned"] is False, "verified servable bundle must be kept"
@@ -107,7 +177,10 @@ def test_mint_replaces_unservable_legacy_bundle(tmp_path: Path) -> None:
     model.write_bytes(b"\x00\x01garbage-but-present")  # LOAD_REJECTED -> MISSING class
     result = rb.mint_starter_bundle(model)
     assert result["provisioned"] is True
-    assert rb.bundle_status(model)["state"] == rb.STATE_OK
+    # mint_starter_bundle already re-runs the full gate round after the mint
+    # and reports the final state; a second bundle_status here would just
+    # re-pay the canary + behavioral probe rounds for the same verdict.
+    assert result["state"] == rb.STATE_OK
 
 
 # ---------------------------------------------------------------------------
@@ -219,7 +292,7 @@ def test_engine_boot_has_first_run_gate_and_workspace_anchor() -> None:
 
 
 def test_first_run_gate_provisions_for_paper(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Behavior via the coordinator: PAPER + no official source => starter
     mint (labeled DEV_STARTER); SHADOW/LIVE on an empty slot => refused;
@@ -238,10 +311,14 @@ def test_first_run_gate_provisions_for_paper(
     assert out_paper["action"] == "starter"
     assert out_paper["servable"] is True
 
-    cls = prov.classify_serving_slot(prov.serving_model_path())
-    assert cls.state == LifecycleState.VERIFIED
-    assert cls.origin == prov.ORIGIN_DEV_STARTER
-    assert cls.is_starter
+    # ensure_serving_model already returns the post-mint classification
+    # (state/origin/starter) — a second classify_serving_slot here would
+    # re-pay a full bundle_status gate round (canary + behavioral probe)
+    # for the same verdict. Assert on the returned classification instead.
+    assert out_paper["state"] == LifecycleState.VERIFIED.value
+    assert out_paper["origin"] == prov.ORIGIN_DEV_STARTER
+    assert out_paper["starter"] is True
+    _populate_cache(prov.serving_model_path(), _cache_dir(tmp_path_factory))
 
     out_live = coord.ensure_serving_model("live")
     assert out_live["action"] == "keep"  # a bundle now exists; live never mints anyway
@@ -305,7 +382,9 @@ def _stdout_json(out: str) -> str:
 # extras — starter must survive the REAL load path (not just the gates):
 # a LiveEngine-shaped ModelBundleStore load on the minted bundle
 # ---------------------------------------------------------------------------
-def test_minted_bundle_loads_through_model_bundle_store(tmp_path: Path) -> None:
+def test_minted_bundle_loads_through_model_bundle_store(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory
+) -> None:
     """_load_or_create_bundle on a minted starter must return a usable
     bundle (this is the exact call that crashed v9.0.12)."""
     if "--fast" in sys.argv:  # torch-heavy
@@ -316,7 +395,10 @@ def test_minted_bundle_loads_through_model_bundle_store(tmp_path: Path) -> None:
     from nexus_scalp.models.scalp_net import ScalpNet
 
     model = tmp_path / "bundle/model.pt"
-    rb.mint_starter_bundle(model)
+    # The load-through-the-store is the point here, not the mint (pinned
+    # by test_starter_mint_passes_engine_serving_gates): reuse the shared
+    # minted bundle, byte-identical to a fresh mint.
+    _seed_starter(model, tmp_path_factory)
 
     class _Stub:  # minimal state surface (unbound-delegation contract)
         FEATURE_DIM = 70

@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: perf-${{ github.workflow }}-${{ github.ref }}
@@ -67,39 +66,3 @@ jobs:
           path: .bench-report.json
           if-no-files-found: warn
 
-      - name: Report on the PR
-        if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            let report;
-            try {
-              report = JSON.parse(fs.readFileSync('.bench-report.json', 'utf8'));
-            } catch (error) {
-              core.warning('benchmark report missing; see job logs');
-              return;
-            }
-            const rows = report.benchmarks.map(b => {
-              const delta = b.baseline_us == null
-                ? '`new`'
-                : `${((b.mean_us - b.baseline_us) / b.baseline_us * 100).toFixed(1)}%`;
-              return `| ${b.name} | ${(b.mean_us / 1000).toFixed(1)} ms | ${delta} | ${b.calls} |`;
-            }).join('\n');
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-              body: [
-                '## ⏱ Performance benchmark',
-                '',
-                '| benchmark | mean | vs baseline | calls |',
-                '|---|---|---|---|',
-                rows,
-                '',
-                `tool: \`${report.tool}\` · verdict: **${report.verdict}** · guide noise floor: ±${report.noise_floor_pct}%`,
-                '',
-                'A regression > ' + report.max_regression_pct + '% fails this job; timing noise below the floor is not reported as a regression.'
-              ].join('\n')
-            });

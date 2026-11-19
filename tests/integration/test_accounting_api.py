@@ -160,15 +160,26 @@ def _snapshot(repo: AuditRepository, ts: datetime, balance: float, equity: float
     _flush(repo)
 
 
-@pytest.fixture()
-def wired_app(tmp_path, monkeypatch):
-    """Audit repo + full LiveEngine wiring + FastAPI app with real data."""
+@pytest.fixture(scope="module")
+def wired_app(tmp_path_factory):
+    """Audit repo + full LiveEngine wiring + FastAPI app with real data.
+
+    Module-scoped on purpose: constructing a LiveEngine (torch model load,
+    registry sync, accounting worker) + building the FastAPI app costs ~3s
+    per test on the Dubai runner when repeated 13x (48s for this file). The
+    endpoints under test are read-only against engine state — the only tests
+    that mutate anything restore what they change (the summary test's adapter
+    mock is context-managed; the cycle test's forced ticks are idempotent) —
+    so one shared engine is safe here. Same pattern round 1 used for
+    test_model_lifecycle_api.py.
+    """
+    workdir = tmp_path_factory.mktemp("accounting_api")
     # WEB-AUTH-P0 (7c14451a) wraps every create_app in token auth. These
     # fixtures are PAPER-only (PaperMT5Adapter, no secrets) and exercise the
-    # accounting endpoints, not the auth layer — disable the web-auth gate
-    # explicitly (the documented local/PAPER override) instead of scattering
+    # accounting endpoints, not the auth layer — auth is supplied per request
+    # by authenticated_test_client's Bearer token instead of scattering
     # Bearer headers across 13 TestClient call sites.
-    db_url = f"sqlite:///{tmp_path / 'accounting_api.db'}"
+    db_url = f"sqlite:///{workdir / 'accounting_api.db'}"
     repo = AuditRepository(db_url=db_url, flush_interval_sec=0.05)
     adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
     adapter.connect()
@@ -177,7 +188,7 @@ def wired_app(tmp_path, monkeypatch):
         {
             "execution": {"symbol": "XAUUSD", "mode": "PAPER", "magic_number": 888201},
             "model": {
-                "model_artifact_path": str(tmp_path / "model.pt"),
+                "model_artifact_path": str(workdir / "model.pt"),
                 "feature_schema_version": "v1.0",
                 "confidence_threshold": 0.20,
             },

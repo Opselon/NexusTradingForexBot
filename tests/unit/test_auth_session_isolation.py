@@ -108,7 +108,14 @@ def test_auth_env_leak_was_scrubbed_by_conftest() -> None:
         "AUTH-SESSION-ISOLATION: NSE_WEB_AUTH_* survived a test teardown — "
         "cross-test env leakage is back (conftest scrub hooks broken/removed)"
     )
-    assert "NSE_WEB_AUTH_TOKEN" not in os.environ
+    # Value-specific, not absence: the conftest baseline is captured AFTER
+    # fixtures run (trylast) and deliberately PRESERVES module/session-scoped
+    # pins — and authenticated_test_client() writes NSE_WEB_AUTH_TOKEN into
+    # os.environ with no restore, so once ANY fixture in the worker pins a
+    # token it stays for the whole worker by design. The scrub contract this
+    # test can pin is that THIS test's own leaked value is gone, not that
+    # the variable is unset in a full-suite worker.
+    assert os.environ.get("NSE_WEB_AUTH_TOKEN") != "leak-probe-token"
 
 
 def test_secret_store_root_is_isolated_from_operator_machine(tmp_path: Path) -> None:

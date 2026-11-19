@@ -19,7 +19,7 @@ import { MESSAGES as risk } from "@/pages/Risk/i18n";
 import { MESSAGES as ml } from "@/pages/ML/i18n";
 import { MESSAGES as intelligence } from "@/pages/Intelligence/i18n";
 import { MESSAGES as audit } from "@/pages/Audit/i18n";
-import { MESSAGES as settings } from "@/pages/Settings/i18n";
+
 import { MESSAGES as account } from "@/features/account/i18n";
 import { MESSAGES as aiAnalysis } from "@/features/ai-analysis/i18n";
 import { MESSAGES as commandCenter } from "@/features/command-center/i18n";
@@ -28,7 +28,6 @@ import { MESSAGES as controlCenter } from "@/features/control-center/i18n";
 import { MESSAGES as database } from "@/features/database/i18n";
 import { MESSAGES as decisionTrace } from "@/features/decision-trace/i18n";
 import { MESSAGES as debug } from "@/features/debug/i18n";
-import { MESSAGES as dependency } from "@/features/dependency/i18n";
 import { MESSAGES as factory } from "@/features/factory/i18n";
 import { MESSAGES as governance } from "@/features/governance/i18n";
 import { MESSAGES as health } from "@/features/health/i18n";
@@ -57,7 +56,6 @@ for (const scope of [
   ml,
   intelligence,
   audit,
-  settings,
   account,
   aiAnalysis,
   commandCenter,
@@ -66,7 +64,6 @@ for (const scope of [
   database,
   decisionTrace,
   debug,
-  dependency,
   factory,
   governance,
   health,

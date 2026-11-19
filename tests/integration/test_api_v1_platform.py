@@ -31,11 +31,13 @@ from tests.helpers.authenticated_client import authenticated_test_client
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture()
-def seeded_repo(tmp_path: Any) -> AuditRepository:
+@pytest.fixture(scope="module")
+def seeded_repo(tmp_path_factory: pytest.TempPathFactory) -> AuditRepository:
     from nexus_scalp.database.config import DatabaseConfig
 
-    cfg = DatabaseConfig(provider="sqlite", sqlite_path=str(tmp_path / "audit.db"))
+    cfg = DatabaseConfig(
+        provider="sqlite", sqlite_path=str(tmp_path_factory.mktemp("audit") / "audit.db")
+    )
     repo = AuditRepository(config=cfg)
     # Seed audit_signals deterministically (12 rows, mixed actions/stages/symbols).
     # Timestamps are anchored to the CURRENT UTC time, not a fixed calendar
@@ -125,8 +127,15 @@ def seeded_repo(tmp_path: Any) -> AuditRepository:
     return repo
 
 
-@pytest.fixture()
+@pytest.fixture(scope="module")
 def v1_client(seeded_repo: AuditRepository) -> TestClient:
+    # MODULE scope (was function scope): building the seeded repo (~0.7s)
+    # + create_v1_app + the repo's graceful-shutdown teardown (~1s each)
+    # cost ~2s PER TEST, i.e. ~32s for 17 tests, for identical state.
+    # Safe to share: every test here is read-only over the seeded rows —
+    # the only non-GETs are 405 rejections and a 503 ENGINE_UNAVAILABLE,
+    # none of which writes to the repo — so no test can observe another's
+    # writes. The legacy-app test below reuses the same seeded repo.
     app = create_v1_app()
     # Bind the shared audit accessor to the SEEDED repo (same lazy attribute the
     # routes use via get_audit_repo) — full request path over real SQLite.
@@ -439,3 +448,84 @@ def test_register_api_v1_on_legacy_app_additive(seeded_repo: AuditRepository) ->
     assert r2.status_code in (200, 503)
     # every v1 route is unique (no double-mount)
     assert len(before_paths) >= 60
+
+
+def test_health_block_concurrent_calls_run_single_sweep(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: concurrent _health_block calls must serialize the sweep.
+
+    PR #740 run 42846477184 segfaulted xdist worker gw0 at ~86% when four
+    prewarm daemon threads ran full health sweeps (subprocess git,
+    importlib.metadata, polars collect) concurrently in one process. The
+    process-wide sweep lock + double-checked cache must make N concurrent
+    callers share exactly ONE sweep. Without the lock this test sees N sweeps.
+    """
+    import threading
+    import time as _time
+
+    from nexus_scalp.web.api_v1.system import _health_block
+
+    class _FakeEntry:
+        def __init__(self, category: str) -> None:
+            self.category = category
+            self.verdict = "PASS"
+
+        def to_dict(self) -> dict[str, object]:
+            return {"category": self.category, "verdict": self.verdict}
+
+    class _FakeEngine:
+        def overall(self) -> tuple[str, list[_FakeEntry]]:
+            _time.sleep(0.05)  # overlap window: threads genuinely race without the lock
+            return "READY", [_FakeEntry("SYSTEM")]
+
+    class _State:
+        """Counts v1_health_cache assignments — one per sweep for THIS app.
+
+        NOTE: do NOT count sweeps via a global HealthEngine-call counter.
+        The mock replaces the module-level HealthEngine, so ANY thread in
+        the process that calls HealthEngine().overall() increments it —
+        including a stray v1-health-prewarm daemon thread spawned by an
+        earlier test's app (api_v1_wiring spawns one per app creation).
+        Such a thread can fire mid-test and inflate the count to 2 even
+        though _health_block deduped this app's own callers perfectly
+        (flake on PR #740 run 42879764304, head b2757827: 'got 2').
+        Counting cache assignments on THIS app's state is immune: a
+        prewarm thread writes a different app's state, never ours.
+        Each sweep for this app populates the cache exactly once, so
+        cache_sets == 1 is exactly 'one sweep for my app'.
+        """
+
+        def __init__(self) -> None:
+            self.cache_sets = 0
+
+        def __setattr__(self, name: str, value: object) -> None:
+            if name == "v1_health_cache":
+                current = self.__dict__.get("cache_sets", 0)
+                object.__setattr__(self, "cache_sets", current + 1)
+            object.__setattr__(self, name, value)
+
+    class _App:
+        def __init__(self) -> None:
+            self.state = _State()
+
+    class _Req:
+        def __init__(self, app: _App) -> None:
+            self.app = app
+
+    monkeypatch.setattr("nexus_scalp.release.health.HealthEngine", _FakeEngine)
+    app = _App()
+    req = _Req(app)
+    barrier = threading.Barrier(8)
+    results: list[tuple[str | None, list[dict[str, Any]], list[str]]] = []
+
+    def _call() -> None:
+        barrier.wait(timeout=10)
+        results.append(_health_block(req))
+
+    threads = [threading.Thread(target=_call) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+    assert len(results) == 8
+    assert all(r[0] == "READY" for r in results)
+    assert app.state.cache_sets == 1, f"expected exactly 1 sweep, got {app.state.cache_sets}"

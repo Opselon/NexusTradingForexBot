@@ -42,7 +42,7 @@ def _patched_runtime_config(monkeypatch, liquidity: bool = True):
 
 
 class TestBug193SharedRegistryTruth:
-    def test_case_a_healthy_references_not_critical(self, monkeypatch):
+    def test_case_a_healthy_references_not_critical(self, monkeypatch, tmp_path):
         """Healthy tree: engine-registered frozen references are visible to
         the availability-matrix check (the BUG-193 split is closed)."""
         from nexus_scalp.forensics import checks_news
@@ -55,6 +55,16 @@ class TestBug193SharedRegistryTruth:
             pytest.skip("golden baseline auto-freeze unavailable")
         # ONE registry: the check module reads the same object the engine froze.
         assert checks_news.FEATURE_REF_REGISTRY is FEATURE_REFERENCES
+        # The check ALSO requires the ambient data files to exist (CWD-relative
+        # first probe): a fresh checkout has no artifacts/news.db or
+        # artifacts/candle_intel.db (both gitignored), so without this the
+        # test fails CRITICAL on missing files, not on the registry split it
+        # exists to pin. Provision empty files in an isolated CWD so the
+        # test is hermetic — the product check stays fail-closed.
+        (tmp_path / "artifacts").mkdir()
+        (tmp_path / "artifacts" / "news.db").touch()
+        (tmp_path / "artifacts" / "candle_intel.db").touch()
+        monkeypatch.chdir(tmp_path)
         _patched_runtime_config(monkeypatch, liquidity=True)
         result = checks_news.check_news_availability_matrix()
         assert result.status.name != "CRITICAL", f"healthy system still critical: {result.evidence}"

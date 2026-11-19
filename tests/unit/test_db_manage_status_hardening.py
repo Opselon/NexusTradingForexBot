@@ -320,12 +320,15 @@ class TestErrorEnvelope:
         assert "AKIA-SECRET" not in json.dumps(r.json())
 
     def test_provider_parses_unknown_provider_safely(self, client: Any) -> None:
-        # DatabaseProvider.parse resolves unknown -> sqlite (never raises),
-        # so this is a success path that must NOT be an error envelope.
+        # DatabaseProvider.parse RAISES ProviderConfigurationError for an
+        # unknown provider (callers must not silently route an unavailable
+        # provider to SQLite — src/nexus_scalp/database/provider.py), and
+        # the route answers with the fail-closed error envelope, never a
+        # silent sqlite fallback and never a 500.
         r = client.post("/api/db/manage/provider", json={"provider": "not-a-real-provider"})
-        body = r.json()
-        assert body["success"] is True
-        assert body["provider"] == "sqlite"
+        assert r.status_code == 200
+        error = self._assert_envelope(r.json())
+        assert error["code"] == "DB_MANAGE_PROVIDER_FAILED"
 
 
 # ---------------------------------------------------------------------------

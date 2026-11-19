@@ -275,6 +275,14 @@ class ShutdownSupervisor:
         if elapsed > budget:
             outcome = "TIMEOUT"
         self.mark_closed(outcome=outcome, error=error_text)
+        # Release every waiter (repeat calls, concurrent requesters, the
+        # Windows console-ctrl thread). Without this the fast path at the top
+        # of wait_for_shutdown can never trigger: mark_closed records the
+        # outcome but the event stays unset, so each late waiter polls the
+        # loop for its FULL budget reading an already-final status (observed
+        # 2026-11-10: one drain + two repeat waiters = 2 x 25 s of dead
+        # wall-clock; console-close blocked the ctrl thread the same way).
+        self._drain_done.set()
         logger.info(
             "[SHUTDOWN] event=COMPLETE outcome=%s duration_sec=%.3f budget_sec=%.3f",
             outcome,

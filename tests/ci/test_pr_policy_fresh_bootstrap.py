@@ -112,52 +112,123 @@ def test_fetch_script_escalates_to_unshallow() -> None:
     assert FETCH_SCRIPT.stat().st_mode & 0o111, "script must be executable"
 
 
+def _git(repo: Path, env: dict, *args: str) -> subprocess.CompletedProcess:
+    """Run git in *repo* with a hermetic env (no user config, no network)."""
+    return subprocess.run(
+        ["git", *args],
+        cwd=str(repo),
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
+def _make_local_history(tmp: Path) -> tuple[Path, str, str]:
+    """Build a 3-commit local origin repo; return (origin, base, head).
+
+    base -> mid -> head on main. The SHAs play the roles of the PR's
+    base/head in the old network test, but everything is local.
+    """
+    origin = tmp / "origin"
+    origin.mkdir()
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp)}
+    assert _git(origin, env, "init", "-q", "-b", "main").returncode == 0
+    (origin / "f.txt").write_text("a\n", encoding="utf-8")
+    _git(origin, env, "add", ".")
+    assert (
+        _git(
+            origin,
+            env,
+            "-c",
+            "user.email=t@t.t",
+            "-c",
+            "user.name=t",
+            "commit",
+            "-qm",
+            "c1",
+        ).returncode
+        == 0
+    )
+    base = _git(origin, env, "rev-parse", "HEAD").stdout.strip()
+    (origin / "f.txt").write_text("a\nb\n", encoding="utf-8")
+    _git(origin, env, "add", ".")
+    assert (
+        _git(
+            origin, env, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "c2"
+        ).returncode
+        == 0
+    )
+    (origin / "f.txt").write_text("a\nb\nc\n", encoding="utf-8")
+    _git(origin, env, "add", ".")
+    assert (
+        _git(
+            origin, env, "-c", "user.email=t@t.t", "-c", "user.name=t", "commit", "-qm", "c3"
+        ).returncode
+        == 0
+    )
+    head = _git(origin, env, "rev-parse", "HEAD").stdout.strip()
+    return origin, base, head
+
+
+def _shallow_clone(tmp: Path, origin: Path, head: str) -> tuple[Path, dict]:
+    """Depth-1 checkout of *head* (the exact tier-1 shape); return (repo, env)."""
+    repo = tmp / "repo"
+    repo.mkdir()
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp)}
+    _git(repo, env, "init", "-q")
+    _git(repo, env, "remote", "add", "origin", f"file://{origin}")
+    r = _git(
+        repo,
+        env,
+        "-c",
+        "protocol.version=2",
+        "fetch",
+        "--no-tags",
+        "--prune",
+        "--no-recurse-submodules",
+        "--depth=1",
+        "origin",
+        f"+{head}:refs/remotes/origin/main",
+    )
+    assert r.returncode == 0, f"shallow fetch failed: {r.stderr}"
+    r = _git(repo, env, "checkout", "--force", head)
+    assert r.returncode == 0, f"checkout failed: {r.stderr}"
+    return repo, env
+
+
 def test_fetch_script_actually_unshallows() -> None:
     """Behavioral: the script's escalation makes a shallow repo merge-base-ready.
 
-    Builds a virgin depth-1 checkout of the PR merge commit in a temp
-    dir (the exact tier-1 shape), runs the script against the real base
-    and head SHAs, and asserts merge-base succeeds afterwards. This is
-    the acceptance test in miniature: a fresh clone goes green with
-    zero manual steps.
+    Builds a virgin depth-1 checkout of a LOCAL 3-commit repo in a temp
+    dir (the exact tier-1 shape — no GitHub, no network: the old version
+    fetched the real PR merge commit from github.com, 63s and flaky).
+    Runs the script against the local base and head SHAs and asserts
+    merge-base succeeds afterwards. This is the acceptance test in
+    miniature: a fresh clone goes green with zero manual steps.
+
+    The local fixture reproduces the tier-1 failure mode deterministically:
+    the script's blobless fetch of base/head exits 0 and the objects DO
+    arrive, yet merge-base still fails — in a shallow repo the fetched
+    commits sit on the shallow boundary, so git cannot walk past them.
+    Only the script's --unshallow escalation removes the boundary, so
+    asserting the repo is no longer shallow proves the escalation really
+    ran (stronger than merge-base alone, which the blobless fetch could
+    in principle satisfy on some git version).
     """
     import tempfile
 
-    base = "33195431b092240c174260c2da9b8f1ba693ea35"
-    head = "fe1fe52123892e5c59902c85f4bfed0708dd474a"
-    merge = "71cf05e3f3c41781917481d17b8d7dbd5b1a0081"
     with tempfile.TemporaryDirectory() as tmp:
-        repo = Path(tmp) / "repo"
-        repo.mkdir()
-        env = {"PATH": "/usr/bin:/bin", "HOME": tmp}
-
-        def git(*args: str) -> subprocess.CompletedProcess:
-            return subprocess.run(
-                ["git", *args],
-                cwd=str(repo),
-                env=env,
-                check=False,
-                capture_output=True,
-                text=True,
-                timeout=300,
-            )
-
-        git("init", "-q")
-        git("remote", "add", "origin", "https://github.com/Opselon/NexusTradingForexBot.git")
-        r = git(
-            "-c",
-            "protocol.version=2",
-            "fetch",
-            "--no-tags",
-            "--prune",
-            "--no-recurse-submodules",
-            "--depth=1",
-            "origin",
-            f"+{merge}:refs/remotes/pull/731/merge",
-        )
-        assert r.returncode == 0, f"merge fetch failed: {r.stderr}"
-        r = git("checkout", "--force", "refs/remotes/pull/731/merge")
-        assert r.returncode == 0, f"checkout failed: {r.stderr}"
+        tmp_path = Path(tmp)
+        origin, base, head = _make_local_history(tmp_path)
+        repo, env = _shallow_clone(tmp_path, origin, head)
+        # Precondition: the fixture really is the tier-1 shape — shallow,
+        # and merge-base unreachable. Without this the test could go
+        # vacuous (e.g. if a future git changed shallow-fetch semantics).
+        assert _git(repo, env, "rev-parse", "--is-shallow-repository").stdout.strip() == "true"
+        r = _git(repo, env, "merge-base", base, head)
+        assert r.returncode != 0, "fixture must start merge-base-unreachable"
         r = subprocess.run(
             ["bash", str(FETCH_SCRIPT), base, head],
             cwd=str(repo),
@@ -165,13 +236,48 @@ def test_fetch_script_actually_unshallows() -> None:
             check=False,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=60,
         )
         assert r.returncode == 0, f"fetch script failed: {r.stdout}\n{r.stderr}"
-        r = git("merge-base", base, head)
+        assert _git(repo, env, "rev-parse", "--is-shallow-repository").stdout.strip() == "false", (
+            "script must have unshallowed the repo (escalation), not just fetched"
+        )
+        r = _git(repo, env, "merge-base", base, head)
         assert r.returncode == 0 and r.stdout.strip() == base, (
             f"merge-base unreachable after the script: {r.stdout} {r.stderr}"
         )
+
+
+def test_fetch_script_is_noop_on_full_clone() -> None:
+    """Cheap path: on a repo that already has full history the script is instant.
+
+    Pins the step-1 branch — blobless fetch succeeds and merge-base is
+    already reachable, so no --unshallow escalation runs.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        origin, base, head = _make_local_history(tmp_path)
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp)}
+        r = _git(repo, env, "clone", "-q", f"file://{origin}", ".")
+        assert r.returncode == 0, f"clone failed: {r.stderr}"
+        assert _git(repo, env, "rev-parse", "--is-shallow-repository").stdout.strip() == "false"
+        r = subprocess.run(
+            ["bash", str(FETCH_SCRIPT), base, head],
+            cwd=str(repo),
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert r.returncode == 0, f"fetch script failed: {r.stdout}\n{r.stderr}"
+        assert "unshallow" not in r.stdout, f"full clone must not escalate to unshallow: {r.stdout}"
+        r = _git(repo, env, "merge-base", base, head)
+        assert r.returncode == 0 and r.stdout.strip() == base
 
 
 # --- dependency index fallback ---------------------------------------

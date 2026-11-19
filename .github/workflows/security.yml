@@ -16,6 +16,7 @@ on:
       - "Dockerfile"
       - "docker/**"
       - ".github/workflows/security.yml"
+      - ".github/workflows/**"
   push:
     branches: [main, ci-tests]
     paths:
@@ -29,6 +30,7 @@ on:
       - "Dockerfile"
       - "docker/**"
       - ".github/workflows/security.yml"
+      - ".github/workflows/**"
   schedule:
     # CI quota diet (2026-11): weekly -> semi-monthly full sweep.
     - cron: "0 6 1,15 * *"   # 1st & 15th, 06:00 UTC

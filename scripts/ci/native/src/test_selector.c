@@ -11,7 +11,9 @@
  *   - missing test mapping (changed source module with no reachable test)
  *     -> reported by FILE PATH + conservative expansion
  *   - safety-critical prefixes -> mandatory expansion of the fallback suites
- *   - changed test files are always selected themselves
+ *   - changed test files are always selected themselves (unless the
+ *     file no longer exists on disk — deleted in this PR — in which
+ *     case it is skipped: selecting it would make pytest exit 5)
  *   - docs-only / no-python changes -> explicit skipped_groups entry
  */
 #include "nse_ci_engine.h"
@@ -172,6 +174,14 @@ static void load_fallback_suite(const char *repo_root, const char *suite_file,
         char *s = line;
         while (*s == ' ' || *s == '\t') s++;
         if (*s == '\0' || *s == '#') continue;
+        /* skip entries for files that no longer exist on disk: a stale
+         * suite list naming a deleted test would make pytest exit 5,
+         * the same failure as a deleted changed test file. */
+        {
+            char full[1024];
+            snprintf(full, sizeof(full), "%s/%s", repo_root, s);
+            if (access(full, F_OK) != 0) continue;
+        }
         sb_append_n(out_nul, s, strlen(s) + 1);
     }
     sb_free(&content);
@@ -458,10 +468,16 @@ int engine_build_plan_ex(const char *repo_root, const char *changed_files,
         sb_free(&py_files);
     }
 
-    /* changed test files always selected */
+    /* changed test files always selected — unless the file no longer
+     * exists on disk (deleted in this PR). A deleted test is not a test
+     * to run: selecting it makes pytest exit 5 (no tests collected) and
+     * fails the whole Quality job for a file the PR itself removed. */
     for (size_t i = 0; i < changed_count; i++) {
         const char *f = changed[i].path;
         if (nse_starts_with(f, "tests/") && nse_ends_with(f, ".py")) {
+            char full[1024];
+            snprintf(full, sizeof(full), "%s/%s", repo_root, f);
+            if (access(full, F_OK) != 0) continue; /* deleted in this PR */
             sel_add(&reg, f, R_TEST_CHANGED);
         }
     }

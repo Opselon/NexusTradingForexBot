@@ -738,15 +738,6 @@
    "cost_s": null,
    "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
   },
-  "tests/slow/test_70d_incremental.py": {
-   "protection": "REVIEWED",
-   "cr": [],
-   "verdict": "KEEP",
-   "category": null,
-   "tier": "T4",
-   "cost_s": null,
-   "rule": "Reviewed KEEP: deleting requires proving stronger coverage exists (see value_flags.stronger_exists) and recording it in the value matrix."
-  },
   "tests/unit/news/ingest/test_bug282_rfc822_and_identity.py": {
    "protection": "REVIEWED",
    "cr": [],

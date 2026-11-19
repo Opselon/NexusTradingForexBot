@@ -400,8 +400,13 @@ def test_provider_never_raises_and_records_failure():
         assert out == []  # never raises
     finally:
         sys.modules["httpx"] = orig_module
-    assert provider.usage.failures == 1
-    assert provider.usage.last_error.startswith("NETWORK:")
+    # The fake httpx exposes only ``post`` — no ``TimeoutException`` — so the
+    # raised ReadTimeout cannot be resolved as a timeout and degrades to
+    # NETWORK_ERROR (never UNKNOWN "gate internal error"). The gate retries
+    # a network failure (max_retries=2, one retry owner) and ``_absorb``
+    # counts attempts, so one logical request records 3 failures.
+    assert provider.usage.failures == 3
+    assert provider.usage.last_error.startswith("NETWORK_ERROR:")
 
 
 def test_provider_usage_budget_exhausted():

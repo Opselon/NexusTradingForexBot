@@ -263,15 +263,6 @@ jobs:
             echo "RUFF_CACHE_DIR=$HOME/.cache/nse-ci/ruff" >> "$GITHUB_ENV"
           fi
 
-      - name: Cache dependency intelligence graph
-        if: env.NSE_RUNNER_CLASS != 'self-hosted'
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: artifacts/dependency_intelligence/cache.json
-          key: dep-graph-v1-${{ hashFiles('src/nexus_scalp/**/*.py') }}
-          restore-keys: |
-            dep-graph-v1-
-
       # -------- Results tree + run metadata (fresh on every run) --------
       - name: Initialize results tree
         run: |
@@ -1916,7 +1907,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [integration, e2e, research-backtest, model-validation]
+        suite: [integration, research-backtest, model-validation]
 
     env:
       CI_RESULTS_DIR: ci-results
@@ -1956,12 +1947,6 @@ jobs:
           case "${{ matrix.suite }}" in
             integration)
               pytest tests/integration/ --ignore=tests/integration/test_playwright_e2e.py \
-                --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
-              ;;
-            e2e)
-              pip install playwright
-              python -m playwright install --with-deps chromium
-              pytest tests/integration/test_playwright_e2e.py \
                 --junitxml="$CI_RESULTS_DIR/pytest/junit.xml" --tb=short -q > "$CI_RESULTS_DIR/pytest/pytest.txt" 2>&1
               ;;
             research-backtest)

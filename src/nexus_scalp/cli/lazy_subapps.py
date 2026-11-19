@@ -4,12 +4,12 @@ WHERE/WHY: ``nexus_scalp.cli.model_studio_commands`` pulls
 ``nexus_scalp.web.model_studio_routes``, which imports ``torch`` (~4s warm,
 worse cold); ``nexus_scalp.cli.gateway_commands`` pulls fastapi (which itself
 imports torch + polars); ``nexus_scalp.cli.ai_commands`` pulls
-``nexus_scalp.ai_providers.orchestrator`` (~1s) and ``dependency_commands``
-pulls networkx (~0.5s) — all AT IMPORT TIME. Importing them eagerly from
+``nexus_scalp.ai_providers.orchestrator`` (~1s) — all AT IMPORT TIME.
+Importing them eagerly from
 ``app_factory`` made every CLI invocation, even ``nexus --version``, pay the
 full neural/provider/graph stack. That violates the same EU-03 invariant
 ``engine_boot._heavy_*`` shims uphold: ``nexus help`` must not pay the
-torch/polars/networkx import cost.
+torch/polars import cost.
 
 HOW (see ORDER below for the Click mechanics): those sub-apps are now imported
 and registered the first time the CLI actually DISPATCHES a subcommand or
@@ -66,19 +66,6 @@ def _heavy_ai_commands() -> None:
         console.print(f"[yellow]AI commands unavailable: {exc}[/yellow]")
 
 
-def _heavy_dependency_commands() -> None:
-    """EU-03 shim: import + register ``nexus dependency ...`` (networkx)."""
-    try:
-        import nexus_scalp.cli.dependency_commands as _dep
-        from nexus_scalp.cli.app_factory import app
-
-        _dep.register_dependency_commands(app)
-    except Exception as exc:  # pragma: no cover - guarded like the eager block was
-        from nexus_scalp.cli.styling import console
-
-        console.print(f"[yellow]Dependency commands unavailable: {exc}[/yellow]")
-
-
 def _heavy_gateway_commands() -> None:
     """EU-03 shim: import + register ``nexus gateway ...`` (fastapi+torch chain)."""
     try:
@@ -92,7 +79,6 @@ def _heavy_gateway_commands() -> None:
 _LAZY_GROUPS: tuple[Any, ...] = (
     _heavy_model_studio,
     _heavy_ai_commands,
-    _heavy_dependency_commands,
     _heavy_gateway_commands,
 )
 
