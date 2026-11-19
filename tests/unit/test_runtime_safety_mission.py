@@ -44,7 +44,12 @@ def contextlib_suppress():
 
 @pytest.fixture
 def repo(tmp_path):
-    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'safety.db'}")
+    # flush_interval_sec=0.05: the writer thread idles in q.get(timeout=
+    # flush_interval), and close() waits for it to wake — the 1.0s default
+    # cost ~1s of teardown per test (23s for the file). 0.05s keeps close
+    # fast; no behaviour under test depends on the 1s cadence (same value
+    # the MT5 API contract tests already use).
+    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'safety.db'}", flush_interval_sec=0.05)
     conn = sqlite3.connect(r._db_path)
     create_history_tables(conn)
     conn.close()
@@ -105,7 +110,7 @@ def test_halt_survives_simulated_restart(repo) -> None:
     # simulate restart: a brand-new repository instance over the same DB file
     from nexus_scalp.adapters.database.audit_repository import AuditRepository as Repo
 
-    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}")
+    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}", flush_interval_sec=0.05)
     try:
         row = repo2.get_runtime_risk_state()
         assert row is not None and row["state"] == "HALTED"
@@ -150,7 +155,7 @@ def test_restart_does_not_release(repo) -> None:
     repo.set_runtime_risk_state(state="KILL_SWITCH", reason="operator kill")
     from nexus_scalp.adapters.database.audit_repository import AuditRepository as Repo
 
-    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}")
+    repo2 = Repo(db_url=f"sqlite:///{repo._db_path}", flush_interval_sec=0.05)
     try:
         row = repo2.get_runtime_risk_state()
         assert row["state"] == "KILL_SWITCH" and row["release_required"] == 1
@@ -259,6 +264,15 @@ def test_batch_failure_salvages_good_rows_and_dead_letters_bad(tmp_path, monkeyp
             repo.audit_salvaged_rows += salvaged
     finally:
         conn.close()
+        # The worker normally calls task_done() for every item it drains;
+        # this test drains the queue by hand, so it owns the bookkeeping.
+        # Without it unfinished_tasks never reaches 0 and close() burns
+        # the whole 8s bounded-flush timeout in teardown (8.01s).
+        for _ in batch:
+            q.task_done()
+        # The test owns this repo (no fixture): close it explicitly instead
+        # of leaking a live writer thread into teardown.
+        repo.close()
 
     assert repo.audit_batch_failures == 1
     assert repo.audit_salvaged_rows == 1
@@ -400,7 +414,7 @@ def test_consecutive_losses_breakeven_interrupts() -> None:
 
 
 def test_repo_consecutive_losses_ignores_opened_and_rejections(tmp_path) -> None:
-    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'loss.db'}")
+    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'loss.db'}", flush_interval_sec=0.05)
     try:
         conn = sqlite3.connect(r._db_path)
         create_history_tables(conn)

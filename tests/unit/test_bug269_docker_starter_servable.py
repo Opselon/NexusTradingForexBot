@@ -25,6 +25,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -85,6 +86,59 @@ def _gates(model: Path) -> tuple[bool, bool]:
 
 
 # ---------------------------------------------------------------------------
+# Shared-starter cache (speed: one live mint per module, the rest copy bytes)
+# ---------------------------------------------------------------------------
+# The provisioner's mint is the DETERMINISTIC seed-999 recipe (BUG-154:
+# manual_seed BEFORE ScalpNet construction, fixed data generator, 30 AdamW
+# steps), so a bundle minted once is byte-identical to one minted fresh in
+# the same run — and the provisioner's keep/skip/re-provision decisions
+# read only the bytes + sidecars, never the mint history. Each live mint
+# costs a full 30-step training run plus the serving-gate probes (the
+# tampered-digest test did 2 mints + 3 full gate rounds), while copying
+# the four bundle files (~1 MB) is milliseconds. So the first test that
+# needs a provisioned starter mints it live and the skip / tamper tests
+# copy the bytes in. Tests whose POINT is the mint itself (servable mint,
+# degenerate re-provision, determinism) still mint live. The cache lives
+# under pytest's session basetemp (one per xdist worker) and is never
+# mutated in place: seeders copy OUT of it; the tamper test mutates its
+# own per-test copy.
+_BUNDLE_FILES = ("model.pt", "manifest.json", "model.meta.json", "model.scaler.npz")
+
+
+def _cache_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    return tmp_path_factory.getbasetemp() / "bug269_shared_starter_bundle"
+
+
+def _bundle_cached(cache: Path) -> bool:
+    return all((cache / name).exists() for name in _BUNDLE_FILES)
+
+
+def _populate_cache(dir_: Path, cache: Path) -> None:
+    """Copy a freshly provisioned bundle into the shared cache."""
+    cache.mkdir(parents=True, exist_ok=True)
+    for name in _BUNDLE_FILES:
+        shutil.copy2(dir_ / name, cache / name)
+
+
+def _seed_or_provision(mod: Any, dir_: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Place a provisioned servable starter bundle in `dir_`.
+
+    Copy from the shared cache when present; otherwise run the provisioner
+    live (the exact path under test) and populate the cache from it, so
+    the test also passes standalone / out of order.
+    """
+    cache = _cache_dir(tmp_path_factory)
+    if _bundle_cached(cache):
+        dir_.mkdir(parents=True, exist_ok=True)
+        for name in _BUNDLE_FILES:
+            shutil.copy2(cache / name, dir_ / name)
+    else:
+        assert mod.main() == 0
+        _populate_cache(dir_, cache)
+    return dir_ / "model.pt"
+
+
+# ---------------------------------------------------------------------------
 # 1. The defect shape: old mint is VERIFIED-but-degenerate (silent skip trap)
 # ---------------------------------------------------------------------------
 
@@ -111,13 +165,16 @@ def test_old_untrained_mint_passes_digest_gate_but_fails_serving_gate(
 # ---------------------------------------------------------------------------
 
 
-def test_provisioner_mint_is_servable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provisioner_mint_is_servable(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_provisioner(tmp_path, monkeypatch)
     assert mod.main() == 0
     dir_ = _artifact_dir(tmp_path)
     model = dir_ / "model.pt"
     ok_digest, healthy = _gates(model)
     assert ok_digest and healthy
+    _populate_cache(dir_, _cache_dir(tmp_path_factory))
     # sidecars complete + meta contract
     meta = json.loads((dir_ / "model.meta.json").read_text(encoding="utf-8"))
     assert meta["feature_schema_id"] == "scalp_v3"
@@ -153,11 +210,14 @@ def test_degenerate_digest_valid_bundle_is_reprovisioned(
 
 
 def test_servable_bundle_is_skipped_byte_identical(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     mod = _load_provisioner(tmp_path, monkeypatch)
-    assert mod.main() == 0
     dir_ = _artifact_dir(tmp_path)
+    # The SKIP is the point here, not the mint (pinned live by
+    # test_provisioner_mint_is_servable): the servable bundle under test is
+    # the shared minted starter, byte-identical to a fresh provision.
+    _seed_or_provision(mod, dir_, tmp_path_factory)
     model = dir_ / "model.pt"
     bytes_before = model.read_bytes()
     mtime_before = model.stat().st_mtime_ns
@@ -172,10 +232,15 @@ def test_servable_bundle_is_skipped_byte_identical(
 # ---------------------------------------------------------------------------
 
 
-def test_tampered_digest_reprovisions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_tampered_digest_reprovisions(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
     mod = _load_provisioner(tmp_path, monkeypatch)
-    assert mod.main() == 0
     dir_ = _artifact_dir(tmp_path)
+    # The good bundle under test is the shared minted starter (byte-identical
+    # to a fresh provision); the tamper + re-provision below is the live
+    # behavior this test pins — one live mint instead of two.
+    _seed_or_provision(mod, dir_, tmp_path_factory)
     model = dir_ / "model.pt"
     good = model.read_bytes()
     # tamper: mutate weights without refreshing the manifest digest
@@ -186,7 +251,6 @@ def test_tampered_digest_reprovisions(tmp_path: Path, monkeypatch: pytest.Monkey
     assert mod.main() == 0
     ok_digest, healthy = _gates(model)
     assert ok_digest and healthy
-    assert _gates(model)[0], "re-minted bundle must be digest-VERIFIED again"
 
 
 # ---------------------------------------------------------------------------

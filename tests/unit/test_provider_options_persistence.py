@@ -224,10 +224,19 @@ class TestOptionsReadDefaults:
         po.write_options({"connect_timeout_sec": 12})
 
         snap = po.options_status_snapshot("audit")
-        assert set(snap["options"]) == set(po.OPTION_KEYS)
+        # The four defaulted knobs are always present (test name); the
+        # pool knobs are opt-in (PG-POOL-CONFIG-001) and stay absent until
+        # explicitly written — a snapshot that fabricated them would make a
+        # fresh row indistinguishable from a deliberate 0.
+        assert set(snap["options"]) == set(po.DEFAULT_OPTIONS)
         assert snap["options"]["connect_timeout_sec"] == 12
         # Known domain list comes from the registry, not from thin air.
         assert "audit" in snap["domains"]
+        # And a written pool knob surfaces once it exists.
+        po.write_options({"pool_min_size": 2})
+        snap = po.options_status_snapshot("audit")
+        assert snap["options"]["pool_min_size"] == 2
+        assert set(snap["options"]) == set(po.DEFAULT_OPTIONS) | {"pool_min_size"}
 
 
 class TestUnknownKeyRejection:

@@ -396,7 +396,16 @@ def test_no_production_paper_construction_bypasses_the_factory() -> None:
         rel = p.relative_to(_REPO_ROOT).as_posix()
         if rel in allowed:
             continue
-        tree = ast.parse(p.read_text(encoding="utf-8"))
+        # Cheap pre-filter: ast.parse() of all 774 src files cost ~30s in
+        # CI. A direct PaperMT5Adapter(...) call can only live in a file
+        # that mentions the name at all (the check is
+        # unparse(call.func).endswith("PaperMT5Adapter")), so only the
+        # ~11 files containing the string are parsed — identical verdict,
+        # ~100x less work.
+        text = p.read_text(encoding="utf-8")
+        if "PaperMT5Adapter" not in text:
+            continue
+        tree = ast.parse(text)
         for n in ast.walk(tree):
             if isinstance(n, ast.Call) and ast.unparse(n.func).endswith("PaperMT5Adapter"):
                 offenders.append(f"{rel}:{n.lineno}")

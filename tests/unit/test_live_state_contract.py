@@ -341,49 +341,47 @@ class _EmptyAggregator:
 # ---------------------------------------------------------------------------
 
 
-@pytest.fixture
-def live_client():
-    import os as _os
+@pytest.fixture(scope="module")
+def _live_state_clients():
+    """One app build per engine flavor for the whole module (was per test).
 
-    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
-    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
-    client = TestClient(create_app(engine_ref=_FakeEngine()))
-    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
-    yield client
-    if _tok is None:
-        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
-    else:
-        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
-
-
-@pytest.fixture
-def empty_client():
-    import os as _os
-
-    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
-    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
-    client = TestClient(create_app(engine_ref=_EmptyEngine()))
-    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
-    yield client
-    if _tok is None:
-        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
-    else:
-        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
+    The fake engines/adapters are read-only and no test in this module
+    mutates app or engine state (the only POST here must be BLOCKED), so a
+    shared TestClient is request-equivalent to the per-test builds — the
+    9-way parametrized accounting test alone used to rebuild the live app
+    nine times. The module env pin uses the same pytest.MonkeyPatch pattern
+    as test_operator_routes._deterministic_operator_env, which
+    tests/conftest.py's web-auth lifecycle explicitly supports (module-
+    scoped pins outlive function-scoped restores).
+    """
+    mp = pytest.MonkeyPatch()
+    mp.setenv("NSE_WEB_AUTH_TOKEN", "web-contract-test-token")
+    clients = {
+        "live": TestClient(create_app(engine_ref=_FakeEngine())),
+        "empty": TestClient(create_app(engine_ref=_EmptyEngine())),
+        "no_engine": TestClient(create_app(engine_ref=None)),
+    }
+    for client in clients.values():
+        client.headers.update({"Authorization": "Bearer web-contract-test-token"})
+    try:
+        yield clients
+    finally:
+        mp.undo()
 
 
 @pytest.fixture
-def no_engine_client():
-    import os as _os
+def live_client(_live_state_clients):
+    return _live_state_clients["live"]
 
-    _tok = _os.environ.get("NSE_WEB_AUTH_TOKEN")
-    _os.environ["NSE_WEB_AUTH_TOKEN"] = "web-contract-test-token"
-    client = TestClient(create_app(engine_ref=None))
-    client.headers.update({"Authorization": "Bearer web-contract-test-token"})
-    yield client
-    if _tok is None:
-        _os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
-    else:
-        _os.environ["NSE_WEB_AUTH_TOKEN"] = _tok
+
+@pytest.fixture
+def empty_client(_live_state_clients):
+    return _live_state_clients["empty"]
+
+
+@pytest.fixture
+def no_engine_client(_live_state_clients):
+    return _live_state_clients["no_engine"]
 
 
 def test_no_fake_defaults_when_engine_offline(no_engine_client):

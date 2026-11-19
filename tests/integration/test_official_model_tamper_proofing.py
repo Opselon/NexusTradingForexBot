@@ -79,41 +79,95 @@ def _train_test_only_bundle(folder: Path) -> Path:
     return build_test_only_trained_bundle(folder)
 
 
-def _build_signed_bundle(
-    workdir: Path, monkeypatch: pytest.MonkeyPatch, *, model_version: str = "1.0.0"
+@pytest.fixture(scope="module")
+def _signed_bundle_source(
+    tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[Path, dict, object]:
-    """Publish a signed bundle locally with a fresh ephemeral test key."""
+    """Train + publish ONE signed bundle for the whole module.
+
+    The old per-test build retrained the synthetic classifier (35 torch
+    steps) and re-ran the publisher (hash + sign + ``verify_runtime``,
+    which torch-loads the model and runs the behavioural-health probes)
+    in every test — ~2s x 29 tests for identical bytes. The trained
+    bundle and its signature are deterministic inputs here, so build them
+    once; each test still gets its own disposable COPY (see
+    ``_build_signed_bundle``) because the tamper tests mutate the staged
+    bundle and its manifest in place.
+
+    ``monkeypatch`` is function-scoped, so the trust root is installed by
+    hand here (previous values saved and restored on teardown); the
+    per-test fixture re-applies the same key with ``monkeypatch``.
+    """
     import nacl.signing
 
     from nexus_scalp.release.signing import trusted_keys
 
-    source = _train_test_only_bundle(workdir / "trained-test-only")
+    root = tmp_path_factory.mktemp("tamper_signed_bundle")
     seed = nacl.signing.SigningKey.generate()
-    monkeypatch.setitem(
-        trusted_keys.TRUSTED_UPDATE_KEYS, "test-tamper", seed.verify_key.encode().hex()
-    )
-    monkeypatch.setenv("NSE_UPDATE_SIGNING_KEY", seed.encode().hex())
-    monkeypatch.setattr(trusted_keys, "ACTIVE_TRUST_ROOT", "test-tamper")
+    prev_key = trusted_keys.TRUSTED_UPDATE_KEYS.get("test-tamper")
+    prev_root = trusted_keys.ACTIVE_TRUST_ROOT
+    prev_env = os.environ.get("NSE_UPDATE_SIGNING_KEY")
+    prev_argv = sys.argv
+    trusted_keys.TRUSTED_UPDATE_KEYS["test-tamper"] = seed.verify_key.encode().hex()
+    os.environ["NSE_UPDATE_SIGNING_KEY"] = seed.encode().hex()
+    trusted_keys.ACTIVE_TRUST_ROOT = "test-tamper"
+    try:
+        source = _train_test_only_bundle(root / "trained-test-only")
+        from scripts.release import build_official_bundle as publisher
 
-    from scripts.release import build_official_bundle as publisher
-
-    out = workdir / "prepared"
-    monkeypatch.setattr(
-        sys,
-        "argv",
-        [
+        out = root / "prepared"
+        sys.argv = [
             "build_official_bundle.py",
             "--bundle-dir",
             str(source),
             "--out",
             str(out),
             "--model-version",
-            model_version,
+            "1.0.0",
             "--key-id",
             "test-tamper",
-        ],
+        ]
+        assert publisher.main() == 0
+        manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
+        assert isinstance(manifest, dict)
+        yield out, manifest, seed
+    finally:
+        sys.argv = prev_argv
+        if prev_key is None:
+            trusted_keys.TRUSTED_UPDATE_KEYS.pop("test-tamper", None)
+        else:
+            trusted_keys.TRUSTED_UPDATE_KEYS["test-tamper"] = prev_key
+        trusted_keys.ACTIVE_TRUST_ROOT = prev_root
+        if prev_env is None:
+            os.environ.pop("NSE_UPDATE_SIGNING_KEY", None)
+        else:
+            os.environ["NSE_UPDATE_SIGNING_KEY"] = prev_env
+
+
+def _build_signed_bundle(
+    workdir: Path, monkeypatch: pytest.MonkeyPatch, *, signed_source: tuple[Path, dict, object]
+) -> tuple[Path, dict, object]:
+    """Give one test its own disposable copy of the module-signed bundle.
+
+    Copying the six small bundle files is milliseconds; retraining +
+    re-publishing per test was the ~2s/test cost. The manifest is re-read
+    from the copy so every test mutates a fresh dict. The trust root is
+    re-applied with ``monkeypatch`` (cheap dict/env writes) so install
+    verification sees the key that signed this bundle.
+    """
+    import nacl.signing
+
+    from nexus_scalp.release.signing import trusted_keys
+
+    source_dir, _manifest, seed = signed_source
+    out = workdir / "prepared"
+    shutil.copytree(source_dir, out)
+    assert isinstance(seed, nacl.signing.SigningKey)
+    monkeypatch.setitem(
+        trusted_keys.TRUSTED_UPDATE_KEYS, "test-tamper", seed.verify_key.encode().hex()
     )
-    assert publisher.main() == 0
+    monkeypatch.setenv("NSE_UPDATE_SIGNING_KEY", seed.encode().hex())
+    monkeypatch.setattr(trusted_keys, "ACTIVE_TRUST_ROOT", "test-tamper")
     manifest = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
     assert isinstance(manifest, dict)
     return out, manifest, seed
@@ -174,9 +228,13 @@ def _slot_files(slot: Path) -> set[str]:
 
 
 @pytest.fixture
-def drill(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, dict, Path]:
+def drill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _signed_bundle_source
+) -> tuple[Path, dict, Path]:
     _no_network(monkeypatch)
-    out, manifest, _seed = _build_signed_bundle(tmp_path, monkeypatch)
+    out, manifest, _seed = _build_signed_bundle(
+        tmp_path, monkeypatch, signed_source=_signed_bundle_source
+    )
     model_path = _slot(tmp_path)
     _disable_guards(monkeypatch)
     return out, manifest, model_path
@@ -410,10 +468,14 @@ def test_symlinked_slot_directory_rejected(drill):
 # ---------------------------------------------------------------- TAMPER-10
 
 
-def test_fifty_install_drill_all_tampered_rejected(tmp_path: Path, monkeypatch):
+def test_fifty_install_drill_all_tampered_rejected(
+    tmp_path: Path, monkeypatch, _signed_bundle_source
+):
     """BENCHMARK_PLAN: 50 install drills; 100% of tampered bundles rejected."""
     _no_network(monkeypatch)
-    out, manifest, _seed = _build_signed_bundle(tmp_path, monkeypatch)
+    out, manifest, _seed = _build_signed_bundle(
+        tmp_path, monkeypatch, signed_source=_signed_bundle_source
+    )
     model_path = _slot(tmp_path / "client")
     _disable_guards(monkeypatch)
     slot = model_path.parent
@@ -421,13 +483,16 @@ def test_fifty_install_drill_all_tampered_rejected(tmp_path: Path, monkeypatch):
 
     from nexus_scalp.model_provisioning import official as off
 
+    # ONE tampered staging copy serves all 50 attempts: the bit-flip is
+    # byte-identical every time, and a rejected install never mutates the
+    # staged dir (rejection happens in _verify_files, before any staging
+    # or slot write), so re-copying the whole bundle per attempt was pure
+    # redundant I/O. Still 50 real install attempts, still 0 accepted.
+    tampered = tmp_path / "drill-tampered"
+    shutil.copytree(out, tampered)
+    _flip(tampered / "model.pt")
     accepted = 0
-    for i in range(50):
-        tampered = tmp_path / f"drill-{i}"
-        import shutil
-
-        shutil.copytree(out, tampered)
-        _flip(tampered / "model.pt")
+    for _i in range(50):
         with pytest.raises(off.OfficialBundleError) as excinfo:
             _install(_verified(tampered, manifest), model_path)
         assert excinfo.value.code in {"SHA256_MISMATCH", "ARTIFACT_INTEGRITY_FAILED"}

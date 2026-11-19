@@ -4,6 +4,7 @@ workers/refresh/diagnostics). Sources verified in docs/api/API_PLATFORM_V1.md §
 from __future__ import annotations
 
 import contextlib
+import threading
 from typing import Any
 
 from fastapi import APIRouter, Header, Request
@@ -23,6 +24,14 @@ router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
 _HEALTH_TTL_SEC = 3.0
 
+# Serializes full health sweeps process-wide. _health_block is called from the
+# request thread AND from a daemon prewarm thread per app (api_v1_wiring
+# _prewarm_health_cache), so concurrent calls used to run several full sweeps
+# (subprocess git, importlib.metadata, polars collect) at once in one process
+# — a native race that segfaulted an xdist worker (gw0, PR #740 run 42846477184,
+# ~86% progress). Double-checked locking below keeps only one sweep live.
+_HEALTH_SWEEP_LOCK = threading.Lock()
+
 
 def _health_block(
     request: Request | None = None,
@@ -41,17 +50,25 @@ def _health_block(
         cached = getattr(state, "v1_health_cache", None)
         if isinstance(cached, tuple) and (_time.monotonic() - cached[0]) < _HEALTH_TTL_SEC:
             return cached[1], cached[2], cached[3]
-    try:
-        from nexus_scalp.release.health import HealthEngine
-
-        verdict, entries = HealthEngine().overall()
-        checks = [e.to_dict() for e in entries]
-        critical = [c["category"] for c in checks if c.get("verdict") == "FAIL"]
+    # Cache stale/missing: serialize the sweep so concurrent callers (request
+    # thread + prewarm daemon threads from several apps) never run the native
+    # sweep (subprocess / importlib.metadata / polars) at the same time.
+    with _HEALTH_SWEEP_LOCK:
         if state is not None:
-            state.v1_health_cache = (_time.monotonic(), verdict, checks, critical)
-        return verdict, checks, critical
-    except Exception:
-        return None, [], []
+            cached = getattr(state, "v1_health_cache", None)
+            if isinstance(cached, tuple) and (_time.monotonic() - cached[0]) < _HEALTH_TTL_SEC:
+                return cached[1], cached[2], cached[3]
+        try:
+            from nexus_scalp.release.health import HealthEngine
+
+            verdict, entries = HealthEngine().overall()
+            checks = [e.to_dict() for e in entries]
+            critical = [c["category"] for c in checks if c.get("verdict") == "FAIL"]
+            if state is not None:
+                state.v1_health_cache = (_time.monotonic(), verdict, checks, critical)
+            return verdict, checks, critical
+        except Exception:
+            return None, [], []
 
 
 @router.get("/status", summary="High-level operational status (health+version+mode+freshness)")

@@ -25,6 +25,7 @@ Also verifies:
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -50,26 +51,72 @@ def _flush(repo) -> None:
     repo._queue.join()
 
 
-@pytest.fixture
-def wired_engine(tmp_path, verified_test_model_bundle):
-    """A full LiveEngine wired against a paper adapter and temp DB."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'research_api.db'}")
-    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+@pytest.fixture(scope="module")
+def wired_engine(tmp_path_factory, verified_test_model_bundle):
+    """A full LiveEngine wired against a paper adapter and temp DB.
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
-    cfg = AppConfig(
-        execution={
-            "symbol": "XAUUSD",
-            "mode": "PAPER",
-        },
-        model={"model_artifact_path": str(model_path)},
-    )
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    Module-scoped: building a LiveEngine (torch model load + research
+    subsystem + audit DB init) and tearing its AuditRepository down
+    (~1 s worker-join per close) cost ~2.6 s PER TEST when
+    function-scoped — 16x for 16 tests that only READ/EXTEND shared
+    state. The engine is built once and shared; test isolation is kept
+    by other means (see below), not by rebuilding the engine:
 
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
-    yield repo, engine
-    repo.close()
+    * Experience seeding is idempotent — ``record_experience`` /
+      ``record_outcome`` dedup on the UNIQUE ``idempotency_key``, so a
+      re-seed of the same 40 rows is a no-op, never a second sample.
+    * Promotion tests each seed a DISTINCT strategy_id: re-seeding
+      ``strat_promo`` as VALIDATED after it reached ACTIVE would be
+      refused by the registry's lifecycle-regression guard (ACTIVE=4 >
+      VALIDATED=2), so the ids must not collide across tests.
+    * The summary test stops the research worker it starts, restoring
+      the not-started state the restart test assumes.
+
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's verified bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
+    """
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
+
+    with isolated_module_engine_env(tmp_path_factory, "research_api_env"):
+        workdir = tmp_path_factory.mktemp("research_api")
+        repo = AuditRepository(db_url=f"sqlite:///{workdir / 'research_api.db'}")
+        from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+        model_path = copy_verified_trained_bundle(verified_test_model_bundle, workdir / "model.pt")
+        cfg = AppConfig(
+            execution={
+                "symbol": "XAUUSD",
+                "mode": "PAPER",
+            },
+            model={"model_artifact_path": str(model_path)},
+        )
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        yield repo, engine
+        repo.close()
+
+
+@pytest.fixture(scope="module")
+def research_client(wired_engine):
+    """One FastAPI app + authenticated TestClient for the shared engine.
+
+    ``create_app()`` registers every router/middleware per call, so
+    rebuilding it in each of the 16 tests paid the same construction
+    cost 16x. The app holds only a reference to the engine; all test
+    state lives on the engine/DB, not the app. The health endpoint
+    imports ``research_health_summary`` inside the request handler, so
+    the monkeypatched-error test below still takes effect with a
+    shared app.
+    """
+    _repo, engine = wired_engine
+    return authenticated_test_client(create_app(engine))
 
 
 def seed_strategy_experiences(ledger: ExperienceLedger, repo, count: int = 40) -> None:
@@ -137,23 +184,25 @@ class TestResearchAPI:
         ):
             assert hasattr(engine, attr), f"LiveEngine missing {attr}"
 
-    def test_research_summary_endpoint(self, wired_engine):
+    def test_research_summary_endpoint(self, wired_engine, research_client):
         _repo, engine = wired_engine
         engine._start_research_worker()
-        app = create_app(engine)
-        client = authenticated_test_client(app)
-        resp = client.get("/api/research/summary")
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["available"] is True
-        assert "summary" in body
-        assert body["summary"]["available"] is True
+        try:
+            resp = research_client.get("/api/research/summary")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["available"] is True
+            assert "summary" in body
+            assert body["summary"]["available"] is True
+        finally:
+            # Restore the not-started state: the engine is shared now, and
+            # the restart test below assumes the worker starts stopped.
+            asyncio.run(engine._stop_research_worker())
 
-    def test_discovery_and_validation_via_api(self, wired_engine):
+    def test_discovery_and_validation_via_api(self, wired_engine, research_client):
         repo, engine = wired_engine
         seed_strategy_experiences(engine.experience_ledger, repo, count=40)
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = research_client
 
         # Discovery: build dataset + candidates.
         disc = client.post("/api/research/discover")
@@ -172,11 +221,10 @@ class TestResearchAPI:
             assert vbody["available"] is True
             assert vbody["result"]["lifecycle"] in ("VALIDATED", "REJECTED")
 
-    def test_registry_endpoint(self, wired_engine):
+    def test_registry_endpoint(self, wired_engine, research_client):
         repo, engine = wired_engine
         seed_strategy_experiences(engine.experience_ledger, repo, count=40)
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = research_client
         resp = client.get("/api/research/registry")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -186,8 +234,6 @@ class TestResearchAPI:
         engine._start_research_worker()
         assert engine._research_worker_started is True
         engine.research_worker.tick()
-        import asyncio
-
         asyncio.run(engine._stop_research_worker())
         assert engine._research_worker_started is False
         engine._start_research_worker()
@@ -203,11 +249,10 @@ class TestResearchAPI:
         assert not hasattr(nexus_scalp.research, "OrderManager")
         assert not hasattr(nexus_scalp.research, "OrderLifecycleManager")
 
-    def test_research_health_endpoint(self, wired_engine):
+    def test_research_health_endpoint(self, wired_engine, research_client):
         """TASK-4: /api/research/health explains WHY the registry is empty."""
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = research_client
         resp = client.get("/api/research/health")
         assert resp.status_code == 200
         body = resp.json()
@@ -227,7 +272,7 @@ class TestResearchAPI:
         assert isinstance(health["rejection_reasons"], dict)
         assert isinstance(health["eligible_samples"], int)
 
-    def test_research_health_error_is_generic(self, wired_engine, monkeypatch):
+    def test_research_health_error_is_generic(self, wired_engine, research_client, monkeypatch):
         """CodeQL py/stack-trace-exposure (#66) regression: when the health
         summary raises, the API response carries a STABLE generic error -
         exception text/traceback stays server-side only."""
@@ -238,8 +283,10 @@ class TestResearchAPI:
 
         monkeypatch.setattr(research_store, "research_health_summary", _boom)
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        # NOTE: the client/app is shared (module-scoped), but the health
+        # handler imports research_health_summary inside the request, so
+        # this monkeypatch still takes effect for the call below.
+        client = research_client
         resp = client.get("/api/research/health")
         assert resp.status_code == 200
         body_text = resp.text
@@ -247,10 +294,9 @@ class TestResearchAPI:
         assert "RuntimeError" not in body_text
         assert "Traceback" not in body_text
 
-    def test_self_heal_endpoint(self, wired_engine):
+    def test_self_heal_endpoint(self, wired_engine, research_client):
         _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        client = research_client
         resp = client.post("/api/research/self-heal")
         assert resp.status_code == 200
         assert resp.json()["available"] is True
@@ -315,10 +361,6 @@ def _validated_entry(strategy_id: str = "strat_promo"):
 class TestStrategyPromotionAPI:
     """POST /api/research/promote — operator-gated lifecycle advancement."""
 
-    def _client(self, engine):
-        app = create_app(engine)
-        return authenticated_test_client(app)
-
     def _seed_validated(self, repo, engine, strategy_id="strat_promo"):
         from nexus_scalp.research.models import CandidateLifecycle
 
@@ -328,10 +370,10 @@ class TestStrategyPromotionAPI:
         assert engine.strategy_registry.upsert(entry) is True
         _flush(repo)
 
-    def test_validated_to_shadow_then_active(self, wired_engine):
+    def test_validated_to_shadow_then_active(self, wired_engine, research_client):
         repo, engine = wired_engine
         self._seed_validated(repo, engine)
-        client = self._client(engine)
+        client = research_client
 
         # Step 1: VALIDATED -> SHADOW (explicit operator call).
         r1 = client.post(
@@ -374,16 +416,22 @@ class TestStrategyPromotionAPI:
         persisted = engine.strategy_registry.get("strat_promo")
         assert persisted.lifecycle.value == "ACTIVE"
 
-    def test_skip_shadow_blocked(self, wired_engine):
-        """VALIDATED -> ACTIVE directly is ILLEGAL — must pass through SHADOW."""
+    def test_skip_shadow_blocked(self, wired_engine, research_client):
+        """VALIDATED -> ACTIVE directly is ILLEGAL — must pass through SHADOW.
+
+        Seeds its own strategy_id: the engine is shared, and the previous
+        test promoted ``strat_promo`` to ACTIVE — re-seeding it as
+        VALIDATED would be refused by the registry's lifecycle-regression
+        guard (ACTIVE outranks VALIDATED).
+        """
         repo, engine = wired_engine
-        self._seed_validated(repo, engine)
-        client = self._client(engine)
+        self._seed_validated(repo, engine, "strat_promo_skip")
+        client = research_client
 
         resp = client.post(
             "/api/research/promote",
             json={
-                "strategy_id": "strat_promo",
+                "strategy_id": "strat_promo_skip",
                 "target_lifecycle": "ACTIVE",
                 "actor": "ops_tester",
             },
@@ -391,12 +439,12 @@ class TestStrategyPromotionAPI:
         body = resp.json()
         assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
         # Nothing mutated.
-        persisted = engine.strategy_registry.get("strat_promo")
+        persisted = engine.strategy_registry.get("strat_promo_skip")
         assert persisted.lifecycle.value == "VALIDATED"
 
-    def test_unknown_strategy_blocked(self, wired_engine):
+    def test_unknown_strategy_blocked(self, wired_engine, research_client):
         _repo, engine = wired_engine
-        client = self._client(engine)
+        client = research_client
         resp = client.post(
             "/api/research/promote",
             json={
@@ -409,42 +457,46 @@ class TestStrategyPromotionAPI:
         assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
         assert "not found" in str(body)
 
-    def test_missing_actor_blocked_no_implicit_promotion(self, wired_engine):
-        """No actor => no promotion. Auto/system promotion must be impossible."""
+    def test_missing_actor_blocked_no_implicit_promotion(self, wired_engine, research_client):
+        """No actor => no promotion. Auto/system promotion must be impossible.
+
+        Own strategy_id — see test_skip_shadow_blocked: the shared engine
+        must not re-seed ``strat_promo`` after it reached ACTIVE.
+        """
         repo, engine = wired_engine
-        self._seed_validated(repo, engine)
-        client = self._client(engine)
+        self._seed_validated(repo, engine, "strat_promo_actor")
+        client = research_client
 
         resp = client.post(
             "/api/research/promote",
             json={
-                "strategy_id": "strat_promo",
+                "strategy_id": "strat_promo_actor",
                 "target_lifecycle": "SHADOW",
             },
         )
         body = resp.json()
         assert body.get("error", {}).get("code") == "PROMOTION_BLOCKED"
-        persisted = engine.strategy_registry.get("strat_promo")
+        persisted = engine.strategy_registry.get("strat_promo_actor")
         assert persisted.lifecycle.value == "VALIDATED"
 
-    def test_invalid_target_blocked(self, wired_engine):
+    def test_invalid_target_blocked(self, wired_engine, research_client):
         repo, engine = wired_engine
-        self._seed_validated(repo, engine)
-        client = self._client(engine)
+        self._seed_validated(repo, engine, "strat_promo_target")
+        client = research_client
 
         # Only SHADOW / ACTIVE are operator targets.
         for bad in ("VALIDATED", "RETIRED", "BOGUS_STATE"):
             resp = client.post(
                 "/api/research/promote",
                 json={
-                    "strategy_id": "strat_promo",
+                    "strategy_id": "strat_promo_target",
                     "target_lifecycle": bad,
                     "actor": "ops_tester",
                 },
             )
             assert resp.json().get("error", {}).get("code") == "PROMOTION_BLOCKED"
 
-    def test_unvalidated_strategy_cannot_be_activated(self, wired_engine):
+    def test_unvalidated_strategy_cannot_be_activated(self, wired_engine, research_client):
         """A DISCOVERED row (no gate evidence) can never advance."""
         from nexus_scalp.research.models import CandidateLifecycle
 
@@ -456,7 +508,7 @@ class TestStrategyPromotionAPI:
         )
         assert engine.strategy_registry.upsert(bare) is True
         _flush(repo)
-        client = self._client(engine)
+        client = research_client
         resp = client.post(
             "/api/research/promote",
             json={
@@ -472,7 +524,7 @@ class TestStrategyPromotionAPI:
         persisted = engine.strategy_registry.get("strat_bare")
         assert persisted.lifecycle.value == "DISCOVERED"
 
-    def test_rejected_strategy_never_reaches_shadow_or_active(self, wired_engine):
+    def test_rejected_strategy_never_reaches_shadow_or_active(self, wired_engine, research_client):
         from nexus_scalp.research.models import CandidateLifecycle
 
         repo, engine = wired_engine
@@ -484,7 +536,7 @@ class TestStrategyPromotionAPI:
         )
         assert engine.strategy_registry.upsert(rejected) is True
         _flush(repo)
-        client = self._client(engine)
+        client = research_client
         for target in ("SHADOW", "ACTIVE"):
             resp = client.post(
                 "/api/research/promote",
@@ -498,7 +550,7 @@ class TestStrategyPromotionAPI:
         persisted = engine.strategy_registry.get("strat_rejected")
         assert persisted.lifecycle.value == "REJECTED"
 
-    def test_activation_with_broken_validation_truth_blocked(self, wired_engine):
+    def test_activation_with_broken_validation_truth_blocked(self, wired_engine, research_client):
         """A SHADOW row whose underlying gate truth is missing/broken can
         never reach ACTIVE (activation re-proves VALIDATED-truth)."""
         from nexus_scalp.research.models import CandidateLifecycle
@@ -512,7 +564,7 @@ class TestStrategyPromotionAPI:
         )
         assert engine.strategy_registry.upsert(hollow_shadow) is True
         _flush(repo)
-        client = self._client(engine)
+        client = research_client
         resp = client.post(
             "/api/research/promote",
             json={

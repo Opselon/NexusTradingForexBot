@@ -140,9 +140,38 @@ class PerfMiddleware:
         messages: list[Message] = []
         buffered = 0
         oversize = False
+        # SSE-STREAMING-001: a streaming response (text/event-stream) must
+        # NEVER be buffered. The old code awaited the whole downstream app
+        # to completion before sending anything, then checked _is_cacheable
+        # — but an infinite SSE generator never returns, so the client saw
+        # no response start, no hello/heartbeat, nothing, until the test
+        # (or EventSource) timed out. Detect the stream on its FIRST
+        # message (http.response.start carries the content-type) and switch
+        # to passthrough: forward the start + every chunk immediately.
+        streaming = False
 
         async def _capture(message: Message) -> None:
-            nonlocal buffered, oversize
+            nonlocal buffered, oversize, streaming
+            if streaming:
+                # Already known to be a live stream: forward in real time.
+                await send(message)
+                return
+            if message["type"] == "http.response.start":
+                ct = ""
+                for key, value in message.get("headers", []) or []:
+                    if key.lower() == b"content-type":
+                        ct = value.decode("latin-1", "replace")
+                        break
+                if any(ct.lower().startswith(p) for p in _STREAMING_TYPES):
+                    streaming = True
+                    # Nothing is buffered yet except possibly earlier
+                    # messages (there are none before the start); forward
+                    # the start now and every chunk after it verbatim.
+                    for m in messages:
+                        await send(m)
+                    messages.clear()
+                    await send(message)
+                    return
             if message["type"] == "http.response.body" and not oversize:
                 buffered += len(message.get("body", b"") or b"")
                 if buffered > self.config.max_buffer_bytes:
@@ -155,6 +184,12 @@ class PerfMiddleware:
             return
 
         await self.app(scope, receive, _capture)
+
+        if streaming:
+            # Every frame was already forwarded live above; nothing left
+            # to send (the app only returns when the stream ends, and by
+            # then the final chunk has already gone out via _capture).
+            return
 
         if oversize:
             for message in messages:

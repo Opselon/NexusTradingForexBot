@@ -28,7 +28,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from fastapi.testclient import TestClient
 
 from nexus_scalp.adapters.database.audit_repository import AuditRepository
 from nexus_scalp.application.live_engine import LiveEngine
@@ -46,27 +45,52 @@ def _flush(repo) -> None:
     repo._queue.join()
 
 
-@pytest.fixture
-def wired_engine(tmp_path, verified_test_model_bundle):
-    """A full LiveEngine wired against a paper adapter and temp DB."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
-    from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+@pytest.fixture(scope="module")
+def wired_engine(tmp_path_factory, verified_test_model_bundle):
+    """One full LiveEngine + app + client shared by the whole module.
 
-    model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
-    cfg = AppConfig(
-        execution={
-            "symbol": "XAUUSD",
-            "mode": "PAPER",
-        },
-        model={"model_artifact_path": str(model_path)},
-    )
-    # Use a lightweight adapter (paper) so no MT5 is required.
-    from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+    PERF (round 2): LiveEngine.__init__ builds the entire subsystem tree
+    (strategy factory, research pipeline, champion/training/shadow workers,
+    experience engine, model registry, intelligence subsystem) and resolves
+    + probes the model artifact — ~5s per build on the CI runner. The old
+    function-scoped fixture paid that 8x (once per test), which was the whole
+    40s file time; the per-test work itself (seed + one HTTP call) is <1s.
+    The shared engine is safe here because every test only appends
+    isolated state (distinct tickets: lifecycle 501, autopsy ticket_api_1,
+    anomaly 501 on a separate table) or reads, and the worker test
+    start/stops its worker; no test asserts a global count or emptiness.
 
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
-    yield repo, engine
-    repo.close()
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's verified bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
+    """
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
+
+    with isolated_module_engine_env(tmp_path_factory, "intel_api_env"):
+        tmp_path = tmp_path_factory.mktemp("intel_api")
+        repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'intel_api.db'}")
+        from tests.helpers.synthetic_checkpoint import copy_verified_trained_bundle
+
+        model_path = copy_verified_trained_bundle(verified_test_model_bundle, tmp_path / "model.pt")
+        cfg = AppConfig(
+            execution={
+                "symbol": "XAUUSD",
+                "mode": "PAPER",
+            },
+            model={"model_artifact_path": str(model_path)},
+        )
+        # Use a lightweight adapter (paper) so no MT5 is required.
+        from nexus_scalp.adapters.paper.paper_adapter import PaperMT5Adapter
+
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+        client = authenticated_test_client(create_app(engine))
+        yield repo, engine, client
+        repo.close()
 
 
 def seed_lifecycle(repo, tracker):
@@ -116,7 +140,7 @@ def seed_lifecycle(repo, tracker):
 
 class TestIntelligenceAPI:
     def test_engine_exposes_intelligence_subsystem(self, wired_engine):
-        _repo, engine = wired_engine
+        _repo, engine, _client = wired_engine
         for attr in (
             "intelligence_lifecycle",
             "intelligence_autopsy",
@@ -128,10 +152,8 @@ class TestIntelligenceAPI:
             assert hasattr(engine, attr), f"LiveEngine missing {attr}"
 
     def test_lifecycle_timeline_via_api(self, wired_engine):
-        repo, engine = wired_engine
+        repo, engine, client = wired_engine
         seed_lifecycle(repo, engine.intelligence_lifecycle)
-        app = create_app(engine)
-        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/positions/501/timeline")
         assert resp.status_code == 200
         body = resp.json()
@@ -142,7 +164,7 @@ class TestIntelligenceAPI:
         assert "POSITION_EXITED" in types
 
     def test_autopsy_endpoint(self, wired_engine):
-        repo, engine = wired_engine
+        repo, engine, client = wired_engine
         # Seed one closed experience + autopsy through the autopsy engine.
         rec = ExperienceRecord(
             experience_id="exp_api_1",
@@ -181,8 +203,6 @@ class TestIntelligenceAPI:
         )
         engine.intelligence_autopsy.persist(autopsy)
         _flush(repo)
-        app = create_app(engine)
-        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/autopsies")
         assert resp.status_code == 200
         body = resp.json()
@@ -193,9 +213,7 @@ class TestIntelligenceAPI:
         assert resp2.json()["available"] is True
 
     def test_summary_and_worker_status(self, wired_engine):
-        _repo, engine = wired_engine
-        app = create_app(engine)
-        client = authenticated_test_client(app)
+        _repo, engine, client = wired_engine
         resp = client.get("/api/intelligence/summary")
         assert resp.status_code == 200
         body = resp.json()
@@ -204,7 +222,7 @@ class TestIntelligenceAPI:
         assert "lifecycle_events" in body
 
     def test_worker_is_restart_safe_and_isolated(self, wired_engine):
-        _repo, engine = wired_engine
+        _repo, engine, _client = wired_engine
         worker = engine.intelligence_worker
         worker.start()
         assert worker.running is True
@@ -219,7 +237,7 @@ class TestIntelligenceAPI:
 
     def test_anomaly_events_endpoint(self, wired_engine):
         """Evidence-based anomaly events are exposed over the API (TASK-2)."""
-        repo, engine = wired_engine
+        repo, engine, client = wired_engine
         # Persist one anomaly event directly through the audit queue.
         from nexus_scalp.intelligence.behavior_canonical import _persist_anomaly
         from nexus_scalp.intelligence.behavior_detect import (
@@ -238,8 +256,6 @@ class TestIntelligenceAPI:
         )
         assert _persist_anomaly(repo, anomaly, ANOMALY_ALGORITHM_VERSION) is True
         _flush(repo)
-        app = create_app(engine)
-        client = authenticated_test_client(app)
         resp = client.get("/api/intelligence/anomalies")
         assert resp.status_code == 200
         body = resp.json()
@@ -248,7 +264,7 @@ class TestIntelligenceAPI:
 
     def test_gate_rejects_degraded_before_any_dispatch(self, wired_engine):
         """The pre-trade gate converts a degraded-proposal to NO_TRADE."""
-        _repo, engine = wired_engine
+        _repo, engine, _client = wired_engine
         from nexus_scalp.domain.enums import ActionType
         from nexus_scalp.domain.models import TradeProposal
 
@@ -272,7 +288,7 @@ class TestIntelligenceAPI:
 
     def test_no_mt5_required(self, wired_engine):
         """The whole Phase 09 brain uses only the paper adapter - no MT5."""
-        _repo, engine = wired_engine
+        _repo, engine, _client = wired_engine
 
         # The intelligence subsystem construction never touches a real terminal.
         assert engine.adapter.__class__.__name__ == "PaperMT5Adapter"

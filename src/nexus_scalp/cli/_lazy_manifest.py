@@ -3,8 +3,8 @@
 WHY (wave-6 perf): ``nexus --help`` / ``nexus help`` list EVERY command, but
 Click's stock help renderer materializes each listed command to read its
 one-line summary — which for the lazy modules means importing
-``model_studio_routes`` (torch, ~4s), ``ai_commands`` (orchestrator),
-``dependency_commands`` (networkx) and ``gateway_commands`` (fastapi). That
+``model_studio_routes`` (torch, ~4s), ``ai_commands`` (orchestrator)
+and ``gateway_commands`` (fastapi). That
 made every help pay the whole neural/provider/graph stack, the exact EU-03
 invariant ``engine_boot._heavy_*`` shims exist to prevent.
 
@@ -51,8 +51,6 @@ LAZY_COMMAND_SHORT_HELP: dict[str, str] = {
     ),
     # nexus_scalp.cli.ai_commands  (-> ai_providers.orchestrator)
     "ai": "AI provider ecosystem: providers, models, decisions.",
-    # nexus_scalp.cli.dependency_commands  (-> networkx)
-    "dependency": "Dependency Intelligence toolkit.",
     # nexus_scalp.cli.gateway_commands  (-> fastapi -> torch + polars)
     "gateway": "Windows MT5 bridge server for the existing Linux gateway client (Demo by default).",
 }

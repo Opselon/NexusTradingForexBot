@@ -25,6 +25,7 @@ classification, pinned hermetically:
 from __future__ import annotations
 
 import json
+import shutil
 import threading
 from pathlib import Path
 from typing import Any
@@ -135,12 +136,45 @@ def _build_fake_official_dir(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Shared official-bundle cache (speed: one live 35-epoch train per worker)
+# ---------------------------------------------------------------------------
+# build_test_only_trained_bundle trains a real ScalpNet (35 Adam steps on
+# 96xDIM) and every test that needed a signed bundle paid that train plus
+# the manifest signing — 5 live trains per file run. The bundle is fully
+# deterministic (seed-42 data, fixed test signing key), so a bundle built
+# once is byte-identical to one built fresh, and every gate the tests pin
+# (signature, geometry binding, SHA, install, classification) reads only
+# the bytes, never the training history. The first caller in the worker
+# trains live and populates the cache; the rest copy the bytes into their
+# own throwaway dir. Tests that mutate the bundle (tamper, re-sign) work
+# on their own copy — the cache is never mutated in place. The cache lives
+# under pytest's session basetemp (one per xdist worker).
+def _seed_official_bundle(tmp_path: Path, tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Place a signed fake official bundle at ``tmp_path / "official-src"``.
+
+    Copy from the shared cache when present; otherwise build live via the
+    canonical builder and populate the cache, so the test also passes
+    standalone / out of order.
+    """
+    dest = tmp_path / "official-src"
+    cache = tmp_path_factory.getbasetemp() / "bug298_model_provisioning_official_bundle"
+    if (cache / "manifest.json").exists():
+        shutil.copytree(cache, dest)
+    else:
+        _build_fake_official_dir(tmp_path)
+        shutil.copytree(dest, cache)
+    return dest
+
+
+# ---------------------------------------------------------------------------
 # manifest verification
 # ---------------------------------------------------------------------------
-def test_manifest_bad_signature_rejected(tmp_path: Path, test_trust_root: str) -> None:
+def test_manifest_bad_signature_rejected(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, test_trust_root: str
+) -> None:
     from nexus_scalp.model_provisioning import official as off
 
-    bundle = _build_fake_official_dir(tmp_path)
+    bundle = _seed_official_bundle(tmp_path, tmp_path_factory)
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     manifest["signature"] = "00" * 64
     with pytest.raises(OfficialBundleError) as err:
@@ -148,8 +182,10 @@ def test_manifest_bad_signature_rejected(tmp_path: Path, test_trust_root: str) -
     assert err.value.code in ("SIGNATURE_INVALID",)
 
 
-def test_manifest_geometry_binding_enforced(tmp_path: Path, test_trust_root: str) -> None:
-    bundle = _build_fake_official_dir(tmp_path)
+def test_manifest_geometry_binding_enforced(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, test_trust_root: str
+) -> None:
+    bundle = _seed_official_bundle(tmp_path, tmp_path_factory)
     manifest = json.loads((bundle / "manifest.json").read_text(encoding="utf-8"))
     manifest["dimension"] = (
         50  # tamper BEFORE re-sign => signature still valid shape but binding fails
@@ -186,9 +222,13 @@ class _CopySource(OfficialBundleSource):
 
 
 def test_official_path_a_end_to_end(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str, verified_platform_gate
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    test_trust_root: str,
+    verified_platform_gate,
 ) -> None:
-    root = _build_fake_official_dir(tmp_path)
+    root = _seed_official_bundle(tmp_path, tmp_path_factory)
     workspace = tmp_path / "ws"
     monkeypatch.setattr(rb.rpaths, "get_runtime_workspace", lambda: workspace)
 
@@ -206,9 +246,13 @@ def test_official_path_a_end_to_end(
 
 
 def test_official_tampered_file_installs_nothing(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, test_trust_root: str, verified_platform_gate
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+    test_trust_root: str,
+    verified_platform_gate,
 ) -> None:
-    root = _build_fake_official_dir(tmp_path)
+    root = _seed_official_bundle(tmp_path, tmp_path_factory)
     workspace = tmp_path / "ws"
     monkeypatch.setattr(rb.rpaths, "get_runtime_workspace", lambda: workspace)
     # Flip one byte of the weights AFTER signing (SHA mismatch vs manifest).
@@ -224,13 +268,15 @@ def test_official_tampered_file_installs_nothing(
     assert prov.read_provisioner_state().get("state") == LifecycleState.REJECTED.value
 
 
-def test_official_rejects_signed_bootstrap_provenance(tmp_path: Path, test_trust_root: str) -> None:
+def test_official_rejects_signed_bootstrap_provenance(
+    tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, test_trust_root: str
+) -> None:
     """Even healthy tensors and a trusted signature cannot relabel a starter."""
     import nacl.signing
 
     from nexus_scalp.model_provisioning import official as off
 
-    root = _build_fake_official_dir(tmp_path)
+    root = _seed_official_bundle(tmp_path, tmp_path_factory)
     manifest_path = root / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     manifest["provisioner"] = "nexus.model_bootstrap"
@@ -259,6 +305,16 @@ def test_install_rejects_unverified_bundle_shape(tmp_path: Path, test_trust_root
 def test_starter_note_overrides_sidecar_claim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # NOTE (speed): this test is the mint path itself — a 30-step trained
+    # starter mint plus ~3 full serving-gate rounds (mint pre/post
+    # bundle_status + 2x classify_serving_slot, each a torch-load + fresh-
+    # init canary + behavioral probe). That is the production behavior
+    # under test, not redundant fixture work: the shared-bundle cache
+    # cannot help a single live mint, and dropping either classify call
+    # would drop the assertion it pins. Same honest-miss shape round 1
+    # recorded for the sibling mint test (test_first_run_gate_provisions_
+    # for_paper, ~10-14s); getting this deterministically under 10s needs
+    # product-side gate dedup, not a test change.
     workspace = tmp_path / "ws"
     monkeypatch.setattr(rb.rpaths, "get_runtime_workspace", lambda: workspace)
     model = prov.serving_model_path()

@@ -96,7 +96,7 @@ asserts the golden list; run `nexus help` on your install for the live list).
 | `nexus config-validate` | Syntax/schema/migration/secret-masking validation | none | — |
 | `nexus settings` | User-settings store (secrets masked) | none | `--json` |
 | `nexus logs` | Tail/filter/export engine logs (reports the tree the engine actually writes) | read-only | `--json` |
-| `nexus diagnostics` / `nexus export-diagnostics` | Sanitized diagnostics archive (no secrets) | writes archive | — |
+| `nexus export-diagnostics` | Sanitized diagnostics archive (no secrets) | writes archive | — |
 | `nexus forensic` | Forensic health matrix + deploy gate | read-only | `--json` |
 | `nexus incidents` | Incident response diagnostics | read-only by default | — |
 | `nexus test` | Run test suites (never live broker tests) | runs tests | — |

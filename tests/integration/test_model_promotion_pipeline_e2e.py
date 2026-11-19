@@ -13,6 +13,7 @@ Verifies:
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -87,37 +88,85 @@ def make_valid_candidate(
     return art, sca, mf, kwargs
 
 
-@pytest.fixture
-def wired_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    """Sets up an isolated LiveEngine and GovernanceStore with temporary storage."""
-    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", FAKE_TOKEN)
-    db_file = tmp_path / "models_promo.db"
-    repo = AuditRepository(db_url=f"sqlite:///{db_file}")
+@pytest.fixture(scope="module")
+def wired_env(tmp_path_factory: pytest.TempPathFactory):
+    """Sets up an isolated LiveEngine and GovernanceStore with temporary storage.
 
-    model_dir = tmp_path / "models"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    model_file = model_dir / "scalpnet_active.pt"
-    rb.mint_starter_bundle(model_file)
+    Module-scoped on purpose: ``mint_starter_bundle`` + a full LiveEngine
+    build (champion load, registry sync, governance engine) + ``create_app``
+    cost ~8-15s per test on the Dubai runner when repeated for each of the
+    three API tests. The three tests only drive blocked/frozen promotion
+    POSTs through the API and the freeze test unfreezes what it froze, so
+    one shared engine + client is safe here.
 
-    cfg = AppConfig(
-        execution={"symbol": "XAUUSD", "mode": "PAPER"},
-        model={"model_artifact_path": str(model_file)},
-    )
-    adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
-    engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+    ``monkeypatch`` is function-scoped, so the auth token env var is set
+    by hand (previous value saved and restored on teardown).
 
-    app = create_app(engine)
-    client = TestClient(app)
-    client.headers["Authorization"] = f"Bearer {FAKE_TOKEN}"
+    Runner isolation: this fixture MUST build the engine inside
+    ``isolated_module_engine_env`` — module-scoped fixtures run BEFORE
+    the function-scoped autouse isolation fixtures in conftest.py, so
+    without it the engine binds the runner's REAL shared settings DB
+    and a persisted ``model.model_artifact_path`` from another test
+    overrides this fixture's bundle (PR #740 run #3330: 51x
+    LEGACY_UNVERIFIED against a foreign hotswitch ``model.pt``).
+    """
+    from tests.helpers.module_engine_isolation import isolated_module_engine_env
 
-    yield {
-        "engine": engine,
-        "repo": repo,
-        "client": client,
-        "tmp_path": tmp_path,
-        "model_file": model_file,
-    }
+    prev_token = os.environ.get("NSE_WEB_AUTH_TOKEN")
+    os.environ["NSE_WEB_AUTH_TOKEN"] = FAKE_TOKEN
+    with isolated_module_engine_env(tmp_path_factory, "model_promotion_pipeline_env"):
+        tmp_path = tmp_path_factory.mktemp("model_promotion_pipeline")
+        db_file = tmp_path / "models_promo.db"
+        repo = AuditRepository(db_url=f"sqlite:///{db_file}")
 
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        model_file = model_dir / "scalpnet_active.pt"
+        rb.mint_starter_bundle(model_file)
+
+        cfg = AppConfig(
+            execution={"symbol": "XAUUSD", "mode": "PAPER"},
+            model={"model_artifact_path": str(model_file)},
+        )
+        adapter = PaperMT5Adapter(initial_balance=10_000.0, symbol="XAUUSD")
+        engine = LiveEngine(config=cfg, adapter=adapter, audit_repo=repo)
+
+        app = create_app(engine)
+        client = TestClient(app)
+        client.headers["Authorization"] = f"Bearer {FAKE_TOKEN}"
+
+        try:
+            yield {
+                "engine": engine,
+                "repo": repo,
+                "client": client,
+                "tmp_path": tmp_path,
+                "model_file": model_file,
+            }
+        finally:
+            repo.close()
+            if prev_token is None:
+                os.environ.pop("NSE_WEB_AUTH_TOKEN", None)
+            else:
+                os.environ["NSE_WEB_AUTH_TOKEN"] = prev_token
+
+
+@pytest.fixture(scope="module")
+def gov_store(tmp_path_factory: pytest.TempPathFactory):
+    """One AuditRepository + GovernanceStore shared by the transaction tests.
+
+    Each transaction test uses distinct model_ids, asserts on its own audit
+    row (``audits[0]`` at assertion time — list_promotion_audits() returns
+    newest-first, ORDER BY recorded_at DESC, so [0] is the test's own row
+    and [-1] would be the oldest row from an earlier test), and keeps its
+    own lock file + candidate artifacts in its own ``tmp_path`` — so sharing
+    the store saves 3 redundant repository constructions (schema + write
+    plane) without coupling the tests.
+    """
+    workdir = tmp_path_factory.mktemp("model_promotion_gov")
+    repo = AuditRepository(db_url=f"sqlite:///{workdir / 'gov.db'}")
+    store = GovernanceStore(repo)
+    yield repo, store
     repo.close()
 
 
@@ -254,10 +303,9 @@ def test_promotion_lock_contention(tmp_path: Path) -> None:
     lock2.release()
 
 
-def test_transaction_raises_on_lock_contention(tmp_path: Path) -> None:
+def test_transaction_raises_on_lock_contention(tmp_path: Path, gov_store) -> None:
     """execute_promotion_transaction raises PromotionTransactionError on lock conflict."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'gov.db'}")
-    store = GovernanceStore(repo)
+    _repo, store = gov_store
     lock_file = tmp_path / "promotion.lock"
 
     _art, _sca, _mf, kwargs = make_valid_candidate(tmp_path, "cand_lock")
@@ -283,7 +331,6 @@ def test_transaction_raises_on_lock_contention(tmp_path: Path) -> None:
             )
     finally:
         pre_lock.release()
-        repo.close()
 
 
 # =============================================================================
@@ -291,10 +338,9 @@ def test_transaction_raises_on_lock_contention(tmp_path: Path) -> None:
 # =============================================================================
 
 
-def test_promotion_atomic_rollback_on_activation_failure(tmp_path: Path) -> None:
+def test_promotion_atomic_rollback_on_activation_failure(tmp_path: Path, gov_store) -> None:
     """When activate() fails, candidate is marked REJECTED and old champion is unchanged."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'gov.db'}")
-    store = GovernanceStore(repo)
+    _repo, store = gov_store
     lock_file = tmp_path / "promo.lock"
 
     _art, _sca, _mf, kwargs = make_valid_candidate(tmp_path, "cand_broken")
@@ -332,15 +378,13 @@ def test_promotion_atomic_rollback_on_activation_failure(tmp_path: Path) -> None
     # Audits must reflect failed promotion
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_FAILED"
-    assert audits[-1]["old_champion_model_id"] == "champ_steady"
-    repo.close()
+    assert audits[0]["status"] == "PROMOTION_FAILED"
+    assert audits[0]["old_champion_model_id"] == "champ_steady"
 
 
-def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path) -> None:
+def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path, gov_store) -> None:
     """When verify_new() fails, rollback_activate() is called to restore previous champion."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'gov.db'}")
-    store = GovernanceStore(repo)
+    _repo, store = gov_store
     lock_file = tmp_path / "promo.lock"
 
     _art, _sca, _mf, kwargs = make_valid_candidate(tmp_path, "cand_corrupt")
@@ -381,8 +425,7 @@ def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path) 
     # Audits must reflect PROMOTION_ROLLED_BACK
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_ROLLED_BACK"
-    repo.close()
+    assert audits[0]["status"] == "PROMOTION_ROLLED_BACK"
 
 
 # =============================================================================
@@ -390,10 +433,9 @@ def test_promotion_atomic_rollback_on_post_verification_failure(tmp_path: Path) 
 # =============================================================================
 
 
-def test_promotion_transaction_happy_path_and_benchmark(tmp_path: Path) -> None:
+def test_promotion_transaction_happy_path_and_benchmark(tmp_path: Path, gov_store) -> None:
     """Full atomic promotion transaction commits successfully within <500ms SLA."""
-    repo = AuditRepository(db_url=f"sqlite:///{tmp_path / 'gov.db'}")
-    store = GovernanceStore(repo)
+    _repo, store = gov_store
     lock_file = tmp_path / "promo.lock"
 
     _art, _sca, _mf, kwargs = make_valid_candidate(tmp_path, "champ_v2", "2.0.0")
@@ -453,5 +495,4 @@ def test_promotion_transaction_happy_path_and_benchmark(tmp_path: Path) -> None:
     # Audit log verification
     audits = store.list_promotion_audits()
     assert len(audits) >= 1
-    assert audits[-1]["status"] == "PROMOTION_COMMITTED"
-    repo.close()
+    assert audits[0]["status"] == "PROMOTION_COMMITTED"

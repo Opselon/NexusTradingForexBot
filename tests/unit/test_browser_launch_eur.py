@@ -15,6 +15,7 @@ import asyncio
 import inspect
 import json
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -25,6 +26,15 @@ from nexus_scalp.cli import browser_launch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 runner = CliRunner()
+
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[a-zA-Z]")
+
+
+def _plain(text: str) -> str:
+    """Help output without ANSI escapes (see test_browser_launch._plain:
+    Rich splits styled option names across escape sequences when colour is
+    forced on, so plain flag substrings never match the raw output)."""
+    return _ANSI_RE.sub("", text)
 
 
 @pytest.fixture(autouse=True)
@@ -396,7 +406,7 @@ class TestStartCliSurface:
     def test_help_documents_auto_open_and_no_browser(self) -> None:
         res = runner.invoke(app_import(), ["start", "--help"])
         assert res.exit_code == 0, res.output
-        out = res.output
+        out = _plain(res.output)
         assert "--no-browser" in out
         assert "Control Center" in out
         assert "auto-open" in out.lower()

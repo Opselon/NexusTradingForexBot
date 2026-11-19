@@ -23,7 +23,6 @@ verdict — never on the existence of a symbol.
 from __future__ import annotations
 
 import sqlite3
-from pathlib import Path
 
 import pytest
 
@@ -162,10 +161,20 @@ def _seed_orders(con: sqlite3.Connection) -> None:
     )
 
 
-@pytest.fixture()
-def migrated_db(tmp_path: Path) -> sqlite3.Connection:
-    """A DB at the registry-expected version, carrying the seeded corpus."""
-    db = tmp_path / "audit.db"
+@pytest.fixture(scope="module")
+def migrated_db(tmp_path_factory: pytest.TempPathFactory) -> sqlite3.Connection:
+    """A DB at the registry-expected version, carrying the seeded corpus.
+
+    Module-scoped: migration + seeding 20,182 signal rows + 2,576 order
+    rows + ANALYZE cost ~0.3 s locally (~3 s on the CI runner) PER TEST
+    when function-scoped — 15x for 15 tests that only READ the corpus.
+    The corpus is production-shaped on purpose (see module docstring) so
+    its size is kept; it is built once and shared instead. Safe: every
+    test except one only reads audit_signals/audit_orders, and the one
+    writer (test_pk_autoindex_still_serves_the_lookup) inserts a single
+    row into release_metadata, which no other test reads.
+    """
+    db = tmp_path_factory.mktemp("l4_audit") / "audit.db"
     eng = DatabaseMigrationEngine(db_path=db, domain=DatabaseDomain.AUDIT)
     res = eng.migrate()
     assert res["state"] == "DB_MIGRATION_SUCCEEDED", res

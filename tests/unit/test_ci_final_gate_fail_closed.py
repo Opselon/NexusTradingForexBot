@@ -16,22 +16,54 @@ a check with no recorded result fails the job. The only legitimate "never
 ran" state is an explicit status=blocked record (per-step fallback or
 `make_ci_results.py classify-gate`), which always leaves a JSON file behind.
 
-These tests run the real script against a real ci-results tree in tmp.
+These tests run the real gate script (subprocess) against a real ci-results
+tree in tmp. The tree itself is built IN-PROCESS through
+``scripts/ci/make_ci_results.py``'s ``main(argv)`` API: the old shape
+spawned a fresh interpreter per ``init``/``check``/``classify-gate`` call —
+13 spawns per test, ~250 per file — and on the 2-core shared runner that
+interpreter startup dominated every test. The recorded JSONs are identical
+either way (same code, same arguments); only the gate script itself still
+runs as a subprocess, which the cp1252 test below requires.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 GATE = REPO / "scripts" / "ci" / "ci_final_gate.py"
 RESULTS = REPO / "scripts" / "ci" / "make_ci_results.py"
+
+
+def _load_results_module() -> ModuleType:
+    """Import ``make_ci_results.py`` in-process (stdlib-only, no side effects
+    at import time) so ``init``/``check``/``classify-gate`` run as plain
+    function calls instead of fresh-interpreter subprocess spawns."""
+    spec = importlib.util.spec_from_file_location("_nse_make_ci_results", RESULTS)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+_RESULTS_MOD = _load_results_module()
+
+
+def _results_main(argv: list[str]) -> int:
+    """Run one make_ci_results subcommand in-process; nonzero fails the test,
+    mirroring the old ``check=True`` subprocess calls."""
+    rc = int(_RESULTS_MOD.main(argv))
+    assert rc == 0, f"make_ci_results.py {argv} failed with rc={rc}"
+    return rc
+
 
 CHECKS = (
     "ruff_lint",
@@ -67,19 +99,16 @@ def _run_gate(
 
 def _init_tree(tmp_path: Path) -> Path:
     root = tmp_path / "ci-results"
-    subprocess.run(
-        [_py(), str(RESULTS), "init", str(root)], capture_output=True, text=True, check=True
-    )
+    _results_main(["init", str(root)])
     return root
 
 
 def _record(root: Path, check: str, rc: str, *args: str) -> None:
-    subprocess.run(
-        [_py(), str(RESULTS), "check", str(root), check, rc, *args],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    _results_main(["check", str(root), check, rc, *args])
+
+
+def _classify_gate(root: Path, root_failure: str) -> None:
+    _results_main(["classify-gate", str(root), "--root-failure", root_failure])
 
 
 def test_all_checks_recorded_passing_is_green(tmp_path: Path) -> None:
@@ -124,19 +153,7 @@ def test_blocked_records_are_legitimate_non_runs(tmp_path: Path) -> None:
     _record(root, "ruff_lint", "0")
     _record(root, "ruff_format", "1", "files would be reformatted")
     # classify-gate writes explicit blocked records for the downstream checks
-    subprocess.run(
-        [
-            _py(),
-            str(RESULTS),
-            "classify-gate",
-            str(root),
-            "--root-failure",
-            "ruff_format",
-        ],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    _classify_gate(root, "ruff_format")
     # smoke/runtime_gate/layered_smoke/critical_coverage also gate on the same
     # if: and also never ran; the per-step fallback records runtime_gate, the
     # classifier covers mypy/pytest/coverage, but any check STILL missing a
@@ -292,12 +309,7 @@ def test_classify_gate_covers_all_downstream_checks(tmp_path: Path) -> None:
     root = _init_tree(tmp_path)
     _record(root, "ruff_lint", "0")
     _record(root, "ruff_format", "1", "files would be reformatted")
-    subprocess.run(
-        [_py(), str(RESULTS), "classify-gate", str(root), "--root-failure", "ruff_format"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    _classify_gate(root, "ruff_format")
     r = _run_gate(root)
     assert r.returncode == 1
     assert "ruff_format=failed" in r.stdout

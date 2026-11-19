@@ -2,8 +2,8 @@
 
 WAVE-6 LANE-2 (perf): ``nexus --version`` / ``nexus help`` took 7-10s because
 ``cli/app_factory.py`` imported ``model_studio_commands`` (-> torch, ~4s),
-``ai_commands`` (-> ai_providers.orchestrator), ``dependency_commands`` (->
-networkx) and ``gateway_commands`` (-> fastapi, which itself pulls torch +
+``ai_commands`` (-> ai_providers.orchestrator)
+and ``gateway_commands`` (-> fastapi, which itself pulls torch +
 polars) AT IMPORT TIME. Those are now registered lazily (see
 ``cli/lazy_subapps.py``): they load on the first subcommand resolution, never
 for the version/help surfaces.
@@ -27,12 +27,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 HEAVY_MODULES = (
     "torch",
     "polars",
-    "networkx",
     "fastapi",
     "nexus_scalp.web.model_studio_routes",
     "nexus_scalp.cli.model_studio_commands",
     "nexus_scalp.cli.ai_commands",
-    "nexus_scalp.cli.dependency_commands",
     "nexus_scalp.ai_providers.orchestrator",
 )
 
@@ -153,7 +151,6 @@ def test_cli_help_lists_every_lazy_command() -> None:
         "dataset-download",
         "position-adviser-packages",
         "ai",
-        "dependency",
         "gateway",
     ):
         assert expected in result.output, f"`{expected}` missing from nexus --help"

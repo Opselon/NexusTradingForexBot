@@ -296,8 +296,17 @@ def write_options(payload: dict[str, Any], domain: str = "audit") -> dict[str, A
 
 
 def options_status_snapshot(domain: str = "audit") -> dict[str, Any]:
-    """The ``options`` + ``domains`` blocks for /api/db/manage/status."""
+    """The ``options`` + ``domains`` blocks for /api/db/manage/status.
+
+    Pool knobs are opt-in (PG-POOL-CONFIG-001): ``read_options`` omits an
+    unset pool knob so the UI renders UNAVAILABLE, and this snapshot must
+    mirror that shape — indexing every ``OPTION_KEYS`` entry against the
+    read result raised ``KeyError`` for an unset knob and the status route
+    swallowed it as an empty block (the ``options`` and ``domain_db_names``
+    keys vanished from the response).
+    """
+    options = read_options(domain)
     return {
-        "options": {key: read_options(domain)[key] for key in sorted(OPTION_KEYS)},
+        "options": {key: options[key] for key in sorted(OPTION_KEYS) if key in options},
         "domains": _known_domain_db_names(),
     }

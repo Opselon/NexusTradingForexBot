@@ -16,6 +16,8 @@ appear downstream of the stack either. Both are asserted here.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import cast
 
 import pytest
@@ -51,6 +53,28 @@ RF_TARGETS = [
 ]
 
 
+@contextmanager
+def _single_thread_torch() -> Iterator[None]:
+    """Pin torch to one intra-op thread for the duration of the block.
+
+    Every tensor in this file is tiny (batch <= 2, channels <= 24, T <= 512),
+    so the work is dominated by per-op thread-pool synchronisation, not by
+    FLOPs — and on the 2-core self-hosted runner torch's default thread count
+    oversubscribes the box (see the latency test below, which measured a
+    ~2-3 ms forward pass reporting 464 ms of CPU time before pinning).
+    One thread removes that overhead. The previous count is restored on exit
+    so no other test file sharing the pytest worker is affected.
+    """
+    prev = torch.get_num_threads()
+    if prev != 1:
+        torch.set_num_threads(1)
+    try:
+        yield
+    finally:
+        if prev != 1:
+            torch.set_num_threads(prev)
+
+
 def _conv_dilation(module: nn.Module) -> tuple[int, ...]:
     """Read a CausalConv1dBlock's conv dilation as a tuple (typed accessor)."""
     block = cast(CausalConv1dBlock, module)
@@ -78,20 +102,29 @@ def _future_leakage(
     channels) for every input position t'. The strict upper triangle (t' > t)
     is exactly the lookahead the causality contract forbids: a strictly causal
     stack must return an all-zero matrix.
+
+    Computed with ONE batched backward instead of ``seq_len`` separate
+    ``autograd.grad`` calls (48 traversals of the graph for the old loop,
+    each on a tiny tensor, so per-call overhead — not FLOPs — was the cost:
+    the 9 model-conv-stage variants alone took 12-24 s each). The input is
+    replicated once per output timestep and replica ``t`` gets a one-hot
+    grad-output at position ``t``; the stack is batch-independent (Conv1d /
+    per-position LayerNorm / GELU / residual — no BatchNorm or other
+    cross-sample op), so replica ``t``'s gradient is exactly the per-t
+    gradient the loop computed, and the returned matrix is identical.
     """
-    x = torch.randn(batch, channels, seq_len, dtype=dtype, requires_grad=True)
-    y = stack(x)
-    jac = torch.zeros(seq_len, seq_len, dtype=dtype)
-    for t in range(seq_len):
-        g = torch.autograd.grad(
-            outputs=y[:, :, t],
-            inputs=x,
-            grad_outputs=torch.ones_like(y[:, :, t]),
-            retain_graph=True,
-            create_graph=False,
-            only_inputs=True,
-        )[0]
-        jac[t] = g.detach().abs().sum(dim=(0, 1))
+    with _single_thread_torch():
+        x0 = torch.randn(batch, channels, seq_len, dtype=dtype)
+        # (T*B, C, T): rows [t*B .. (t+1)*B) are copies of the batch for
+        # output timestep t. A detached leaf: grad is taken w.r.t. this.
+        x_rep = x0.repeat(seq_len, 1, 1).detach().requires_grad_(True)
+        y_rep = stack(x_rep)
+        grad_out = torch.zeros_like(y_rep)
+        replica = torch.arange(seq_len * batch)
+        # Replica r = t*B + b probes output position t = r // B.
+        grad_out[replica, :, torch.arange(seq_len).repeat_interleave(batch)] = 1.0
+        g_rep = torch.autograd.grad(outputs=y_rep, inputs=x_rep, grad_outputs=grad_out)[0]
+        jac = g_rep.view(seq_len, batch, channels, seq_len).abs().sum(dim=(1, 2))
     return torch.triu(jac, diagonal=1)
 
 
@@ -278,26 +311,31 @@ class TestReceptiveFieldFormula:
         )
         rf = receptive_field(kernel_size, dilation_schedule(schedule, blocks))
         base = torch.randn(1, channels, seq_len, dtype=torch.float64) * 0.5
-        y_base = branch(base)
         anchor = seq_len - 1  # probe backwards from the final position
         scan = min(seq_len, 6 * rf)  # comfortably exceeds the expected RF
-        influenced: list[int] = []
+        # Perturb every channel with a per-channel pattern that survives
+        # LayerNorm (an identical offset across all channels is exactly the
+        # component normalization removes).
         pattern = torch.arange(1, channels + 1, dtype=torch.float64) * 2.0
-        for lag in range(0, scan):
-            pos = anchor - lag
-            if pos < 0:
-                break
-            probe = base.clone()
-            # Perturb every channel with a per-channel pattern that survives
-            # LayerNorm (an identical offset across all channels is exactly the
-            # component normalization removes).
-            probe[:, :, pos] += pattern
+        # Batch ALL lag probes into ONE forward pass instead of ``scan``
+        # separate forwards (up to 366 for k=5 geometric at ~0.09 s each —
+        # that loop was the 37 s test). Probe ``lag`` perturbs position
+        # ``anchor - lag``; the stack is batch-independent (Conv1d /
+        # per-position LayerNorm / GELU / residual — no BatchNorm or other
+        # cross-sample op), so the batched responses are exactly the
+        # per-lag responses the loop computed: same pattern, same anchor,
+        # same 1e-9 threshold, same contiguity assertion below. No backward
+        # is ever run on these outputs, so ``no_grad`` is exact.
+        with _single_thread_torch(), torch.no_grad():
+            y_base = branch(base)
+            probes = base.repeat(scan, 1, 1)
+            rows = torch.arange(scan)
+            probes[rows, :, anchor - rows] = probes[rows, :, anchor - rows] + pattern
             # Measure the response at the ANCHOR position only: positions near
             # the impulse move legitimately (a causal filter's output at its own
             # tap), so the memory depth is how far back the anchor still moves.
-            response = (branch(probe) - y_base)[0, :, anchor]
-            if response.abs().amax().item() > 1e-9:
-                influenced.append(lag)
+            response = (branch(probes) - y_base)[:, :, anchor]
+        influenced = [lag for lag in range(scan) if response[lag].abs().amax().item() > 1e-9]
         assert influenced, "no past perturbation influenced the output"
         # Influence over lag is contiguous (the conv branch is a causal FIR
         # filter stack), so the receptive field is the count of lags, measured

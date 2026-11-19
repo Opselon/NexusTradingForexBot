@@ -110,7 +110,11 @@ def _decision(**overrides) -> ShadowDecisionRecord:
 
 @pytest.fixture
 def repo(tmp_path):
-    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'l1.db'}")
+    # flush_interval_sec=0.05: the audit worker's idle poll is 1 s by
+    # default, and close() joins the worker after setting _running=False —
+    # so every teardown burned up to 1 s waiting out the poll. 50 ms keeps
+    # the same drain semantics with a ~20x cheaper teardown.
+    r = AuditRepository(db_url=f"sqlite:///{tmp_path / 'l1.db'}", flush_interval_sec=0.05)
     yield r
     r.close()
 
@@ -121,11 +125,15 @@ def store(repo):
 
 
 def _drain(repo) -> None:
-    """Flush the audit write queue so the row is on disk."""
-    worker = getattr(repo, "_worker_thread", None)
-    if worker is not None:
-        worker.join(timeout=10)
-    repo.flush() if hasattr(repo, "flush") else None
+    """Flush the audit write queue so the row is on disk.
+
+    Never ``join()`` the worker thread here: it is a daemon that loops
+    ``while self._running`` until ``close()``, so ``join(timeout=10)``
+    always burns the FULL 10 s per call (40 s across this file — the
+    21.4 s / 10.2 s / 10.0 s durations). ``flush()`` instead polls the
+    queue's unfinished count and returns as soon as it drains.
+    """
+    assert repo.flush(timeout_sec=10), "audit write queue did not drain"
 
 
 def _rows(db_path: str) -> list[dict]:
@@ -303,7 +311,7 @@ def test_backfill_migrates_legacy_rows_once(tmp_path):
     conn.commit()
     conn.close()
 
-    repo = AuditRepository(db_url=f"sqlite:///{db}")
+    repo = AuditRepository(db_url=f"sqlite:///{db}", flush_interval_sec=0.05)
     try:
         ShadowStore(audit_repo=repo).ensure_schema()
         rows = _rows(str(db))

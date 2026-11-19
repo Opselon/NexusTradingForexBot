@@ -361,15 +361,6 @@ def prepare_runtime_environment(provider: str, evidence_dir: Path) -> Path:
     )
     frame.write_parquet(data_path)
 
-    # Pre-warm dependency intelligence cache so REST endpoints (/api/dependency/*)
-    # resolve from cache in <500ms rather than scanning all 2700 AST files during live HTTP query.
-    try:
-        from nexus_scalp.dependency_intelligence.engine import DependencyIntelligenceEngine
-
-        DependencyIntelligenceEngine(REPO_ROOT / "src" / "nexus_scalp").analyze(use_cache=True)
-    except Exception:
-        pass
-
     return state_root
 
 

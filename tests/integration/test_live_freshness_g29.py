@@ -33,6 +33,10 @@ import pytest
 from nexus_scalp.application.live_engine import LiveEngine
 from nexus_scalp.configuration.config import AppConfig
 
+# WEB-AUTH-P0: /api/status is gated. The env token and the Bearer <redacted>
+# must agree; a literal placeholder in the header 401s (run #3334).
+WEB_TOKEN = "live-freshness-test-token"
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -381,7 +385,7 @@ def test_dead_tick_feed_makes_overall_stale_and_halts(tmp_path):
     assert out.confidence == 0.0
 
 
-def test_health_section_reports_stale_on_frozen_pipeline(tmp_path):
+def test_health_section_reports_stale_on_frozen_pipeline(tmp_path, monkeypatch):
     """BUGFIX-G29: the engine health status MUST surface STALE when the live
     freshness model reports overall=STALE, even though the process is running
     and warmup READY. health=READY MUST NOT mask a dead market feed.
@@ -394,6 +398,9 @@ def test_health_section_reports_stale_on_frozen_pipeline(tmp_path):
 
     from nexus_scalp.web import server as web_server
 
+    # WEB-AUTH-P0: /api/status is gated — token before create_app (the
+    # middleware resolves its token at install time) + Bearer header.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", WEB_TOKEN)
     engine, _ = _make_engine(tmp_path)
     engine._running = True
     engine.warmup_state = "READY"
@@ -403,6 +410,7 @@ def test_health_section_reports_stale_on_frozen_pipeline(tmp_path):
 
     app = web_server.create_app(engine_ref=engine)
     with TestClient(app) as client:
+        client.headers.update({"Authorization": f"Bearer {WEB_TOKEN}"})
         resp = client.get("/api/status")
     assert resp.status_code == 200, resp.text
     health = resp.json()["health"]
@@ -445,7 +453,7 @@ def test_adapter_exposes_resubscribe_and_get_tick():
     assert hasattr(DirectMT5Adapter, "get_tick")
 
 
-def test_frontend_is_stale_gates_probability_render():
+def test_frontend_is_stale_gates_probability_render(monkeypatch):
     """BUGFIX-G29 (reviewer flag #2): the live-looking probability vector must
     NOT render as a live prediction when the feed is frozen. The engine emits
     is_stale=True (and health.subsystems.engine=='STALE'); the dashboard's
@@ -455,6 +463,8 @@ def test_frontend_is_stale_gates_probability_render():
     """
     from nexus_scalp.web import server as web_server
 
+    # WEB-AUTH-P0: see test_health_section_reports_stale_on_frozen_pipeline.
+    monkeypatch.setenv("NSE_WEB_AUTH_TOKEN", WEB_TOKEN)
     engine, _ = _make_engine(_tmp := __import__("pathlib").Path("/tmp"))
     engine._running = True
     engine.warmup_state = "READY"
@@ -468,6 +478,7 @@ def test_frontend_is_stale_gates_probability_render():
     from fastapi.testclient import TestClient
 
     with TestClient(app) as client:
+        client.headers.update({"Authorization": f"Bearer {WEB_TOKEN}"})
         resp = client.get("/api/status")
     payload = resp.json()
     # The exact fields app.js keys its STALE branch on.

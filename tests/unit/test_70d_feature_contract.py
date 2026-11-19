@@ -114,18 +114,24 @@ def test_70d_feature_contract_vector_validation() -> None:
 
 # ── Inference validator (70D bundle must reject mismatched width/scaler) ──
 
-try:
-    from nexus_scalp.features.inference_validator import InferenceContractValidator
-except ImportError:
-    InferenceContractValidator = None  # type: ignore[assignment]
 
-
-@pytest.mark.skipif(InferenceContractValidator is None, reason="inference validator not present")
 def test_70d_feature_contract_inference_validator_rejects_mismatch() -> None:
-    """A 50-feature tensor against a 70D bundle must block (width mismatch)."""
-    v = InferenceContractValidator(expected_dim=70)
-    with pytest.raises(Exception):  # noqa: B017 - validator raises SchemaContractError family
-        v.validate(np.zeros(50, dtype=np.float32))
+    """A 50-feature vector against the 70D contract must be REJECTED.
+
+    Revived from a permanently-skipping shape: this test imported
+    ``InferenceContractValidator`` — a class name that never existed in
+    src/ (the real class is ``InferenceValidator``) — behind a try/except
+    ImportError, so the skipif fired on every run and the width-mismatch
+    invariant had zero live coverage while the file reported green. The
+    real validator RETURNS its verdict (ValidationResult) rather than
+    raising, and its dimension field is ``expected_dimension``.
+    """
+    from nexus_scalp.features.inference_validator import InferenceValidator, RejectionCode
+
+    v = InferenceValidator(expected_dimension=70)
+    result = v.validate([0.0] * 50)
+    assert result.ok is False, result
+    assert result.code == RejectionCode.DIMENSION_MISMATCH, result
 
 
 # ── Lifecycle integrity (head width on disk is 4, label contract is 3) ────

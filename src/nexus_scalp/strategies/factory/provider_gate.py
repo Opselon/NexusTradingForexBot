@@ -318,11 +318,38 @@ class ProviderGate:
 
     def validate_config(self, api_key: str, base_url: str, model: str) -> tuple[DisableReason, str]:
         reason, detail = classify_config(api_key, base_url, model)
-        if reason is not DisableReason.NONE and not self._circuit.auto_disabled:
-            # Permanent configuration error: auto-disable IMMEDIATELY,
-            # no retries, no HTTP, no repeated warnings (steer section 24).
-            with self._lock:
-                self._auto_disable_locked(reason, detail)
+        if reason is not DisableReason.NONE:
+            if not self._circuit.auto_disabled:
+                # Permanent configuration error: auto-disable IMMEDIATELY,
+                # no retries, no HTTP, no repeated warnings (steer section 24).
+                with self._lock:
+                    self._auto_disable_locked(reason, detail)
+            return reason, detail
+        # Valid config presented: this is a RE-validation, not just a check.
+        # A stale CONFIG-error auto-disable no longer applies — the config
+        # that caused it is gone (a later provider instance in this process
+        # was constructed with a valid key/host/model). Clear it, so one
+        # unconfigured provider cannot poison every later provider sharing
+        # this process-wide gate (PR #740: an unconfigured provider built
+        # by test_orchestrator_deterministic_when_provider_unavailable
+        # left the gate auto-disabled, so every subsequent LLM test in the
+        # same xdist worker saw available() == False, the orchestrator
+        # re-tagged the LLM slice as TEMPLATE, and the population had zero
+        # LLM candidates). An AUTH_FAILED auto-disable is NOT cleared here:
+        # a valid-shaped config says nothing about whether the key is still
+        # expired — only reconfigure() (key rotation) clears that (steer 4).
+        with self._lock:
+            c = self._circuit
+            if c.auto_disabled and c.auto_disabled_reason is not DisableReason.AUTH_FAILED:
+                c.auto_disabled = False
+                c.auto_disabled_reason = DisableReason.NONE
+                c.auto_disabled_detail = ""
+                c.state = ProviderState.AVAILABLE
+                c.last_transition_ts = self._clock()
+                logger.info(
+                    "[PROVIDER_GATE] event=CONFIG_REVALIDATED state=AVAILABLE "
+                    "(stale config-error auto-disable cleared by valid config)"
+                )
         return reason, detail
 
     def _auto_disable_locked(self, reason: DisableReason, detail: str) -> None:
@@ -775,11 +802,24 @@ def execute_http_post(
             )
         try:
             resp = httpx.post(url, json=payload, headers=headers, timeout=timeout)
-        except httpx.TimeoutException as e:
-            return GateResult(
-                ok=False, category=FailureCategory.TIMEOUT, reason=f"timeout: {type(e).__name__}"
-            )
         except Exception as e:
+            # The timeout branch must not depend on the httpx module
+            # carrying ``TimeoutException``: a partial/minimal httpx
+            # replacement (a test double exposing only ``post``) raises
+            # AttributeError while the ``except httpx.TimeoutException``
+            # clause itself is evaluated, and the gate then recorded the
+            # failure as UNKNOWN "gate internal error" instead of the
+            # timeout the caller actually hit. Resolve the type
+            # defensively; a real timeout (httpx.ReadTimeout and friends
+            # subclass TimeoutException) still classifies TIMEOUT, and an
+            # unresolvable type degrades to NETWORK_ERROR — never UNKNOWN.
+            timeout_exc = getattr(httpx, "TimeoutException", None)
+            if timeout_exc is not None and isinstance(e, timeout_exc):
+                return GateResult(
+                    ok=False,
+                    category=FailureCategory.TIMEOUT,
+                    reason=f"timeout: {type(e).__name__}",
+                )
             return GateResult(
                 ok=False,
                 category=FailureCategory.NETWORK_ERROR,

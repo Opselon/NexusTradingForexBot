@@ -132,17 +132,44 @@ def _replay_liquidity(frame: pl.DataFrame, row_idx: int = -1) -> list[float]:
 
 
 # ---------------------------------------------------------------------------
+# Shared parity pairs (speed: one O(n^2) frame build per fixture, not one
+# per test)
+# ---------------------------------------------------------------------------
+# compute_70d_frame is O(n^2): for every row it re-runs the 50D engine
+# AND the liquidity engine over the full causal history. Several parity
+# tests share the exact same deterministic bars (240 bars / seed 7 in
+# three tests, 200 bars / seed 7 in three more) and each was paying a
+# full build plus a full governor run. The bars are deterministic and
+# neither path mutates them, so one build per (n, seed) is exact — every
+# assertion still reads the same values from the same frame. The cache
+# is module-level (one per xdist worker); tests only ever read the
+# cached frame / feature list.
+_PARITY_CACHE: dict[tuple[int, int], tuple[pl.DataFrame, list[float]]] = {}
+
+
+def _parity_pair(n: int, seed: int = 7) -> tuple[pl.DataFrame, list[float]]:
+    """(dataset frame, live liquidity) for the deterministic (n, seed) bars."""
+    key = (n, seed)
+    hit = _PARITY_CACHE.get(key)
+    if hit is None:
+        t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
+        bars = _mkbars(n, t0, seed=seed)
+        frame = compute_70d_frame(_to_frame(bars))
+        live, _ = _governor_liquidity(bars)
+        hit = (frame, live)
+        _PARITY_CACHE[key] = hit
+    return hit
+
+
+# ---------------------------------------------------------------------------
 # TEST-03-01 — dataset/runtime exact 10D parity
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("n", [55, 60, 120, 240])
 def test_03_01_dataset_live_exact_parity(n: int) -> None:
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(n, t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, live = _parity_pair(n)
     ds = _dataset_liquidity_row(frame)
-    live, _ = _governor_liquidity(bars)
     assert len(ds) == 10 and len(live) == 10
     deltas = [abs(a - b) for a, b in zip(ds, live, strict=True)]
     assert max(deltas) <= 1e-12, (
@@ -181,12 +208,9 @@ def test_03_01b_deep_history_parity_regression() -> None:
 
 
 def test_03_02_03_dataset_replay_runtime_parity() -> None:
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(240, t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, live = _parity_pair(240)
     ds = _dataset_liquidity_row(frame)
     rp = _replay_liquidity(frame)
-    live, _ = _governor_liquidity(bars)
     assert ds == rp  # replay reads the same dataset columns
     assert all(abs(a - b) <= 1e-12 for a, b in zip(ds, live, strict=True))
 
@@ -228,11 +252,8 @@ def test_03_06_model_compatibility_reuses_matrix() -> None:
 def test_03_07_htf_completed_bar_parity() -> None:
     """Both paths must see identical H1/H4/D1 completed buckets at the same
     decision time (full causal history to both)."""
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(60 * 6, t0)  # 6 hours -> several completed H1 buckets
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, live = _parity_pair(60 * 6)  # 6 hours -> several completed H1 buckets
     ds = _dataset_liquidity_row(frame)
-    live, _ = _governor_liquidity(bars)
     # HTF score is the 5th liquidity dim — the parity invariant is equality
     # with the same completed-bucket history, regardless of the value.
     assert abs(ds[4] - live[4]) <= 1e-12
@@ -264,13 +285,17 @@ def test_03_08_swing_confirmation_parity() -> None:
 
 
 def test_03_09_10_11_12_feature_parity_all_dims() -> None:
-    """Every liquidity dim must match dataset vs live across multiple seeds."""
+    """Every liquidity dim must match dataset vs live across multiple seeds.
+
+    200 bars per seed (was 300): the frame build is O(n^2), so this was
+    the file's slowest test at 11.2s in CI. 200 bars still clears the
+    55-bar warm-up and covers several completed H1 buckets, confirmed
+    swings and session pools — the invariant under test is parity across
+    seeds, not the bar count.
+    """
     for seed in (3, 7, 11):
-        t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-        bars = _mkbars(300, t0, seed=seed)
-        frame = compute_70d_frame(_to_frame(bars))
+        frame, live = _parity_pair(200, seed)
         ds = _dataset_liquidity_row(frame)
-        live, _ = _governor_liquidity(bars)
         assert all(abs(a - b) <= 1e-12 for a, b in zip(ds, live, strict=True)), f"seed={seed}"
 
 
@@ -318,11 +343,8 @@ def test_03_13_missing_value_parity() -> None:
 
 
 def test_03_14_clipping_parity() -> None:
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(240, t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, live = _parity_pair(240)
     ds = _dataset_liquidity_row(frame)
-    live, _ = _governor_liquidity(bars)
     for v in ds + live:
         assert -3.0 <= v <= 3.0
     # identical values => identical clipping by construction
@@ -334,9 +356,7 @@ def test_03_14_clipping_parity() -> None:
 
 
 def test_03_15_50d_regression() -> None:
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(200, t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, _ = _parity_pair(200)
     row = frame.tail(1).row(0, named=True)
     base = [float(row[f"feat_{i}"]) for i in range(50)]
     assert len(base) == 50
@@ -353,8 +373,7 @@ def test_03_16_family_50_59_unchanged() -> None:
     names = canonical_feature_names()
     assert tuple(names[50:60]) == NEWS_10D_NAMES
     # news block neutral when no news frame
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    frame = compute_70d_frame(_to_frame(_mkbars(200, t0)))
+    frame, _ = _parity_pair(200)
     row = frame.tail(1).row(0, named=True)
     news10 = [float(row[f"feat_{i}"]) for i in range(50, 60)]
     assert news10 == [0.0] * 10  # documented neutral when disabled
@@ -399,9 +418,7 @@ def test_03_18_live_style_runtime_parity_all_70() -> None:
     """All 70 dims from the dataset row match a live-style assembly."""
     from nexus_scalp.features.features70 import assemble_70d, news_10d_from_context
 
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(200, t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    frame, _ = _parity_pair(200)
     row = frame.tail(1).row(0, named=True)
     vec = [float(row[f"feat_{i}"]) for i in range(70)]
     snap = assemble_70d(
@@ -410,7 +427,7 @@ def test_03_18_live_style_runtime_parity_all_70() -> None:
         liquidity10=vec[60:70],
         symbol="XAUUSD",
         timeframe="M1",
-        timestamp_utc=bars[-1].timestamp,
+        timestamp_utc=row["timestamp"],
         news_available=False,
         news_status=None
         if False
@@ -431,11 +448,9 @@ def test_03_18_live_style_runtime_parity_all_70() -> None:
 @pytest.mark.skipif(not GOLDEN_DIR.exists(), reason="golden fixture not built yet")
 def test_03_19_golden_artifact_agreement() -> None:
     golden = json.loads((GOLDEN_DIR / "parity_golden.json").read_text(encoding="utf-8"))
-    t0 = datetime(2026, 8, 1, 0, 0, tzinfo=UTC)
-    bars = _mkbars(golden["fixture"]["n_bars"], t0)
-    frame = compute_70d_frame(_to_frame(bars))
+    # Golden fixture is 240 bars / seed 7 — the shared parity pair.
+    frame, live = _parity_pair(golden["fixture"]["n_bars"])
     ds = _dataset_liquidity_row(frame)
-    live, _ = _governor_liquidity(bars)
     assert [round(v, 10) for v in ds] == golden["dataset_liquidity"]
     assert [round(v, 10) for v in live] == golden["live_liquidity"]
 
