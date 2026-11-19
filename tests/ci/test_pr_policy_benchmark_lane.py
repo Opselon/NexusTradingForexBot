@@ -106,7 +106,9 @@ def test_ci_quality_tests_deselects_wall_clock_nodes_from_coverage_run() -> None
     # --cov exists only behind the manual-dispatch gate (COV_FLAGS); the
     # --pytest-extra itself must not hardcode coverage.
     assert 'COV_FLAGS=""' in run, "planner run must default to no coverage (PR runs)"
-    assert 'if [ "${{ inputs.full }}" = "true" ]; then COV_FLAGS="--cov=src' in run, (
+    # The dispatch input crosses the YAML->shell boundary as PLAN_INPUT_FULL
+    # (env var), never as an inline ${{ }} template — same gate semantics.
+    assert 'if [ "$PLAN_INPUT_FULL" = "true" ]; then COV_FLAGS="--cov=src' in run, (
         "planner run must stay coverage-instrumented on manual full dispatch only"
     )
     extra = next(line for line in run.splitlines() if line.strip().startswith("--pytest-extra"))

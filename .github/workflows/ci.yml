@@ -595,10 +595,13 @@ jobs:
         # would resolve nothing. Use the real head SHA; the push fallback
         # keeps before.. (the prior head); inputs.base_sha (dispatch) wins.
         shell: bash
+        env:
+          PLAN_BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
-          base="${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}"
-          head="${{ github.event.pull_request.head.sha || github.sha }}"
+          base="${PLAN_BASE_SHA}"
+          head="${PLAN_HEAD_SHA}"
           bash scripts/ci/fetch_planner_history.bash "$base" "$head"
 
       # One canonical environment (setup-python + pinned uv + lock venv):
@@ -710,6 +713,10 @@ jobs:
         continue-on-error: true
         env:
           NATIVE_BINARY: ${{ steps.native.outputs.binary }}
+          PLAN_EVENT_NAME: ${{ github.event_name }}
+          PLAN_INPUT_FULL: ${{ inputs.full }}
+          PLAN_BASE_SHA: ${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
           # C17 plans (changed-file driven); Python executes via pytest.
@@ -730,7 +737,7 @@ jobs:
           if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ]; then XDIST=4; fi
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
-          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then MODE=full; fi
+          if [ "$PLAN_EVENT_NAME" = "schedule" ] || [ "$PLAN_INPUT_FULL" = "true" ]; then MODE=full; fi
           # TEMPORARY (2026-11-10, user-approved): coverage is MANUAL-ONLY
           # — it runs only on a manual full dispatch (inputs.full=true).
           # No coverage on PR/push runs (MODE=targeted) and NOT on the
@@ -741,7 +748,7 @@ jobs:
           # is absent. Re-enable when the tier-1 suite fits the cap with
           # coverage.
           COV_FLAGS=""
-          if [ "${{ inputs.full }}" = "true" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
+          if [ "$PLAN_INPUT_FULL" = "true" ]; then COV_FLAGS="--cov=src --cov-report=xml:$CI_RESULTS_DIR/pytest/coverage.xml"; fi
           # No HTML coverage report on this lane: it costs a full
           # render pass over 784 files and nobody reads htmlcov in CI.
           # Coverage (COV_FLAGS) is TEMPORARILY manual-only (2026-11-10):
@@ -777,8 +784,8 @@ jobs:
           # once here (it is in critical_suite.txt) and once there.
           python scripts/ci/run_test_plan.py \
             --repo-root . \
-            --base "${{ inputs.base_sha || github.event.pull_request.base.sha || github.event.before }}" \
-            --head "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --base "$PLAN_BASE_SHA" \
+            --head "$PLAN_HEAD_SHA" \
             --event "${{ github.event_name }}" \
             --mode "$MODE" \
             --native-binary "${NATIVE_BINARY}" \
@@ -1749,6 +1756,9 @@ jobs:
           retention-days: 14
 
       - name: Require every runtime line to pass
+        env:
+          VERDICT_EVENT_NAME: ${{ github.event_name }}
+          VERDICT_INPUT_FULL: ${{ inputs.full }}
         run: |
           echo "SQLite/PostgreSQL matrix:   ${{ needs.full-runtime-provider.result }}"
           echo "MT5 native Windows line:    ${{ needs.mt5-native.result }}"
@@ -1766,7 +1776,7 @@ jobs:
             exit 1
           fi
           if [ "${{ needs.full-runtime-provider.result }}" = "skipped" ]; then
-            if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.full }}" = "true" ]; then
+            if [ "$VERDICT_EVENT_NAME" = "schedule" ] || [ "$VERDICT_INPUT_FULL" = "true" ]; then
               echo "::error::Full runtime matrix skipped on an event that requires it (schedule/full dispatch)"
               exit 1
             fi
