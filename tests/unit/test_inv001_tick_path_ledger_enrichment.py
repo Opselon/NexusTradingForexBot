@@ -279,6 +279,27 @@ def _spy_sqlite_connect_on_own_thread(
     monkeypatch.setattr(sqlite3, "connect", _spy_connect)
 
 
+def _detach_stale_db_log_sink() -> None:
+    """Detach a DatabaseLogHandler left on the root logger by an earlier test.
+
+    The app-wide DB sink persists every WARNING/ERROR into the AUDIT-domain
+    database, resolved from the config it was installed with. A sibling test
+    on this xdist worker can install it with ITS tmp audit.db (run
+    44619282762: 19 opens of another test's audit_db92, timeout=10 — the
+    sink's signature). Logging handlers emit SYNCHRONOUSLY on the caller's
+    thread, so every degrade/warning record our gate window logs (the
+    not-provisioned degradation logs several) opens that foreign database on
+    the main thread — and the zero-open gate records it.
+
+    The sink is orthogonal infrastructure to the INV-001 ledger contract, so
+    it is detached for the gate window. Idempotent (uninstall_documented in
+    log_store): a later configure_logging() re-installs it.
+    """
+    from nexus_scalp.database.log_store import uninstall_database_log_handler
+
+    uninstall_database_log_handler()
+
+
 def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -295,6 +316,7 @@ def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
     calls: list[tuple[object, ...]] = []
     _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
+    _detach_stale_db_log_sink()
 
     repo = _NonSqliteRepo()
     tracker = PositionLifecycleTracker(audit_repo=repo)
@@ -338,6 +360,7 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
     # than a real violation. Clear the slot so the read takes the documented
     # not-provisioned degradation path on any runner.
     unregister_domain_backend("audit", close=True)
+    _detach_stale_db_log_sink()
 
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
