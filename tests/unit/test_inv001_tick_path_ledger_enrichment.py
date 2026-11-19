@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import traceback
 import typing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -241,7 +242,7 @@ class _NonSqliteRepo(AuditRepository):
 
 def _spy_sqlite_connect_on_own_thread(
     monkeypatch: pytest.MonkeyPatch,
-    calls: list[tuple[object, ...]],
+    calls: list[tuple[tuple[object, ...], dict[str, object], list[str]]],
 ) -> None:
     """Spy sqlite3.connect on THIS thread only, ignoring the settings DB.
 
@@ -261,7 +262,9 @@ def _spy_sqlite_connect_on_own_thread(
          diagnostics probe signature).
 
     The INV-001 contract is about the LEDGER's synchronous read path, which
-    runs on the caller's thread — so only same-thread opens are recorded.
+    runs on the caller's thread — so only same-thread opens are recorded,
+    each with its capture-time stack (the failing-test output carries the
+    stacks so the opener is named, not guessed).
     """
     real_connect = sqlite3.connect
     own_thread = threading.get_ident()
@@ -270,7 +273,9 @@ def _spy_sqlite_connect_on_own_thread(
         if threading.get_ident() == own_thread:
             path = args[0] if args else kwargs.get("database", "")
             if not str(path).endswith("app_settings.db"):
-                calls.append((args, kwargs))
+                calls.append(
+                    (args, kwargs, traceback.format_stack(limit=14))
+                )
         return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
 
     monkeypatch.setattr(sqlite3, "connect", _spy_connect)
@@ -339,10 +344,26 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
 
-    calls: list[tuple[object, ...]] = []
+    calls: list[tuple[tuple[object, ...], dict[str, object], list[str]]] = []
     _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
 
     assert ledger.get_experiences_for_strategy("strat_stub") == []
+    if calls:
+        # Same gate as the assert below, but carries the capture-time stack of
+        # every recorded open so a failure names the opener instead of a bare
+        # path list (three different environment noise sources already hid
+        # behind this assertion: stale registry planes, persisted pool rows,
+        # background daemon threads).
+        import traceback
+
+        details = "\n".join(
+            f"OPEN {i}: args={c[0]!r} kwargs={c[1]!r}\n"
+            + "".join(traceback.format_stack(limit=14))  # type: ignore[arg-type]
+            for i, c in enumerate(calls[:3])
+        )
+        pytest.fail(
+            "non-SQLite ledger reads must not open SQLite connections\n" + details
+        )
     assert calls == [], "non-SQLite ledger reads must not open SQLite connections"
 
 
