@@ -103,13 +103,29 @@ def test_self_hosted_pytest_runs_four_workers() -> None:
     thrash) — revisit if it thrashes again. Hosted runners are big
     ephemeral machines and hosted is last-resort only, so they keep the
     core-sized count (capped at 8).
+
+    REVISITED 2026-11-20 (the clause above fired): self-hosted is no
+    longer only Dubai — the Germany CI host (2 cores / 3.7 GB, shared
+    with the NSE-Platform pipeline) went into full swap thrash under
+    four workers co-existing with an NSE compile (load 14, rustc at 24%
+    CPU, 4.2 GB swapped, kernel 73% system time). The FOUR-worker
+    directive still applies where the box has the cores; smaller
+    self-hosted hosts fall back to their core count (min(cores, 4)).
     """
     wf = _load("ci.yml")
     pytest_steps = [s for s in _steps(wf, "quality-tests") if "--xdist" in _run(s)]
     assert pytest_steps, "quality-tests must have a pytest step using --xdist"
     run = _run(pytest_steps[0])
+    # FOUR workers remains the self-hosted ceiling (Dubai keeps exactly
+    # four), but only where the host has the cores: the guard is
+    # min(cores, 4), so a 2-core self-hosted box runs -n 2 instead of
+    # thrashing.
     assert "RUNNER_ENVIRONMENT" in run and "XDIST=4" in run, (
-        "quality-tests must force XDIST=4 when RUNNER_ENVIRONMENT is self-hosted"
+        "quality-tests must cap self-hosted workers at FOUR (the 2026-11-10 directive)"
+    )
+    assert '[ "$XDIST" -gt 4 ]' in run, (
+        "quality-tests must apply the FOUR-worker cap only on hosts with >= 4 cores "
+        "(min(cores, 4)) — four workers thrashed the 2-core Germany host (2026-11-20)"
     )
 
     os_wf = _load("tests-os.yml")
