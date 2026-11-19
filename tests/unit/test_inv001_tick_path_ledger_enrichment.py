@@ -23,6 +23,7 @@ Contract guarded here:
 from __future__ import annotations
 
 import sqlite3
+import threading
 import typing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -238,6 +239,43 @@ class _NonSqliteRepo(AuditRepository):
     # sqlite3.connect would be the failure mode the test catches.
 
 
+def _spy_sqlite_connect_on_own_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: list[tuple[object, ...]],
+) -> None:
+    """Spy sqlite3.connect on THIS thread only, ignoring the settings DB.
+
+    Three environment noise sources make a whole-process sqlite3.connect spy
+    non-hermetic on shared runners, so the INV-001 zero-open gate fails with
+    environment artifacts instead of real violations:
+
+      1. The installation settings DB (app_settings.db) is ALWAYS opened via
+         sqlite3 by design — a config lookup, not a ledger read (fresh file
+         via the NEXUS_SETTINGS_DB override, then ignored by name here).
+      2. The fabric backend registry is process-global: a sibling test's
+         registered read plane routes its opens through this process (run
+         44613851816: 18 opens of another test's audit.db).
+      3. Background daemon threads left over from earlier tests on the same
+         xdist worker keep connecting while this test runs (run
+         44616315745: 19 opens of news.db?mode=ro, timeout=2 — the
+         diagnostics probe signature).
+
+    The INV-001 contract is about the LEDGER's synchronous read path, which
+    runs on the caller's thread — so only same-thread opens are recorded.
+    """
+    real_connect = sqlite3.connect
+    own_thread = threading.get_ident()
+
+    def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
+        if threading.get_ident() == own_thread:
+            path = args[0] if args else kwargs.get("database", "")
+            if not str(path).endswith("app_settings.db"):
+                calls.append((args, kwargs))
+        return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
+
+    monkeypatch.setattr(sqlite3, "connect", _spy_connect)
+
+
 def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -252,14 +290,8 @@ def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     # fresh empty file (NEXUS_SETTINGS_DB is the documented test-isolation
     # override) so the bootstrap starts from code defaults on any runner.
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
-    real_connect = sqlite3.connect
     calls: list[tuple[object, ...]] = []
-
-    def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
-        calls.append((args, kwargs))
-        return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
-
-    monkeypatch.setattr(sqlite3, "connect", _spy_connect)
+    _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
 
     repo = _NonSqliteRepo()
     tracker = PositionLifecycleTracker(audit_repo=repo)
@@ -307,27 +339,8 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
 
-    real_connect = sqlite3.connect
     calls: list[tuple[object, ...]] = []
-
-    def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
-        # The contract is about the LEDGER (audit) read path: a non-SQLite
-        # repo must never reach the SQLite audit accessor. The app's settings
-        # store (app_settings.db) is ALWAYS SQLite by design, and the read
-        # plane bootstrap legitimately opens it to resolve persisted pool
-        # config — that is a config lookup, not a ledger read, and it must
-        # not trip this gate. So the spy ignores settings-DB connections and
-        # only records any OTHER SQLite open (which would be a real violation).
-        # Without this scoping the test is environment-dependent: on a fresh
-        # runner the bootstrap reads the settings DB during this very call
-        # and the test fails even though no ledger data touched SQLite.
-        path = args[0] if args else kwargs.get("database", "")
-        if str(path).endswith("app_settings.db"):
-            return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
-        calls.append((args, kwargs))
-        return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
-
-    monkeypatch.setattr(sqlite3, "connect", _spy_connect)
+    _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
 
     assert ledger.get_experiences_for_strategy("strat_stub") == []
     assert calls == [], "non-SQLite ledger reads must not open SQLite connections"
