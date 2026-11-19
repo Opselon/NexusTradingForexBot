@@ -734,7 +734,16 @@ jobs:
           CORES="$(nproc 2>/dev/null || echo 2)"
           XDIST="$CORES"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
-          if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ]; then XDIST=4; fi
+          # 2026-11-10 user directive: FOUR workers on self-hosted — written
+          # for Dubai (4 cores / 8 GB). Revisited 2026-11-20: self-hosted is
+          # no longer only Dubai — the Germany CI host (2 cores / 3.7 GB)
+          # went into full swap thrash under four workers co-existing with
+          # the NSE-Platform pipeline (load 14, rustc at 24% CPU, 4.2 GB
+          # swapped, kernel 73% system time — measured live). The directive
+          # keeps FOUR where the box has the cores for it; smaller self-
+          # hosted hosts fall back to their core count. (Same revisit clause
+          # as tests/ci/test_pr_policy_speed_cap.py.)
+          if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ] && [ "$XDIST" -gt 4 ]; then XDIST=4; fi
           echo "runner cores: $CORES -> pytest -n $XDIST"
 
           if [ "$PLAN_EVENT_NAME" = "schedule" ] || [ "$PLAN_INPUT_FULL" = "true" ]; then MODE=full; fi
