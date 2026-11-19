@@ -23,6 +23,8 @@ Contract guarded here:
 from __future__ import annotations
 
 import sqlite3
+import threading
+import traceback
 import typing
 from datetime import UTC, datetime
 from pathlib import Path
@@ -238,18 +240,83 @@ class _NonSqliteRepo(AuditRepository):
     # sqlite3.connect would be the failure mode the test catches.
 
 
-def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
+def _spy_sqlite_connect_on_own_thread(
     monkeypatch: pytest.MonkeyPatch,
+    calls: list[tuple[tuple[object, ...], dict[str, object], list[str]]],
 ) -> None:
-    """A PostgreSQL repository returns the defaults fast and opens nothing."""
+    """Spy sqlite3.connect on THIS thread only, ignoring the settings DB.
+
+    Three environment noise sources make a whole-process sqlite3.connect spy
+    non-hermetic on shared runners, so the INV-001 zero-open gate fails with
+    environment artifacts instead of real violations:
+
+      1. The installation settings DB (app_settings.db) is ALWAYS opened via
+         sqlite3 by design — a config lookup, not a ledger read (fresh file
+         via the NEXUS_SETTINGS_DB override, then ignored by name here).
+      2. The fabric backend registry is process-global: a sibling test's
+         registered read plane routes its opens through this process (run
+         44613851816: 18 opens of another test's audit.db).
+      3. Background daemon threads left over from earlier tests on the same
+         xdist worker keep connecting while this test runs (run
+         44616315745: 19 opens of news.db?mode=ro, timeout=2 — the
+         diagnostics probe signature).
+
+    The INV-001 contract is about the LEDGER's synchronous read path, which
+    runs on the caller's thread — so only same-thread opens are recorded,
+    each with its capture-time stack (the failing-test output carries the
+    stacks so the opener is named, not guessed).
+    """
     real_connect = sqlite3.connect
-    calls: list[tuple[object, ...]] = []
+    own_thread = threading.get_ident()
 
     def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
-        calls.append((args, kwargs))
+        if threading.get_ident() == own_thread:
+            path = args[0] if args else kwargs.get("database", "")
+            if not str(path).endswith("app_settings.db"):
+                calls.append((args, kwargs, traceback.format_stack(limit=14)))
         return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
 
     monkeypatch.setattr(sqlite3, "connect", _spy_connect)
+
+
+def _detach_stale_db_log_sink() -> None:
+    """Detach a DatabaseLogHandler left on the root logger by an earlier test.
+
+    The app-wide DB sink persists every WARNING/ERROR into the AUDIT-domain
+    database, resolved from the config it was installed with. A sibling test
+    on this xdist worker can install it with ITS tmp audit.db (run
+    44619282762: 19 opens of another test's audit_db92, timeout=10 — the
+    sink's signature). Logging handlers emit SYNCHRONOUSLY on the caller's
+    thread, so every degrade/warning record our gate window logs (the
+    not-provisioned degradation logs several) opens that foreign database on
+    the main thread — and the zero-open gate records it.
+
+    The sink is orthogonal infrastructure to the INV-001 ledger contract, so
+    it is detached for the gate window. Idempotent (uninstall_documented in
+    log_store): a later configure_logging() re-installs it.
+    """
+    from nexus_scalp.database.log_store import uninstall_database_log_handler
+
+    uninstall_database_log_handler()
+
+
+def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A PostgreSQL repository returns the defaults fast and opens nothing."""
+    # Hermetic settings: the read-plane bootstrap resolves the persisted pool
+    # config from the installation settings DB (app_settings.db — ALWAYS
+    # SQLite by design, outside the audit contract). On a self-hosted runner
+    # that DB is persistent and may carry pool rows an earlier test wrote,
+    # which would make the bootstrap open a SQLite audit file here — a pure
+    # environment artifact, not a gate violation. Point the settings DB at a
+    # fresh empty file (NEXUS_SETTINGS_DB is the documented test-isolation
+    # override) so the bootstrap starts from code defaults on any runner.
+    monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
+    calls: list[tuple[object, ...]] = []
+    _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
+    _detach_stale_db_log_sink()
 
     repo = _NonSqliteRepo()
     tracker = PositionLifecycleTracker(audit_repo=repo)
@@ -265,28 +332,56 @@ def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     )
 
 
-def test_c_non_sqlite_repo_ledger_reads_are_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c_non_sqlite_repo_ledger_reads_are_gated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """The same defect class in experience/ledger.py is gated identically.
 
     Lane E flagged the raw-connect twin at ``ledger.py:455``; its callers all
     gate on ``_is_sqlite`` before ``_connect``, so a non-SQLite repository
     never reaches the SQLite accessor.
     """
+    from nexus_scalp.database.fabric import unregister_domain_backend
     from nexus_scalp.experience.ledger import ExperienceLedger
+
+    # Hermetic settings (see the sibling tracker test): a persistent runner
+    # settings DB can carry pool rows written by earlier tests, and the
+    # bootstrap would then open the configured SQLite audit file during this
+    # test — environment noise, not a ledger-read violation. A fresh empty
+    # settings DB makes the gate assertion runner-independent.
+    monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
+
+    # Hermetic fabric registry: the backend registry is PROCESS-global and an
+    # earlier test on this xdist worker can leave a SQLite read plane
+    # registered for the audit domain pointing at ITS tmp audit.db. query_rows
+    # then resolves that stale backend and opens SQLite here (18 opens in run
+    # 44613851816), failing the zero-open gate with environment noise rather
+    # than a real violation. Clear the slot so the read takes the documented
+    # not-provisioned degradation path on any runner.
+    unregister_domain_backend("audit", close=True)
+    _detach_stale_db_log_sink()
 
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
 
-    real_connect = sqlite3.connect
-    calls: list[tuple[object, ...]] = []
-
-    def _spy_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
-        calls.append((args, kwargs))
-        return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
-
-    monkeypatch.setattr(sqlite3, "connect", _spy_connect)
+    calls: list[tuple[tuple[object, ...], dict[str, object], list[str]]] = []
+    _spy_sqlite_connect_on_own_thread(monkeypatch, calls)
 
     assert ledger.get_experiences_for_strategy("strat_stub") == []
+    if calls:
+        # Same gate as the assert below, but carries the capture-time stack of
+        # every recorded open so a failure names the opener instead of a bare
+        # path list (three different environment noise sources already hid
+        # behind this assertion: stale registry planes, persisted pool rows,
+        # background daemon threads).
+        import traceback
+
+        details = "\n".join(
+            f"OPEN {i}: args={c[0]!r} kwargs={c[1]!r}\n" + "".join(traceback.format_stack(limit=14))  # type: ignore[arg-type]
+            for i, c in enumerate(calls[:3])
+        )
+        pytest.fail("non-SQLite ledger reads must not open SQLite connections\n" + details)
     assert calls == [], "non-SQLite ledger reads must not open SQLite connections"
 
 

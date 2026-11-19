@@ -92,7 +92,14 @@ class CalendarWorker:
         self.refresh_interval_sec = float(refresh_interval_sec)
         self.policy = policy or EventGatePolicy()
         self._envelope: CalendarEnvelope | None = None
-        self._last_fetch_mono: float = 0.0
+        # -inf, not 0.0: the first tick must never be throttled. time.monotonic()
+        # is seconds since boot, and on a freshly booted runner it is SMALL
+        # (minutes) — with 0.0 here, `now_mono - 0.0 < refresh_interval_sec`
+        # is true on a fresh box and the first tick returns False (throttled).
+        # A long-uptime server never notices (monotonic is huge there), so the
+        # bug only bites fresh hosted runners. -inf makes the first tick
+        # always proceed, on any uptime.
+        self._last_fetch_mono: float = float("-inf")
         self.last_error: str = ""
         self.cycle_count: int = 0
         self._ensure_tables()
