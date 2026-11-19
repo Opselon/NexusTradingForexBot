@@ -822,7 +822,7 @@ class MCPMT5Adapter(IMT5Port):
             return None
         try:
             payload = self._call_json("get_marketwatch_symbols") or {}
-        except Exception:
+        except Exception:  # anti-crash: allow (fail-closed: None leaves the configured symbol untouched)
             return None
         symbols = payload.get("symbols") if isinstance(payload, dict) else None
         return self._marketwatch_alias(symbol, symbols)
