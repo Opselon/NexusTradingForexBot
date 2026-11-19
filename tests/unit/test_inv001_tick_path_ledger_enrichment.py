@@ -240,8 +240,18 @@ class _NonSqliteRepo(AuditRepository):
 
 def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """A PostgreSQL repository returns the defaults fast and opens nothing."""
+    # Hermetic settings: the read-plane bootstrap resolves the persisted pool
+    # config from the installation settings DB (app_settings.db — ALWAYS
+    # SQLite by design, outside the audit contract). On a self-hosted runner
+    # that DB is persistent and may carry pool rows an earlier test wrote,
+    # which would make the bootstrap open a SQLite audit file here — a pure
+    # environment artifact, not a gate violation. Point the settings DB at a
+    # fresh empty file (NEXUS_SETTINGS_DB is the documented test-isolation
+    # override) so the bootstrap starts from code defaults on any runner.
+    monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
     real_connect = sqlite3.connect
     calls: list[tuple[object, ...]] = []
 
@@ -265,7 +275,10 @@ def test_c_non_sqlite_repo_skips_enrichment_without_connecting(
     )
 
 
-def test_c_non_sqlite_repo_ledger_reads_are_gated(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_c_non_sqlite_repo_ledger_reads_are_gated(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     """The same defect class in experience/ledger.py is gated identically.
 
     Lane E flagged the raw-connect twin at ``ledger.py:455``; its callers all
@@ -273,6 +286,13 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(monkeypatch: pytest.MonkeyPatc
     never reaches the SQLite accessor.
     """
     from nexus_scalp.experience.ledger import ExperienceLedger
+
+    # Hermetic settings (see the sibling tracker test): a persistent runner
+    # settings DB can carry pool rows written by earlier tests, and the
+    # bootstrap would then open the configured SQLite audit file during this
+    # test — environment noise, not a ledger-read violation. A fresh empty
+    # settings DB makes the gate assertion runner-independent.
+    monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
 
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
