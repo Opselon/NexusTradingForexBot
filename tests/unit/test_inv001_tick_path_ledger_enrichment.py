@@ -273,9 +273,7 @@ def _spy_sqlite_connect_on_own_thread(
         if threading.get_ident() == own_thread:
             path = args[0] if args else kwargs.get("database", "")
             if not str(path).endswith("app_settings.db"):
-                calls.append(
-                    (args, kwargs, traceback.format_stack(limit=14))
-                )
+                calls.append((args, kwargs, traceback.format_stack(limit=14)))
         return real_connect(*args, **kwargs)  # type: ignore[arg-type,call-overload]
 
     monkeypatch.setattr(sqlite3, "connect", _spy_connect)
@@ -357,13 +355,10 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
         import traceback
 
         details = "\n".join(
-            f"OPEN {i}: args={c[0]!r} kwargs={c[1]!r}\n"
-            + "".join(traceback.format_stack(limit=14))  # type: ignore[arg-type]
+            f"OPEN {i}: args={c[0]!r} kwargs={c[1]!r}\n" + "".join(traceback.format_stack(limit=14))  # type: ignore[arg-type]
             for i, c in enumerate(calls[:3])
         )
-        pytest.fail(
-            "non-SQLite ledger reads must not open SQLite connections\n" + details
-        )
+        pytest.fail("non-SQLite ledger reads must not open SQLite connections\n" + details)
     assert calls == [], "non-SQLite ledger reads must not open SQLite connections"
 
 
