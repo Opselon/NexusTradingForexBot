@@ -1818,8 +1818,14 @@ jobs:
   extended:
     name: Extended Validation (Tier 2)
     if: always() && (github.ref_name == 'main' || inputs.full == true || github.event_name == 'workflow_dispatch')
-    runs-on: ubuntu-latest
-    needs: quality
+    # Smart routing (2026-11-10): run on the self-hosted pool first
+    # (Dubai nexus-2core when tier-1 is down) and fall back to
+    # GitHub-hosted only when no self-hosted runner is available —
+    # the same Runner Selector the Quality jobs use. Previously this
+    # always burned hosted minutes (ubuntu-latest) even though the
+    # steps are plain Linux pytest and run fine on Dubai.
+    runs-on: ${{ fromJSON(needs.runner-select.outputs.runs_on) }}
+    needs: [quality, runner-select]
     timeout-minutes: 45
 
     env:
