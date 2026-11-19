@@ -285,6 +285,7 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
     gate on ``_is_sqlite`` before ``_connect``, so a non-SQLite repository
     never reaches the SQLite accessor.
     """
+    from nexus_scalp.database.fabric import unregister_domain_backend
     from nexus_scalp.experience.ledger import ExperienceLedger
 
     # Hermetic settings (see the sibling tracker test): a persistent runner
@@ -293,6 +294,15 @@ def test_c_non_sqlite_repo_ledger_reads_are_gated(
     # test — environment noise, not a ledger-read violation. A fresh empty
     # settings DB makes the gate assertion runner-independent.
     monkeypatch.setenv("NEXUS_SETTINGS_DB", str(tmp_path / "app_settings.db"))
+
+    # Hermetic fabric registry: the backend registry is PROCESS-global and an
+    # earlier test on this xdist worker can leave a SQLite read plane
+    # registered for the audit domain pointing at ITS tmp audit.db. query_rows
+    # then resolves that stale backend and opens SQLite here (18 opens in run
+    # 44613851816), failing the zero-open gate with environment noise rather
+    # than a real violation. Clear the slot so the read takes the documented
+    # not-provisioned degradation path on any runner.
+    unregister_domain_backend("audit", close=True)
 
     repo = _NonSqliteRepo()
     ledger = ExperienceLedger(audit_repo=repo)
