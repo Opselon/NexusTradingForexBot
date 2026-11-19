@@ -111,12 +111,16 @@ jobs:
       - name: Resolve
         id: resolve
         shell: bash
+        env:
+          SELECT_CLASS_OUT: ${{ needs.runner-select.outputs.runner_class }}
+          SELECT_REASON_OUT: ${{ needs.runner-select.outputs.selection_reason }}
+          INPUT_RUNNER_CLASS: ${{ inputs.runner_class }}
         run: |
           set -euo pipefail
-          AUTO="${{ needs.runner-select.outputs.runner_class }}"
-          FORCE="${{ inputs.runner_class }}"
+          AUTO="$SELECT_CLASS_OUT"
+          FORCE="$INPUT_RUNNER_CLASS"
           CLASS="$AUTO"
-          REASON="auto: ${{ needs.runner-select.outputs.selection_reason }}"
+          REASON="auto: $SELECT_REASON_OUT"
           if [ "$FORCE" = "self-hosted" ] || [ "$FORCE" = "github-hosted" ]; then
             CLASS="$FORCE"
             REASON="manual override (runner_class input): $FORCE (auto was: $AUTO)"
@@ -216,6 +220,9 @@ jobs:
       - name: Run C-planned targeted subset (default dispatch lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
+        env:
+          PLAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
           # Change-based selection only: the C17 engine plans, Python
@@ -238,9 +245,9 @@ jobs:
           # github.sha is the ephemeral merge commit, which the depth-1
           # checkout leaves shallow-grafted, so the diff finds no merge
           # base and the planner fails rc=3 (2026-11-09).
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          BASE="$PLAN_BASE_SHA"
           case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
-          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          HEAD="$PLAN_HEAD_SHA"
           git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
           XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi
@@ -397,6 +404,9 @@ jobs:
       - name: Run C-planned targeted subset (default dispatch lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
+        env:
+          PLAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
           # Change-based selection only: the C17 engine plans, Python
@@ -419,9 +429,9 @@ jobs:
           # github.sha is the ephemeral merge commit, which the depth-1
           # checkout leaves shallow-grafted, so the diff finds no merge
           # base and the planner fails rc=3 (2026-11-09).
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
+          BASE="$PLAN_BASE_SHA"
           case "$BASE" in ""|0000000000000000000000000000000000000000) BASE="$(git rev-parse HEAD~1 2>/dev/null || echo "")";; esac
-          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          HEAD="$PLAN_HEAD_SHA"
           git fetch -q --filter=blob:none --no-tags origin "$BASE" "$HEAD" 2>/dev/null || git fetch -q --no-tags origin "$BASE" "$HEAD" 2>/dev/null || true
           XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi

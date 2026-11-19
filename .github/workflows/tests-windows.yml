@@ -110,12 +110,16 @@ jobs:
       - name: Resolve
         id: resolve
         shell: bash
+        env:
+          SELECT_CLASS_OUT: ${{ needs.runner-select.outputs.runner_class }}
+          SELECT_REASON_OUT: ${{ needs.runner-select.outputs.selection_reason }}
+          INPUT_RUNNER_CLASS: ${{ inputs.runner_class }}
         run: |
           set -euo pipefail
-          AUTO="${{ needs.runner-select.outputs.runner_class }}"
-          FORCE="${{ inputs.runner_class }}"
+          AUTO="$SELECT_CLASS_OUT"
+          FORCE="$INPUT_RUNNER_CLASS"
           CLASS="$AUTO"
-          REASON="auto: ${{ needs.runner-select.outputs.selection_reason }}"
+          REASON="auto: $SELECT_REASON_OUT"
           if [ "$FORCE" = "self-hosted" ] || [ "$FORCE" = "github-hosted" ]; then
             CLASS="$FORCE"
             REASON="manual override (runner_class input): $FORCE (auto was: $AUTO)"

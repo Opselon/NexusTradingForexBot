@@ -242,6 +242,9 @@ jobs:
       - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
+        env:
+          PLAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
           # Change-based selection only: the C17 engine plans, Python
@@ -265,8 +268,8 @@ jobs:
           # shallow-grafted, so the diff finds no merge base and the
           # planner fails rc=3 (2026-11-09). An empty base (dispatch)
           # falls back to HEAD~1 inside the script.
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          BASE="$PLAN_BASE_SHA"
+          HEAD="$PLAN_HEAD_SHA"
           bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
           # 2026-11-10 (user directive, revised ~08:57): FOUR workers on
           # this box (Dubai, 4 cores / 8 GB) — the -n 1 serial run on the
@@ -437,6 +440,9 @@ jobs:
       - name: Run C-planned targeted subset (PR fast lane)
         if: steps.lane.outputs.mode == 'SKEW'
         shell: bash
+        env:
+          PLAN_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PLAN_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set +e
           # Change-based selection only: the C17 engine plans, Python
@@ -460,8 +466,8 @@ jobs:
           # shallow-grafted, so the diff finds no merge base and the
           # planner fails rc=3 (2026-11-09). An empty base (dispatch)
           # falls back to HEAD~1 inside the script.
-          BASE="${{ github.event.pull_request.base.sha || github.event.before }}"
-          HEAD="${{ github.event.pull_request.head.sha || github.sha }}"
+          BASE="$PLAN_BASE_SHA"
+          HEAD="$PLAN_HEAD_SHA"
           bash scripts/ci/fetch_planner_history.bash "$BASE" "$HEAD"
           XDIST="$(python -c 'import os; print(os.cpu_count() or 2)')"
           if [ "$XDIST" -gt 8 ]; then XDIST=8; fi

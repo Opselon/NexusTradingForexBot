@@ -57,7 +57,13 @@ jobs:
       - name: Checkout the reporter
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.event.repository.default_branch }}
+          # Security: the reporter is ops tooling and must run from a
+          # TRUSTED ref. Checking out the workflow_run's head_sha would
+          # execute code from a PR tree (pip install -e build hooks) with
+          # this job's privileged token. Evidence is collected via the
+          # API and does not depend on the PR's tree, so the default
+          # branch is used.
+          ref: ${{ github.event.repository.default_branch }}
 
       - name: Set up Python ${{ env.PYTHON_VERSION }}
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
