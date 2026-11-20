@@ -17,6 +17,8 @@ The authoring rules that govern this tree are in
 > documentation and are governed by their own contracts — see
 > [§ Exceptions](#exceptions) below.
 
+> **Live platform: [subscribe.nexusverse.space](https://subscribe.nexusverse.space)** — the NSE Platform server: free model downloads (star this repo), MT5 History import with an 8-engine review, and an AI chart lab.
+
 ## Start here
 
 | Question | Page |
