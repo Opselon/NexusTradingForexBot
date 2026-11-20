@@ -192,6 +192,36 @@ The release pipeline ships SHA-256 manifests + SBOM with post-publish verificati
 
 ---
 
+## 🌐 NSE Platform — free models, trade analysis & AI chart lab
+
+**New: the live platform is at [https://subscribe.nexusverse.space](https://subscribe.nexusverse.space)** — sign in with GitHub and use it in your browser. No install needed for the web features below.
+
+### Get the free models
+
+1. **Star this repository** on GitHub (top-right ⭐ Star).
+2. Go to [subscribe.nexusverse.space](https://subscribe.nexusverse.space) and **register / sign in with GitHub**.
+3. Open **Models** / **Downloads** on the site — your verified star unlocks the model downloads.
+
+### Analyse your MT5 trade history
+
+1. In MetaTrader 5, open the **History** tab, set the date range you want analysed, right-click and export the report — **HTML is the recommended format** (a CSV export or a text-based PDF also work; max 10 MiB).
+2. On the site, go to **Trading Lab → Import MT5 report** and upload the file. The 6-step wizard walks you through **Upload → Account → Preview → Validation → Confirm → Processing**.
+3. The platform reconstructs your positions and runs eight deterministic analysis engines over them (performance, risk, behaviour, sessions, symbol edge, trading style, trade management and strategy consistency), then builds a consensus and an AI coach review you can read on the analysis report page.
+
+### Analyse a chart screenshot — free
+
+1. Take a screenshot of any chart — your platform, your instrument, your timeframe.
+2. On the site, open **AI Chart Lab** and upload the image (PNG, JPEG or WebP, up to 10 MiB). Add the instrument and timeframe if you know them.
+3. Five engines read it — technical, multi-timeframe, AI vision, market context and consensus — and every statement is labelled by how it was produced (`OBSERVED` or `AI_INTERPRETED`). Images stay private to your account. Chart analysis is included in the free tier (a monthly allowance applies).
+
+### What else is on the platform
+
+- Star-gated model downloads and releases, Trading Lab with MT5 import, AI Chart Lab, live market data, news with sentiment, an economic calendar, a scanner, a trading journal, a risk calculator and support tickets.
+
+**Visit [subscribe.nexusverse.space](https://subscribe.nexusverse.space), register with GitHub, and try it** — star the repo first so your model downloads are unlocked.
+
+---
+
 ## 🛡️ Why Nexus — Engineering Philosophy
 
 *Enforced in code and contracts, not just stated:*
